@@ -38,5 +38,5 @@ The full UI specification (design system, screens, states, light/dark theming) i
 ## Docs and skills
 - Before writing code that uses a library (React 19, Vite 8, TypeScript 7, Tailwind, shadcn/ui, Expo SDK 57, Expo Router, Symfony, API Platform, Doctrine), look up the CURRENT docs with the Context7 tools if available. Do not rely on memory for APIs that changed recently.
 - API Platform docs index for agents: https://api-platform.com/docs/llms.txt
-- Load skills with /skill:<name> when relevant. Web: shadcn, web-design-guidelines, react-best-practices, composition-patterns. Mobile: expo-overview, expo-router, expo-design-system, expo-native-ui, expo-animation, react-native-guidelines. Backend: the api-platform skills (api-resource, state-provider, state-processor, serialization-groups, pagination, securing-collections, api-test).
+- Load skills with /skill:<name> when relevant. Web: shadcn, web-design-guidelines, vercel-react-best-practices, vercel-composition-patterns. Mobile: expo-overview, expo-router, expo-design-system, expo-native-ui, expo-animation, react-native-guidelines. Backend: the api-platform skills (api-resource, state-provider, state-processor, serialization-groups, pagination, securing-collections, api-test).
 - Only use skills and tools listed here. Ask before installing any other skill, MCP server or dependency.
