@@ -29,8 +29,8 @@ Keelson is a multi-tenant SaaS starter project with organization membership and 
 | Phase | Status | Focus |
 |-------|--------|-------|
 | 0: Environment and repository readiness | VERIFIED - PR #2 merged | Frontend build and Compose syntax verified; environment recorded; lint incompatibility deferred; ephemeral PostgreSQL target documented |
-| 1: Requirements, domain model and API contract | IN REVIEW - PR #5 | Record owner-approved tenant/principal model, customer CRUD, invoice lifecycle, and API boundaries |
-| 2: Backend domain model and migrations | NOT STARTED | Add approved persistence dependencies; define migrations for tenant schema; test migrations in disposable DB |
+| 1: Requirements, domain model and API contract | VERIFIED - PR #5 merged | Record owner-approved tenant/principal model, customer CRUD, invoice lifecycle, and API boundaries |
+| 2: Backend domain model and migrations | IMPLEMENTED AND VERIFIED | Doctrine entities, repositories, migration, and isolated PostgreSQL up/down evidence |
 | 3: Client app shell and design system | NOT STARTED | Set up React + Vite + Tailwind; integrate shadcn/ui component patterns; implement Home and organization-aware screens |
 | 4: Client workflows — organization onboarding | NOT STARTED | Implement organization creation, switching, and member invitation flows (frontend + API) |
 | 5: Authentication and authorization | NOT STARTED | Implement the approved OIDC + server-managed-session contract; enforce tenant isolation on API routes; role-based access controls |
@@ -41,7 +41,7 @@ Keelson is a multi-tenant SaaS starter project with organization membership and 
 
 Status evidence (verified 2026-10-22):
 - Phase 0 PR #2 is merged into `main` (merge commit `911b16ff667c9173ca74fb0972e750fc7fc67164`); its recorded environment evidence and blockers are now part of `main`.
-- Phase 1 contract PR #3 is merged into `main` (merge commit `4225679eb3a7daccaffacf65bd521636b6cc78ab`). The user explicitly approved it as both product and security owner and requested customer CRUD plus invoice lifecycle boundaries. This is owner approval, not independent third-party review. This follow-up records the scope and must merge before Phase 2.
+- Phase 1 contract PR #3 is merged into `main` (merge commit `4225679eb3a7daccaffacf65bd521636b6cc78ab`); owner-approved customer CRUD and invoice lifecycle follow-up PR #5 is merged at `02278a6ceaca021889bcd2bb61bff86e46a127a3`. This is direct owner approval, not independent third-party review. Phase 1 is VERIFIED as a documented planning contract; no runtime security verification is claimed.
 - `cd Keelson/frontend && pnpm install` — PASS: `Already up to date`; pnpm 12.14.0.
 - `cd Keelson/frontend && pnpm run build` — PASS: Vite 8.3.4 build completed successfully (20 modules; exit 0).
 - `cd Keelson/frontend && pnpm run lint` — FAIL, exit 2: `typescript-eslint@8.71.2` reports `typescript-eslint does not support TS 7.0.` No dependency/config workaround applied; decision: defer and retain as a blocker for a later scoped phase.
@@ -125,15 +125,15 @@ Verified evidence (phase 0): See `Status evidence` above. PR #2 is merged and th
 
 ## Phase 1: Requirements, domain model and API contract
 
-### Status: IN REVIEW - PR #5
-**Reason:** The user explicitly approved the Phase 1 contract as both product and security owner and requested customer CRUD and invoice lifecycle boundaries. This follow-up records that approval and contract scope. This is direct owner approval, not an independent third-party security review. Keep Phase 1 IN REVIEW and do not start Phase 2 until this update is merged.
+### Status: VERIFIED - PR #5 merged
+**Reason:** The owner-approved contract and customer/invoice scope are merged into `main` in PR #5 at `02278a6ceaca021889bcd2bb61bff86e46a127a3`. This verifies Phase 1's planning/documentation exit criteria only; it is direct owner approval, not an independent third-party security review, audit, or runtime security verification.
 
 ### Goal and scope
 Define the tenant, principal, and organization model as the secure foundation for all subsequent work. Establish API contract boundaries before any implementation begins.
 
 ### Prerequisites and dependencies
 - Phase 0 PR #2 merged into `main`; environment evidence and the lint blocker are recorded above.
-- Product/security owner approval of the contract and customer/invoice scope was explicitly given by the user and is recorded below. No independent review or runtime security verification is claimed; merge this follow-up before Phase 2.
+- Product/security owner approval of the contract and customer/invoice scope was explicitly given by the user and is recorded below and in merged PR #5. No independent review or runtime security verification is claimed.
 - UI invariants below are transcribed from `docs/ui-spec.md` as intended product requirements, not verified implementation.
 - No database schema, authentication code, routes, or API implementations are assumed to exist.
 
@@ -290,22 +290,29 @@ Implementation gates for later phases:
 - Define exact role/action enforcement, ownership transfer, organization deletion/retention, invitation delivery/rate limits/duplicate handling, API error/pagination/CSRF conventions, and RLS transaction/context lifecycle.
 - Specify customer address validation/duplicate handling and invoice currency/quantity precision, tax/discount calculation, rounding, snapshots, send side effects and void/cancellation before implementing those rules.
 
-Verified evidence (phase 1): Original contract merged in PR #3 at `4225679eb3a7daccaffacf65bd521636b6cc78ab`; the user's explicit product-owner and security-owner approval and completed customer/invoice API boundaries are recorded in this follow-up. No independent review or runtime security verification is claimed. Phase 1 remains IN REVIEW until this documentation update is merged.
+Verified evidence (phase 1): Original contract merged in PR #3 at `4225679eb3a7daccaffacf65bd521636b6cc78ab`; owner-approved customer/invoice API boundaries and approval record merged in PR #5 at `02278a6ceaca021889bcd2bb61bff86e46a127a3`. This verifies the planning contract only; no independent review or runtime security verification is claimed.
 ```
 
 ## Phase 2: Backend domain model and migrations
 
-### Status: NOT STARTED
-**Reason:** The owner-approved Phase 1 contract follow-up is recorded in PR #5 and must merge before this phase begins. Backend persistence design, PHP/Composer verification, and migrations have not started; ephemeral PostgreSQL is approved as the test target but not provisioned.
+### Status: IMPLEMENTED AND VERIFIED
+**Reason:** Doctrine ORM + Migrations, four tenant-domain entities with their repository mappings, four repositories and the initial migration are implemented. The migration was tested down and up in the isolated PostgreSQL 16 test database. Doctrine confirms the database schema is synchronized with current entity metadata; all ten PHPUnit tests pass. The disposable database container and anonymous volume are retained; no resets or data removal were performed.
 
 ### Goal and scope
-Add approved persistence dependencies (Symfony/Doctrine or equivalent) and define migrations for the tenant schema. Test migrations in a disposable DB before any production consideration.
+Use the approved Doctrine ORM + Migrations strategy for the initial organization/principal/membership/invitation tenant schema. Test migrations up and down only in an isolated ephemeral PostgreSQL database before any production consideration.
+
+### Persistence strategy decision
+- **Selected by user:** Doctrine ORM + Doctrine Migrations, integrated with Symfony 7.4.
+- **Database:** PostgreSQL 16; tenant data access must follow the Phase 1 application-scoping plus RLS decision. This phase creates the initial organization/principal/membership/invitation schema, not authentication middleware, API routes, business workflows, customer/invoice tables, or billing/payment schema.
+- **Disposable database:** `keelson-phase2-db` runs the local `postgres:16-alpine` image, publishes only to `127.0.0.1:55432`, and uses an anonymous Docker volume rather than the persistent Compose `db_data` volume. The inspected database and role are both `keelson_phase2`; the migration history records only `DoctrineMigrations\Version20261022164016`. This is a local disposable test target, not production and not the root Compose service.
+- **Dependencies:** Doctrine ORM 3, DBAL 4, DoctrineBundle 2.19 and MigrationsBundle 3.7 are declared/locked. Composer dependency resolution/install had completed in the preceding work; current Symfony boots with the installed vendor tree.
+- **Migration:** `Version20261022164016` creates organizations, principals, memberships and invitations with indexes, uniqueness and foreign-key constraints. It has `up()` and `down()` implementations. Migration down and up both succeeded against the isolated test DB using a disposable PHP 8.5 CLI container with PostgreSQL support.
 
 ### Prerequisites and dependencies
-- Phase 1 owner-approved domain model/API contract merged into `main` (PR #5); use the user-approved application-scoping plus PostgreSQL RLS decision.
-- PHP >=8.2 and Composer available on the target system; verify this in Phase 2 before backend work.
-- Disposable database target is isolated ephemeral PostgreSQL; provision it only for this phase and never use the persistent Compose volume.
-- Select and approve the persistence/ORM strategy before changing dependency manifests.
+- Phase 1 owner-approved domain model/API contract is merged into `main` (PR #5); use the user-approved application-scoping plus PostgreSQL RLS decision.
+- PHP 8.5.12 and Composer 2.10.0 are available on the host. Since the host lacks OpenSSL and `pdo_pgsql`, database/migration checks were run in `php:8.5-cli-bookworm` with `pdo_pgsql` built inside the disposable container. PHPUnit 11.5 supports PHP 8.2+, and Doctrine dependencies were resolved with Composer's `platform.php=8.2.0` setting. The host runtime was not changed.
+- The inspected disposable PostgreSQL 16 container uses an anonymous volume and the separate `keelson_phase2` DB/user; it is isolated from the root Compose service's named `db_data` volume. Its data and volume remain intact.
+- Persistence dependencies are locked, mappings validate, and Doctrine reports the database schema synchronized.
 
 ### Expected deliverables and files
 - Updated `composer.json` with approved persistence dependencies (or documented alternative)
@@ -317,8 +324,8 @@ Add approved persistence dependencies (Symfony/Doctrine or equivalent) and defin
 ```
 Focus: Set up the backend domain model and migrations for Keelon.
 
-1. Ensure PHP >=8.2 and Composer are available on the system (do not install if not present).
-2. Add approved persistence dependency to `composer.json` (e.g., symfony/orm-pack or documented alternative).
+1. Ensure PHP >=8.2 with OpenSSL and `pdo_pgsql`, and Composer are available; use the approved Doctrine ORM + Migrations strategy.
+2. Add Symfony ORM pack, compatible Doctrine ORM/DBAL/Bundles, and PostgreSQL support to `composer.json`; resolve and verify the lockfile.
 3. Run `composer install` and capture any errors or warnings.
 4. Generate or write migration files for tenant/organization schema using `symfony console doctrine:migrations:diff` or equivalent.
 5. Test migrations against a fresh, disposable PostgreSQL database (not the Compose production volume).
@@ -360,11 +367,10 @@ Exit criteria and definition of done:
 - Phase 3 can begin with frontend work starting independently.
 
 Unresolved business decisions:
-- Choice of persistence approach (Doctrine ORM vs alternative vs raw SQL)
 - Migration naming and versioning strategy
 - DATABASE_URL management (local vs CI secrets)
 
-Verified evidence (phase 2): NOT APPLICABLE (status is NOT STARTED)
+Verified evidence (phase 2): `composer.json` and `composer.lock` include Doctrine ORM 3, DBAL 4, DoctrineBundle 2.19 and MigrationsBundle 3.7. Four entities and four tenant-filtered repositories exist; all entities explicitly map their repositories. `Version20261022164016` was successfully applied, rolled back (`--down`), and reapplied (`--up`) against the verified PostgreSQL 16.15 disposable database. `doctrine:migrations:status` reports one executed migration and no new versions; `doctrine:schema:validate` reports correct mappings and a schema in sync, and `doctrine:schema:update --dump-sql` reports nothing to update. PHPUnit passes: 10 tests, 11 assertions. All PHP files under `src`, `tests` and `migrations` pass syntax checks; `git diff --check` passes. The isolated container uses its anonymous volume (not `db_data`), `keelson_phase2` DB/user and host port 55432; it was retained without resetting or removing data.
 ```
 
 ## Phase 3: Client app shell and design system
