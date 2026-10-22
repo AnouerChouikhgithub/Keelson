@@ -375,8 +375,8 @@ Verified evidence (phase 2): `composer.json` and `composer.lock` include Doctrin
 
 ## Phase 3: Client app shell and design system
 
-### Status: NOT STARTED
-**Reason:** Frontend design system and component patterns not yet established.
+### Status: IN PROGRESS (app shell implemented; visual scope remains partial)
+**Reason:** The React/Vite app shell, semantic light/dark theme tokens, dashboard, responsive organization-aware navigation, and mock organization switcher are implemented and browser-smoke-tested. Phase 3 is not complete against `docs/ui-spec.md`: the remaining named product screens are still placeholders or absent, and mobile horizontal overflow needs follow-up. Do not mark the complete visual screen batch delivered.
 
 ### Goal and scope
 Set up the React + Vite + Tailwind environment with shadcn/ui component patterns. Implement the Home screen and organization-aware screens as the client app shell.
@@ -384,24 +384,24 @@ Set up the React + Vite + Tailwind environment with shadcn/ui component patterns
 ### Prerequisites and dependencies
 - Phase 0 environment verified (Node, pnpm, Docker Compose passing)
 - Phase 1 domain model and API contract documented (may be preliminary)
-- Tailwind CSS configured or ready for integration
-- shadcn/ui component library or equivalent design system decision
+- Tailwind/shadcn use or a documented equivalent design-system decision (the current shell uses authored semantic CSS tokens)
 
 ### Expected deliverables and files
-- Vite project configured with Tailwind CSS
+- Vite project configured with Tailwind CSS, or a documented equivalent decision
 - shadcn/ui components installed or equivalent design tokens defined
 - Home screen component replacing the Vite starter `App.tsx`
 - Organization-aware layout with navigation between screens
 - TypeScript strict mode configuration verified (no `any` unless justified)
+- Completion of every named visual screen remains tracked against `docs/ui-spec.md`; existing placeholder navigation alone does not complete those screens
 
 ### Coding-agent prompt
 ```
 Focus: Set up the Keelon frontend app shell and design system.
 
 1. Ensure `cd frontend && pnpm install` completes (document any errors).
-2. Install shadcn/ui components or configure Tailwind design tokens if not present.
+2. Configure semantic design tokens; document a decision not to adopt Tailwind/shadcn rather than adding unapproved dependencies.
 3. Replace `src/App.tsx` with a Home screen that matches the ui-spec.md mock (use mock data only, no backend calls).
-4. Add organization-aware navigation (placeholder links only, no auth yet).
+4. Add organization-aware navigation between screens (mock presentation only; no auth or API).
 5. Verify `pnpm run build` passes with TypeScript strict mode.
 6. Verify `pnpm run lint` results are documented (known incompatibility or passing).
 
@@ -409,7 +409,7 @@ Do not implement any authentication guards or API calls. Do not assume any backe
 
 Scope limits:
 - Only set up the app shell and design system components.
-- Do not implement organization switching logic yet.
+- Organization switching may be demonstrated with local mock data only; it must not be treated as authorization.
 - Do not add any auth state or context providers.
 
 Do-not rules:
@@ -431,20 +431,29 @@ Expected results for every test case:
 
 Acceptance criteria:
 - App shell renders without errors.
-- Design system (Tailwind/shadcn) is configured or decisions are documented.
+- Design system is configured with semantic tokens or the component-library decision is documented.
+- Any incomplete screens and verification blockers are stated explicitly.
 - Home screen matches ui-spec.md intent (mock data accepted).
 
 Exit criteria and definition of done:
 - Frontend app shell is operational and buildable.
-- Design system decisions are recorded.
-- Phase 4 can begin with organization onboarding workflows.
+- Design system decisions and remaining UI gaps are recorded.
+- Phase 4 UI can proceed as a mock-only prototype; real onboarding still depends on the authenticated, authorized API foundation in Phase 5.
 
-Unresolved business decisions:
-- Tailwind vs shadcn/ui component library choice
-- Mock data vs API-driven state management approach
-- Navigation structure and route naming
+Implementation decision and remaining scope:
+- Current frontend uses React/Vite with authored semantic CSS design tokens; Tailwind and shadcn/ui were not added. No new dependency or component-library decision is asserted.
+- Current dashboard, switcher, and onboarding demo use typed in-memory mock data. No API-driven state management or persistence is present.
+- Current navigation uses local page state, not URL routes; route naming and routing library remain undecided.
+- Dashboard and organization switcher are implemented. The other UI-spec screens remain placeholders or are not present; this is a partial shell, not completion of the full 11-screen visual delivery.
+- Organization creation, invitation submission, and switching are local demo interactions only. They are not authenticated, persisted, or authorization boundaries.
 
-Verified evidence (phase 3): NOT APPLICABLE (status is NOT STARTED)
+Verified evidence (phase 3, 2026-10-22):
+- `cd frontend && pnpm run build` — PASS; TypeScript project build and Vite production build completed (20 modules).
+- `git diff --check` — PASS for the working tree at verification time.
+- `cd frontend && pnpm run lint` — BLOCKED/FAIL, exit 2: `typescript-eslint@8.71.2` rejects TypeScript `7.0.2` (`typescript-eslint does not support TS 7.0`). No dependency workaround was applied.
+- Browser smoke test at `http://localhost:5173/`: dashboard rendered with 4 metric cards and 5 recent invoices; onboarding navigation rendered its forms; organization switch to Carthage Studio updated the active label and breadcrumb; light/dark buttons updated the root theme and dark token background (`rgb(11, 15, 20)`). At 1440px no document overflow was observed. At 390px the invoice table has 576px of content in a 319px horizontally scrollable wrapper; the document also reported a 564px `scrollWidth` for a 390px viewport, so mobile page-level horizontal overflow remains a known issue to investigate.
+- Browser console after a clean reload had no runtime errors; earlier HMR syntax errors during in-progress edits are not treated as final-state errors.
+- No frontend test script exists. Lint and automated UI tests remain outstanding.
 ```
 
 ## Phase 4: Client workflows — organization onboarding
