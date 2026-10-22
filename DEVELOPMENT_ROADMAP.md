@@ -41,7 +41,7 @@ Keelson is a multi-tenant SaaS starter project with organization membership and 
 
 Status evidence (verified 2026-10-22):
 - Phase 0 PR #2 is merged into `main` (merge commit `911b16ff667c9173ca74fb0972e750fc7fc67164`); its recorded environment evidence and blockers are now part of `main`.
-- Phase 1 deliverables are in review in PR #3; the phase is not VERIFIED until the PR is merged and required product/security review is confirmed.
+- Phase 1 PR #3 is merged into `main` (merge commit `4225679eb3a7daccaffacf65bd521636b6cc78ab`); the draft contract is in `main`, but explicit product/security review has not been recorded and Phase 1 is not VERIFIED.
 - `cd Keelson/frontend && pnpm install` — PASS: `Already up to date`; pnpm 12.14.0.
 - `cd Keelson/frontend && pnpm run build` — PASS: Vite 8.3.4 build completed successfully (20 modules; exit 0).
 - `cd Keelson/frontend && pnpm run lint` — FAIL, exit 2: `typescript-eslint@8.71.2` reports `typescript-eslint does not support TS 7.0.` No dependency/config workaround applied; decision: defer and retain as a blocker for a later scoped phase.
@@ -125,8 +125,8 @@ Verified evidence (phase 0): See `Status evidence` above. PR #2 is merged and th
 
 ## Phase 1: Requirements, domain model and API contract
 
-### Status: IN REVIEW - PR #3
-**Reason:** The contract and model draft are recorded below from explicit user-approved choices. Product/security owner review remains outstanding; this phase is not VERIFIED and Phase 2 must not start until that review is confirmed.
+### Status: IN REVIEW - PR #3 merged; owner review pending
+**Reason:** The contract and model draft are recorded below from explicit user-approved choices and merged into `main` in PR #3 at `4225679eb3a7daccaffacf65bd521636b6cc78ab`. No product/security owner review is recorded in the PR; this phase is not VERIFIED and Phase 2 must not start until that review is confirmed.
 
 ### Goal and scope
 Define the tenant, principal, and organization model as the secure foundation for all subsequent work. Establish API contract boundaries before any implementation begins.
@@ -275,7 +275,7 @@ Open review decisions:
 - Define ownership transfer, organization deletion/retention, invitation delivery/rate limits/duplicate handling, API error/pagination/CSRF conventions, invoice/customer constraints, and RLS transaction/context lifecycle.
 - Confirm whether invoice/customer endpoints belong in the agreed API contract scope; no billing/payment endpoints are included.
 
-Verified evidence (phase 1): Draft contract is persisted in this roadmap and is in review under PR #3; security review and merge are pending. Do not mark VERIFIED or start Phase 2 until both are confirmed.
+Verified evidence (phase 1): Draft contract is persisted in this roadmap and merged in PR #3 at `4225679eb3a7daccaffacf65bd521636b6cc78ab`. Product/security owner review remains pending; do not mark VERIFIED or start Phase 2 until that review is confirmed.
 ```
 
 ## Phase 2: Backend domain model and migrations
