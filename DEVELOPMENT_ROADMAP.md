@@ -28,7 +28,7 @@ Keelson is a multi-tenant SaaS starter project with organization membership and 
 
 | Phase | Status | Focus |
 |-------|--------|-------|
-| 0: Environment and repository readiness | NOT STARTED | Verify Node/pnpm/Docker availability; confirm frontend build passes; confirm backend PHP/Composer environment; establish disposable DB target |
+| 0: Environment and repository readiness | IN REVIEW - PR #2 | Verify Node/pnpm/Docker availability; confirm frontend build passes; confirm backend PHP/Composer environment; establish disposable DB target |
 | 1: Requirements, domain model and API contract | NOT STARTED | Define tenant/principal model; API contract for organization/membership/invoice; review ui-spec.md invariants |
 | 2: Backend domain model and migrations | NOT STARTED | Add approved persistence dependencies; define migrations for tenant schema; test migrations in disposable DB |
 | 3: Client app shell and design system | NOT STARTED | Set up React + Vite + Tailwind; integrate shadcn/ui component patterns; implement Home and organization-aware screens |
@@ -40,18 +40,24 @@ Keelson is a multi-tenant SaaS starter project with organization membership and 
 | 9: Hardening, CI and release readiness | NOT STARTED | CI pipeline for build/lint/tests; security regression suite; documented rollback and observability |
 
 Status evidence (verified 2026-10-22):
-- Frontend `pnpm run build` passes on audit host (known TS 7/Eslint 8 incompatibility)
-- Frontend `pnpm run lint` fails: installed `typescript-eslint@8.71.2` does not support TypeScript 7.0.2
-- Backend `php bin/phpunit` is BLOCKED: PHP unavailable; only bootstrap exists, no test cases
-- `docker compose -f docker-compose.yml config --quiet` passes: Compose config validated, not started
-- No CI workflow found in repository
-- Frontend has no test script defined
-- Backend has no application test cases beyond bootstrap
+- Phase 0 is IN REVIEW pending PR; not VERIFIED before merge.
+- `cd Keelson/frontend && pnpm install` — PASS: `Already up to date`; pnpm 12.14.0.
+- `cd Keelson/frontend && pnpm run build` — PASS: Vite 8.3.4 build completed successfully (20 modules; exit 0).
+- `cd Keelson/frontend && pnpm run lint` — FAIL, exit 2: `typescript-eslint@8.71.2` reports `typescript-eslint does not support TS 7.0.` No dependency/config workaround applied; decision: defer and retain as a blocker for a later scoped phase.
+- `cd Keelson && docker compose -f docker-compose.yml config --quiet` — PASS, exit 0 with no output. Compose syntax validated only; no services started and no DB/volume touched.
+- `cd Keelson && php -v` — PHP 8.5.12; `composer -V` — Composer 2.10.0; `pnpm -v` — 12.14.0; `node -v` — v24.13.0; `docker version --format "{{.Server.Version}}"` — 29.5.2.
+- Disposable migration database decision: use isolated ephemeral PostgreSQL only; this phase did not provision/start it or connect to any database.
+- `cd Keelson && git status --porcelain --ignored` — `?? docs/ORCHESTRATION_READINESS.md`; ignored `.freebuff/`, `backend/vendor/`, `frontend/dist/`, `frontend/node_modules/`. Existing readiness report was not staged or changed.
+- `cd Keelson && git rev-parse HEAD` before phase changes — `27bf422f8097e564027927f5e08c40215d2bc7b0`; branch was based on up-to-date `origin/main`.
+- `git diff --stat` before phase changes — empty.
+- Backend PHPUnit, PHPStan, container lint and DB migrations were not run: Phase 0 forbids backend operations and database migrations. No backend test cases beyond the bootstrap are noted in the baseline audit.
+- No frontend test script is defined; no frontend test command was run.
+- No CI workflow was found in the baseline repository inspection.
 
 ## Phase 0: Environment and repository readiness
 
-### Status: NOT STARTED
-**Reason:** No verified environment setup has been confirmed on the audit host; PHP/Composer unavailable; frontend lint known to fail.
+### Status: IN REVIEW - PR #2
+**Reason:** Required Phase 0 environment checks are recorded; frontend build and Compose validation pass. Frontend lint remains blocked by the TypeScript 7 / typescript-eslint compatibility error. This status is not VERIFIED until PR merge.
 
 ### Goal and scope
 Verify that the development environment is functional and the repository state is sound before implementing any features. Confirm frontend build, Compose syntax, and identify blockers that must be resolved first.
@@ -59,14 +65,14 @@ Verify that the development environment is functional and the repository state i
 ### Prerequisites and dependencies
 - Node 24.13.0, pnpm 12.14.0 available on audit host
 - Docker Compose available; `docker compose -f docker-compose.yml config --quiet` passes
-- PHP and Composer NOT available on audit host (must be resolved before backend work)
+- PHP 8.5.12 and Composer 2.10.0 are available on the current host; backend work still requires scoped verification and approved DB target
 - Frontend: `pnpm install` and `pnpm run build` must pass without errors
-- Backend: PHP >=8.2 and Composer must be available for any Symfony operations
+- Backend: PHP >=8.2 and Composer must be available for any Symfony operations; current versions: PHP 8.5.12 and Composer 2.10.0
 
 ### Expected deliverables and files
 - Verified `pnpm run build` passes (or documented failure reasons)
 - Verified `docker compose config --quiet` passes
-- Documented list of blocking issues (TypeScript/Eslint incompatibility, PHP unavailable)
+- Documented list of blocking issues (TypeScript 7 / typescript-eslint 8.71.2 lint incompatibility); PHP/Composer availability recorded
 - Repository state recorded: `git status`, `git diff --stat`, `git rev-parse HEAD`
 
 ### Coding-agent prompt
@@ -109,11 +115,11 @@ Exit criteria and definition of done:
 - The roadmap acknowledges which phases depend on resolved environment issues
 
 Unresolved business decisions:
-- PHP/Composer availability and version selection
-- Frontend toolchain compatibility (TS 7 vs typescript-eslint 8)
-- Disposable DB target for backend migrations
+- Frontend toolchain compatibility (TS 7 vs typescript-eslint 8): decision for this phase is to record/defer; no dependency change.
+- Disposable DB target: decision is an isolated ephemeral PostgreSQL database for later migration checks; no database is started or used in Phase 0.
+- PHP/Composer version selection remains open for project-wide support policy; host currently provides PHP 8.5.12 and Composer 2.10.0.
 
-Verified evidence (phase 0): NOT APPLICABLE (status is NOT STARTED)
+Verified evidence (phase 0): See `Status evidence` above. Phase remains IN REVIEW until its PR is merged; do not mark VERIFIED before merge.
 ```
 
 ## Phase 1: Requirements, domain model and API contract
