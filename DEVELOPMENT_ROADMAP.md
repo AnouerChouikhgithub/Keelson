@@ -29,7 +29,7 @@ Keelson is a multi-tenant SaaS starter project with organization membership and 
 | Phase | Status | Focus |
 |-------|--------|-------|
 | 0: Environment and repository readiness | VERIFIED - PR #2 merged | Frontend build and Compose syntax verified; environment recorded; lint incompatibility deferred; ephemeral PostgreSQL target documented |
-| 1: Requirements, domain model and API contract | IN REVIEW - PR #3 | Document tenant/principal model and API boundaries; record approved security decisions and UI invariants |
+| 1: Requirements, domain model and API contract | IN REVIEW - PR #5 | Record owner-approved tenant/principal model, customer CRUD, invoice lifecycle, and API boundaries |
 | 2: Backend domain model and migrations | NOT STARTED | Add approved persistence dependencies; define migrations for tenant schema; test migrations in disposable DB |
 | 3: Client app shell and design system | NOT STARTED | Set up React + Vite + Tailwind; integrate shadcn/ui component patterns; implement Home and organization-aware screens |
 | 4: Client workflows — organization onboarding | NOT STARTED | Implement organization creation, switching, and member invitation flows (frontend + API) |
@@ -41,7 +41,7 @@ Keelson is a multi-tenant SaaS starter project with organization membership and 
 
 Status evidence (verified 2026-10-22):
 - Phase 0 PR #2 is merged into `main` (merge commit `911b16ff667c9173ca74fb0972e750fc7fc67164`); its recorded environment evidence and blockers are now part of `main`.
-- Phase 1 PR #3 is merged into `main` (merge commit `4225679eb3a7daccaffacf65bd521636b6cc78ab`); the draft contract is in `main`, but explicit product/security review has not been recorded and Phase 1 is not VERIFIED.
+- Phase 1 contract PR #3 is merged into `main` (merge commit `4225679eb3a7daccaffacf65bd521636b6cc78ab`). The user explicitly approved it as both product and security owner and requested customer CRUD plus invoice lifecycle boundaries. This is owner approval, not independent third-party review. This follow-up records the scope and must merge before Phase 2.
 - `cd Keelson/frontend && pnpm install` — PASS: `Already up to date`; pnpm 12.14.0.
 - `cd Keelson/frontend && pnpm run build` — PASS: Vite 8.3.4 build completed successfully (20 modules; exit 0).
 - `cd Keelson/frontend && pnpm run lint` — FAIL, exit 2: `typescript-eslint@8.71.2` reports `typescript-eslint does not support TS 7.0.` No dependency/config workaround applied; decision: defer and retain as a blocker for a later scoped phase.
@@ -125,26 +125,26 @@ Verified evidence (phase 0): See `Status evidence` above. PR #2 is merged and th
 
 ## Phase 1: Requirements, domain model and API contract
 
-### Status: IN REVIEW - PR #3 merged; owner review pending
-**Reason:** The contract and model draft are recorded below from explicit user-approved choices and merged into `main` in PR #3 at `4225679eb3a7daccaffacf65bd521636b6cc78ab`. No product/security owner review is recorded in the PR; this phase is not VERIFIED and Phase 2 must not start until that review is confirmed.
+### Status: IN REVIEW - PR #5
+**Reason:** The user explicitly approved the Phase 1 contract as both product and security owner and requested customer CRUD and invoice lifecycle boundaries. This follow-up records that approval and contract scope. This is direct owner approval, not an independent third-party security review. Keep Phase 1 IN REVIEW and do not start Phase 2 until this update is merged.
 
 ### Goal and scope
 Define the tenant, principal, and organization model as the secure foundation for all subsequent work. Establish API contract boundaries before any implementation begins.
 
 ### Prerequisites and dependencies
 - Phase 0 PR #2 merged into `main`; environment evidence and the lint blocker are recorded above.
-- Explicit product/security owner review of the draft below is still required; the user's chosen options are recorded as proposed contract decisions, not as completed independent security review.
-- Review `docs/ui-spec.md` for intended screen invariants below (these are product requirements, not verified implementation).
+- Product/security owner approval of the contract and customer/invoice scope was explicitly given by the user and is recorded below. No independent review or runtime security verification is claimed; merge this follow-up before Phase 2.
+- UI invariants below are transcribed from `docs/ui-spec.md` as intended product requirements, not verified implementation.
 - No database schema, authentication code, routes, or API implementations are assumed to exist.
 
 ### Expected deliverables and files
-- This roadmap contains the draft model, API contract, approved choices, and negative access-control test concepts.
-- Product/security owner review note remains pending.
+- This roadmap contains the tenant/principal model, API contract, owner-approved choices, customer CRUD and invoice lifecycle boundaries, and negative access-control test concepts.
+- The user's approval as product and security owner is recorded below; no independent third-party review is claimed.
 
-### Phase 1 draft contract (for product/security review)
+### Phase 1 owner-approved contract (implementation planning boundary)
 
 #### Scope and evidence boundary
-This is a planning contract only. It defines intended responsibilities and wire-level shapes for subsequent review; it does not assert that any endpoint, identity provider, RLS policy, UI, or domain behavior currently exists. No SQL, migration, implementation code, credentials, or provider-specific OIDC settings are defined here. Invoice, billing, payment, and subscription fields are excluded because they were not separately approved in the Phase 1 decision dialogue; `docs/ui-spec.md` mentions those screens, but that alone is not approval to define billing APIs or persistence.
+This is an owner-approved planning contract only. It defines intended responsibilities and wire-level shapes for subsequent implementation; it does not assert that any endpoint, identity provider, RLS policy, UI, or domain behavior currently exists. No SQL, migration, implementation code, credentials, or provider-specific OIDC settings are defined here. Customer and invoice API boundaries are included at the user's request. Billing, payment collection, and subscription APIs and fields remain excluded; the UI spec alone is not authorization to define billing APIs or persistence.
 
 #### Screen-level invariants extracted from `docs/ui-spec.md`
 1. **Sign in / sign up / forgot password:** provide the three authentication entry screens. Provider-driven recovery and exact session UX remain unspecified.
@@ -161,73 +161,87 @@ This is a planning contract only. It defines intended responsibilities and wire-
 
 **Shared presentation requirements:** every screen supports light and dark themes through central semantic tokens; desktop-first responsive layout remains usable on mobile; applicable data screens provide loading skeleton, empty, error/retry, and success feedback; controls are labeled and keyboard/focus accessible; mock data only until backend integration is approved. These are intended requirements, not claims of shipped behavior.
 
-#### Tenant, principal, and authorization model (draft)
-- **Principal/user:** the authenticated human identity established by the OIDC identity provider. Contract-level identity reference is an opaque, stable `subject` (`sub`) plus display name and email for presentation/contact only. Email is not an authorization key. Provider issuer and subject together identify the external identity; account-linking behavior is outside scope pending product review.
+#### Tenant, principal, and authorization model (approved baseline)
+- **Principal/user:** the authenticated human identity established by the OIDC identity provider. Contract-level identity reference is an opaque, stable `subject` (`sub`) plus display name and email for presentation/contact only. Email is not an authorization key. Provider issuer and subject together identify the external identity; account linking is a later implementation concern and may not merge identities by email alone.
 - **Organization/tenant:** a tenant boundary with an opaque organization ID, display name, unique normalized subdomain, lifecycle status, and creation/update timestamps. Tenant membership is explicit; a user's existence or invitation does not grant membership.
 - **Ownership:** each active organization has exactly one active Owner membership. Ownership transfer is not included in this contract and requires an explicit reviewed operation before implementation. Organization deletion is an explicit, separately authorized lifecycle action; cascade/retention behavior is unresolved and must be decided before migrations.
-- **Membership:** association of a principal with one organization, a role (`Owner`, `Admin`, `Member`, or `Viewer`), status (`active` or `suspended`), and timestamps. Role grants are organization-scoped. A member may belong to multiple organizations; switching changes the selected organization context only and never grants access.
-- **Invitation:** organization-scoped invitation with normalized recipient email, intended role (not `Owner`), issuer principal, random single-use token whose verifier is stored hashed, expiry 72 hours after issuance, lifecycle status (`pending`, `accepted`, `revoked`, or `expired`), and timestamps. A raw token is generated only on issuance/resend and delivered through a security-approved channel; it is never exposed by API responses, read/list responses, or logs. Exact delivery and recovery mechanisms remain pending review. Accepting consumes it atomically; revoke/accept/expiry are terminal for that token. Resend issues a new token and invalidates the previous one. Acceptance must bind to a signed-in identity whose verified email matches the invitation recipient; product review must confirm email-verification availability and behavior. Reissue rate limits, delivery channel, and invited-user account creation are unresolved.
-- **Roles:** Owner may administer organization membership/invitations and organization settings; Admin may administer members/invitations and ordinary settings but cannot transfer ownership or delete the organization; Member may use ordinary organization workflows; Viewer has read-only organization access. Exact per-resource/action permissions are a Phase 1 review item, and role names alone do not imply invoice or billing capabilities.
+- **Membership:** association of a principal with one organization, a role (`Owner`, `Admin`, `Member`, or `Viewer`), status (`active` or `suspended`), and timestamps. Role grants are organization-scoped. A member may belong to multiple organizations; switching changes the selected organization context only and never grants access. Each active organization must retain at least one active Owner; member role changes and removals may not violate that invariant.
+- **Invitation:** organization-scoped invitation with normalized recipient email, intended role (not `Owner`), issuer principal, random single-use token whose verifier is stored hashed, expiry 72 hours after issuance, lifecycle status (`pending`, `accepted`, `revoked`, or `expired`), and timestamps. A raw token is generated only on issuance/resend, dispatched through the approved secure delivery path, and never exposed by API responses or logs. Accepting consumes it atomically; revoke/accept/expiry are terminal for that token. Resend issues a new token and invalidates the previous one. Acceptance requires a signed-in identity with a verified email matching the invitation recipient; the OIDC provider must supply a trustworthy verified-email claim. Rate limits and delivery implementation are security requirements.
+- **Roles:** Owner may administer organization membership/invitations and organization settings; Admin may administer members/invitations and ordinary settings but cannot transfer ownership or delete the organization; Member may use ordinary organization workflows; Viewer has read-only organization access. Role names alone do not grant permissions beyond the approved organization/member/invitation boundaries; each endpoint still requires server-side authorization.
 - **Super-admin:** a separate platform-level authority, not a tenant role or organization membership. No self-service endpoint can grant it. Its identity source, assignment process, auditing, and impersonation boundary are unresolved; platform administration remains unavailable until those controls are separately specified and reviewed.
-- **Tenant enforcement decision (user-approved draft):** application-layer authorization and organization scoping on every request, plus PostgreSQL Row-Level Security as defense in depth. The rationale is to enforce business roles and tenant context in the application while retaining a database boundary against a missed or faulty application filter; neither layer alone is treated as sufficient. The server derives the active organization from authenticated membership/context, verifies membership and role for every operation, and establishes database tenant context transaction-locally. This is a target design only: database support/policies, connection-pool context reset, background jobs, and bypass roles must be designed and tested in Phase 2/5 before any security claim.
-- **Identity/session decision (user-approved draft):** OIDC sign-in with a server-managed session. Provider selection, OIDC client configuration, callback/CSRF details, session store, cookie attributes/lifetime, sign-up/account-linking behavior, and recovery flow remain open implementation decisions. No JWT bearer contract is introduced.
-- **Invitation-token decision (user-approved draft):** cryptographically random single-use token, store only a hash/verifier, 72-hour expiry; acceptance/revocation invalidates it and resend rotates it. Token format, entropy parameters, throttling, and delivery are implementation/security review items.
+- **Tenant enforcement decision (owner-approved):** application-layer authorization and organization scoping on every request, plus PostgreSQL Row-Level Security as defense in depth. The rationale is to enforce business roles and tenant context in the application while retaining a database boundary against a missed or faulty application filter; neither layer alone is treated as sufficient. The server derives the active organization from authenticated membership/context, verifies membership and role for every operation, and establishes database tenant context transaction-locally. This is a target design only: database support/policies, connection-pool context reset, background jobs, and bypass roles must be designed and tested in Phase 2/5 before any security claim.
+- **Identity/session decision (owner-approved):** OIDC sign-in with a server-managed session. Provider selection, OIDC client configuration, callback/CSRF details, session store, cookie attributes/lifetime, sign-up/account-linking behavior, and recovery flow are implementation details; configure them securely and test them before enabling login. No JWT bearer contract is introduced.
+- **Invitation-token decision (owner-approved):** cryptographically random single-use token, store only a hash/verifier, 72-hour expiry; acceptance/revocation invalidates it and resend rotates it. Token format and entropy parameters must meet cryptographic randomness requirements; implement throttling and secure delivery before enabling invitations.
 
-#### API contract boundaries (draft; JSON over HTTPS)
-All authenticated endpoints use the server-managed session. Request organization IDs are selectors, never proof of authority: every operation verifies authenticated principal, active membership, role, and tenant scope. Responses must not disclose another tenant's existence or data; inaccessible and nonexistent organization resources should use a consistent non-enumerating denial policy. Mutating requests require CSRF/origin protection appropriate to the eventual session implementation. Error schemas and pagination conventions are common contract items to finalize before implementation. Role labels below are provisional until the Owner/Admin/Member/Viewer action matrix receives product/security approval.
+#### API contract boundaries (owner-approved; JSON over HTTPS)
+All authenticated endpoints use the server-managed session. Request organization IDs are selectors, never proof of authority: every operation verifies authenticated principal, active membership, role, and tenant scope. Responses must not disclose another tenant's existence or data; inaccessible and nonexistent organization resources should use a consistent non-enumerating denial policy. Mutating requests require CSRF/origin protection appropriate to the eventual session implementation. Error schemas, pagination and exact per-resource role enforcement are implementation details to specify before coding; Owner/Admin/Member/Viewer boundaries below are the approved domain baseline.
 
 1. **Create organization** — `POST /api/organizations`; authenticated principal only. Request: `{ "name": string, "subdomain": string }`. Response `201`: `{ "organization": { "id": string, "name": string, "subdomain": string, "status": "active" }, "membership": { "role": "Owner", "status": "active" } }`. Server normalizes/validates subdomain uniqueness atomically and creates exactly one Owner membership for the caller. No plan, payment, or billing property is accepted.
-2. **Check subdomain availability** — `GET /api/organization-subdomains/{subdomain}/availability`; public, advisory response `{ "available": boolean }`. Must not reserve the value or replace uniqueness validation on creation. Rate limiting and disclosure policy are implementation decisions.
+2. **Check subdomain availability** — `GET /api/organization-subdomains/{subdomain}/availability`; public, advisory response `{ "available": boolean }`. Must not reserve the value or replace uniqueness validation on creation. Rate limiting is required; availability is advisory and must not reserve a subdomain or disclose tenant-private data.
 3. **List organizations / member switch** — `GET /api/me/organizations` returns only the caller's memberships, with `{ "items": [{ "organization": { "id": string, "name": string, "subdomain": string }, "role": Role, "membershipStatus": string }] }`. `POST /api/session/organization` request `{ "organizationId": string }`; response `{ "activeOrganization": { "id": string, "name": string }, "role": Role }`. Server verifies active membership before changing session context; unknown and unauthorized IDs do not reveal tenant data.
-4. **List members** — `GET /api/organizations/{organizationId}/members`; response `{ "items": [{ "principal": { "subject": string, "displayName": string, "email": string }, "role": Role, "status": string, "joinedAt": string }] }`. Restricted to authorized tenant members according to reviewed permissions; no cross-tenant lookup.
-5. **Change member role** — `PATCH /api/organizations/{organizationId}/members/{subject}`; request `{ "role": "Admin" | "Member" | "Viewer" }`; response `{ "membership": { "subject": string, "role": Role, "status": "active" } }`. Owner/Admin-only draft; cannot assign Owner, change the acting user's own role, or remove/demote the last Owner. Exact authority and concurrency behavior require review.
-6. **Remove member** — `DELETE /api/organizations/{organizationId}/members/{subject}`; response `204`; Owner/Admin-only draft. Cannot remove the last active Owner; self-removal/owner departure and historical-data retention remain review items. No operation can change another tenant's membership.
-7. **Issue invitation** — `POST /api/organizations/{organizationId}/invitations`; request `{ "email": string, "role": "Admin" | "Member" | "Viewer" }`; response `201` includes invitation ID, email, role, `status: "pending"`, and `expiresAt`, but never the stored token verifier or raw token. The raw token is generated and dispatched only through a separately approved channel, never returned by the API; delivery mechanism requires security/product approval. Owner/Admin only; cannot invite Owner or create duplicate active membership/invitation without defined conflict behavior.
-8. **List invitations** — `GET /api/organizations/{organizationId}/invitations`; response `{ "items": [{ "id": string, "email": string, "role": Role, "status": string, "expiresAt": string, "createdAt": string }] }`. Never returns a raw token or hash/verifier. Restricted to reviewed Owner/Admin permissions.
-9. **Resend invitation** — `POST /api/organizations/{organizationId}/invitations/{invitationId}/resend`; no token in request; response returns pending invitation metadata with refreshed `expiresAt`. Owner/Admin only; invalidates any previous token and issues a new single-use token. Delivery mechanism and resend throttling require approval.
-10. **Revoke invitation** — `DELETE /api/organizations/{organizationId}/invitations/{invitationId}`; response `204`; Owner/Admin only. Revocation is idempotent or returns a documented terminal-state conflict (choose consistently before implementation); revoked tokens cannot be accepted.
+4. **List members** — `GET /api/organizations/{organizationId}/members`; response `{ "items": [{ "principal": { "subject": string, "displayName": string, "email": string }, "role": Role, "status": string, "joinedAt": string }] }`. Available only to an authenticated, active member of the same tenant; never perform cross-tenant lookup.
+5. **Change member role** — `PATCH /api/organizations/{organizationId}/members/{subject}`; request `{ "role": "Admin" | "Member" | "Viewer" }`; response `{ "membership": { "subject": string, "role": Role, "status": "active" } }`. Owner/Admin-only; cannot assign Owner, change the acting user's own role, or remove/demote the last Owner. Server-side authorization is required; updates must preserve at least one active Owner.
+6. **Remove member** — `DELETE /api/organizations/{organizationId}/members/{subject}`; response `204`; Owner/Admin-only. Cannot remove the last active Owner; self-removal/owner departure behavior must preserve the last-active-Owner invariant; historical-data retention is outside this API contract. No operation can change another tenant's membership.
+7. **Issue invitation** — `POST /api/organizations/{organizationId}/invitations`; request `{ "email": string, "role": "Admin" | "Member" | "Viewer" }`; response `201` includes invitation ID, email, role, `status: "pending"`, and `expiresAt`, but never the stored token verifier or raw token. The raw token is generated and dispatched only through a separately approved channel, never returned by the API; delivery is outside the endpoint response and must be implemented via the approved secure delivery path. Owner/Admin only; cannot invite Owner or create duplicate active membership/invitation and duplicate active memberships are rejected.
+8. **List invitations** — `GET /api/organizations/{organizationId}/invitations`; response `{ "items": [{ "id": string, "email": string, "role": Role, "status": string, "expiresAt": string, "createdAt": string }] }`. Never returns a raw token or hash/verifier. Accessible only to Owner/Admin members with invitation-management permission.
+9. **Resend invitation** — `POST /api/organizations/{organizationId}/invitations/{invitationId}/resend`; no token in request; response returns pending invitation metadata with refreshed `expiresAt`. Owner/Admin only; invalidates any previous token and issues a new single-use token. Secure delivery and resend throttling are mandatory implementation controls.
+10. **Revoke invitation** — `DELETE /api/organizations/{organizationId}/invitations/{invitationId}`; response `204`; Owner/Admin only. Revocation is idempotent; revoked tokens cannot be accepted.
 11. **Accept invitation** — `POST /api/invitations/accept`; request `{ "token": string }` under an authenticated session; response `{ "organization": { "id": string, "name": string }, "membership": { "role": Role, "status": "active" } }`. Validate hash, pending status, expiry, and verified email match; atomically consume token and create membership, preventing replay and duplicate membership. Invalid, expired, revoked, used, and non-matching-email cases return a consistent non-enumerating denial.
 
-12. **List customers** — `GET /api/organizations/{organizationId}/customers`; response `200`: `{ "items": [CustomerSummary], "nextCursor": string | null }`. `CustomerSummary`: `{ "id": string, "name": string, "email": string | null, "phone": string | null }`. Only authorized members of that organization receive data.
-13. **Create customer** — `POST /api/organizations/{organizationId}/customers`; request `{ "name": string, "email": string | null, "phone": string | null, "billingAddress": Address | null }`; response `201`: `{ "customer": Customer }`. `Address`: `{ "street": string, "city": string, "postalCode": string, "countryCode": string }`; `Customer` includes `CustomerSummary` plus `billingAddress`. Address validation/normalization and duplicate rules require review.
-14. **List invoices** — `GET /api/organizations/{organizationId}/invoices`; optional status filter. Response `200`: `{ "items": [InvoiceSummary], "nextCursor": string | null }`. Only authorized members of that organization receive data; `InvoiceSummary`: `{ "id": string, "customerId": string, "status": "draft" | "sent" | "paid" | "overdue", "issueDate": "YYYY-MM-DD", "dueDate": "YYYY-MM-DD", "currency": string, "total": string }`.
-15. **Create invoice draft** — `POST /api/organizations/{organizationId}/invoices`; request `{ "customerId": string, "issueDate": "YYYY-MM-DD", "dueDate": "YYYY-MM-DD", "currency": string, "lineItems": [{ "description": string, "quantity": number, "unitPrice": string }], "taxRate": string | null, "discountAmount": string | null }`. Response `201`: `{ "invoice": Invoice }` with `status: "draft"`. Request is tenant-scoped and verifies that the customer belongs to the organization. The field shape is a draft derived from the UI; currency policy, decimal precision, tax meaning, discount semantics, totals and rounding require domain/security review before migrations or implementation.
-16. **Read invoice** — `GET /api/organizations/{organizationId}/invoices/{invoiceId}`; response `200`: `{ "invoice": Invoice }`; enforce organization scoping on both invoice and customer references.
-17. **Update draft** — `PATCH /api/organizations/{organizationId}/invoices/{invoiceId}`; accepts the editable fields from the create-draft request only while the invoice remains `draft`; response returns `{ "invoice": Invoice }`. Sent/paid/overdue state changes are not permitted through this operation.
-18. **Send invoice** — `POST /api/organizations/{organizationId}/invoices/{invoiceId}/send`; response returns `{ "invoice": Invoice }` with `status: "sent"`. Delivery mechanism, authorization granularity, atomic state transition, and retry/idempotency behavior remain review items.
+12. **List customers** — `GET /api/organizations/{organizationId}/customers`; response `200`: `{ "items": [CustomerSummary], "nextCursor": string | null }`. `CustomerSummary`: `{ "id": string, "name": string, "email": string | null, "phone": string | null }`. Only authorized members of that organization receive data; pagination must not cross tenant boundaries.
+13. **Create customer** — `POST /api/organizations/{organizationId}/customers`; request `{ "name": string, "email": string | null, "phone": string | null, "billingAddress": Address | null }`; response `201`: `{ "customer": Customer }`. `Address`: `{ "street": string, "city": string, "postalCode": string, "countryCode": string }`; `Customer` includes `CustomerSummary` plus `billingAddress`. `Address` follows the shape above; validation/normalization and duplicate rules are implementation details to define before coding.
+14. **Read customer** — `GET /api/organizations/{organizationId}/customers/{customerId}`; response `200`: `{ "customer": Customer }`. Enforce organization scope and return non-enumerating denial for inaccessible or absent IDs.
+15. **Update customer** — `PATCH /api/organizations/{organizationId}/customers/{customerId}`; request accepts mutable fields from Create customer; response `200`: `{ "customer": Customer }`. Verify route organization and customer ownership; invoice snapshots must remain historically consistent as specified below.
+16. **Delete customer** — `DELETE /api/organizations/{organizationId}/customers/{customerId}`; response `204` when no invoice references exist; return a documented conflict while referenced unless a later approved archival rule supersedes this. Enforce tenant scope.
+17. **List invoices** — `GET /api/organizations/{organizationId}/invoices`; optional status filter. Response `200`: `{ "items": [InvoiceSummary], "nextCursor": string | null }`. Only authorized members of that organization receive data; `InvoiceSummary`: `{ "id": string, "customerId": string, "status": "draft" | "sent" | "paid" | "overdue", "issueDate": "YYYY-MM-DD", "dueDate": "YYYY-MM-DD", "currency": string, "total": string }`.
+18. **Create invoice draft** — `POST /api/organizations/{organizationId}/invoices`; request `{ "customerId": string, "issueDate": "YYYY-MM-DD", "dueDate": "YYYY-MM-DD", "currency": string, "lineItems": [{ "description": string, "quantity": number, "unitPrice": string }], "taxRate": string | null, "discountAmount": string | null }`. Response `201`: `{ "invoice": Invoice }` with `status: "draft"`. Request is tenant-scoped and verifies that the customer belongs to the organization. Amounts are represented as decimal strings; currency must be a valid supported ISO 4217 code. Tax and discount inputs are explicit decimal rates/amounts, and the server computes totals using decimal arithmetic. Before implementation, choose and document supported currencies, tax jurisdiction/rules, decimal precision and rounding, then cover those decisions with tests.
+19. **Read invoice** — `GET /api/organizations/{organizationId}/invoices/{invoiceId}`; response `200`: `{ "invoice": Invoice }`; enforce organization scoping on both invoice and customer references.
+20. **Update draft** — `PATCH /api/organizations/{organizationId}/invoices/{invoiceId}`; accepts the editable fields from the create-draft request only while the invoice remains `draft`; response returns `{ "invoice": Invoice }`. Sent/paid/overdue state changes are not permitted through this operation.
+21. **Send invoice** — `POST /api/organizations/{organizationId}/invoices/{invoiceId}/send`; response returns `{ "invoice": Invoice }` with `status: "sent"`. The transition is atomic, idempotent, and restricted to an authorized organization member; any notification side effect must not duplicate on retry.
 
-Draft invoice response representation: `{ "id": string, "customerId": string, "status": "draft" | "sent" | "paid" | "overdue", "issueDate": "YYYY-MM-DD", "dueDate": "YYYY-MM-DD", "currency": string, "lineItems": [{ "description": string, "quantity": number, "unitPrice": string }], "taxRate": string | null, "discountAmount": string | null, "subtotal": string, "taxAmount": string, "total": string }`. Amounts are decimal strings to avoid JSON binary floating point, but exact precision/rounding and whether `overdue` is derived are unresolved contract choices. These are proposed wire shapes only, not approved financial rules.
+Invoice response representation: `{ "id": string, "customerId": string, "status": "draft" | "sent" | "paid" | "overdue", "issueDate": "YYYY-MM-DD", "dueDate": "YYYY-MM-DD", "currency": string, "lineItems": [{ "description": string, "quantity": number, "unitPrice": string }], "taxRate": string | null, "discountAmount": string | null, "subtotal": string, "taxAmount": string, "total": string }`. Amounts are decimal strings to avoid JSON binary floating point.
+22. **Mark invoice paid** — `POST /api/organizations/{organizationId}/invoices/{invoiceId}/mark-paid`; request has no client-set timestamp; response returns the invoice with `status: "paid"` and server-recorded `paidAt`. This is an idempotent bookkeeping/demo state transition, not payment collection or evidence of funds received; tenant membership and an authorized role are required.
+23. **Delete invoice draft** — `DELETE /api/organizations/{organizationId}/invoices/{invoiceId}`; response `204` for a draft. Sent/paid/overdue invoices cannot be deleted through this endpoint. Voiding/cancellation and corrections to sent invoices are outside this contract and cannot be implemented without a separately approved state transition.
 
-**Not defined in this contract:** customer update/delete APIs, invoice tax/legal rules or accounting numbering, payment collection, billing/subscription/Stripe endpoints, organization deletion behavior, ownership transfer, logo upload, password reset (OIDC-provider-dependent), platform admin/impersonation, email delivery, or provider-specific OIDC details. These require separate approved contracts; do not infer approval from UI copy.
+Approved lifecycle: `draft -> sent -> paid`, with `sent -> overdue` derived when the due date has passed and `overdue -> paid` allowed. `overdue` is not set directly by clients; paid is terminal in this contract. No transition to draft or resend/reopen is defined. Sending and marking paid must be atomic and safe against duplicate requests; exact delivery behavior, operation permissions and snapshot immutability are implementation requirements. Currency scale, quantity precision, tax/discount formula and rounding remain domain implementation details to settle before coding.
+
+**Not defined in this contract:** payment collection, billing/subscription/Stripe endpoints, organization deletion, ownership transfer, logo upload, password reset (OIDC-provider-dependent), platform admin/impersonation, or provider-specific OIDC settings. These are excluded from this approved contract; do not infer approval from UI copy.
 
 #### Negative access-control cases to carry into planned tests
 - Unauthenticated principal cannot create organizations, list private memberships, switch context, list members, or manage/accept invitations.
 - Authenticated user cannot select an organization with no active membership, nor infer its existence from a different response shape/status.
-- A user who belongs to organizations A and B cannot read or mutate A's members/invitations while B is active by substituting A's ID; explicit A access remains membership/role checked.
-- Viewer and Member cannot issue, resend, or revoke invitations; Admin/Owner permissions must be tested against the finalized matrix.
+- A user who belongs to organizations A and B cannot read or mutate A's members, invitations, customers, or invoices while B is active by substituting A's ID; every referenced customer/invoice must share the route tenant.
+- Viewer and Member cannot issue, resend, or revoke invitations; Admin/Owner permissions must follow the approved role baseline and be enforced per operation.
 - Admin cannot grant Owner, transfer ownership, delete an organization, or access platform-super-admin operations.
 - No organization member can grant platform-super-admin authority; tenant roles cannot cross the platform boundary.
 - Expired, revoked, already accepted, replayed, malformed, and wrong-verified-email invitation tokens cannot create membership; concurrent acceptance creates at most one membership.
-- A token is never returned by invitation list/read, persisted in plaintext, or written to logs; resend invalidates the old token.
+- A token is never returned by invitation API responses, persisted in plaintext, or written to logs; resend invalidates the old token.
+- Customer deletion cannot bypass tenant boundaries or remove a customer referenced by invoices.
+- Invoice creation cannot reference a customer from another organization; sent/paid/overdue invoice state cannot be changed by editing a draft or direct client state assignment; deleting an invoice is limited to drafts.
+- Duplicate send/mark-paid requests do not duplicate side effects or alter timestamps unexpectedly; paid is terminal, and overdue is derived rather than client-controlled.
 - RLS must deny cross-tenant rows when application scoping is omitted or misapplied; application checks must deny when RLS is disabled/misconfigured. Connection reuse/background execution must not inherit another tenant's context.
 - Changing the session active organization cannot elevate role; simultaneous requests/session rotation must not leak prior tenant context.
 
-#### Review decisions and unresolved items
-User-approved draft choices for this phase:
+#### Approval record and implementation constraints
+The user explicitly approved the Phase 1 contract as both product owner and security owner in this conversation, including the customer CRUD and invoice lifecycle scope recorded here. This is a direct owner approval record in this follow-up; it is not an independent third-party review, audit, penetration test, or runtime security verification.
+
+Approved contract decisions:
 - Tenant isolation: application authorization/scoping plus PostgreSQL RLS defense in depth.
 - Identity/session: OIDC sign-in with server-managed sessions.
 - Invitation token: random single-use token stored hashed, 72-hour expiry, rotate on resend.
+- Customer API scope: list, create, read, update, delete; referenced customers cannot be deleted; any archival alternative requires a separate contract.
+- Invoice API scope: list, create draft, read, update draft, send, delete draft, and mark paid; overdue is derived from sent status and due date; paid is terminal.
+- No billing/payment-provider APIs are authorized in Phase 1.
 
-Still requires explicit product/security owner review or a follow-up decision before implementation: approval of the draft contract and permission matrix; OIDC provider and account-linking/email verification; exact role permissions; ownership transfer and organization deletion/retention; invitation delivery, throttling, and duplicate rules; API error/pagination/CSRF conventions; RLS database-context lifecycle and trusted roles; and whether invoice/customer/API/billing contracts belong in a later phase. No independent security approval is claimed.
+Implementation constraints to apply in later scoped work: configure the selected OIDC provider and server-managed session safely; implement and test endpoint authorization and role checks; handle organization deletion/ownership transfer only under a separate approved contract; apply invitation rate limiting and secure delivery; enforce CSRF/origin checks; scope PostgreSQL RLS context transactionally and reset it on pooled connections; validate customer addresses and invoice/customer tenant references; use fixed-precision decimal arithmetic and currency minor units; preserve sent-invoice snapshots; make invoice sending and payment-state recording atomic/idempotent; and do not introduce void/cancellation transitions or payment collection without a separate approved contract.
 
 ### Coding-agent prompt
 ```
-Focus: Review and complete Phase 1's tenant, domain, and API contract draft for Keelson.
+Focus: Record and review the owner-approved Phase 1 tenant, domain, and API contract for Keelson.
 
-1. Review the Phase 1 draft in this roadmap against `docs/ui-spec.md`; confirm all 11 specified screens and shared presentation invariants are captured without treating them as implemented behavior.
-2. Review the user-approved draft choices: application authorization/scoping plus PostgreSQL RLS defense in depth; OIDC with server-managed sessions; random single-use hashed invitation token with 72-hour expiry and token rotation on resend. Do not silently change these choices; record requested revisions for owner approval.
-3. Review organization, membership, invitation, customer, and invoice endpoint shapes, tenant boundaries, role assumptions, invitation lifecycle, and negative access-control test concepts for consistency and migration-planning sufficiency.
-4. Obtain and persist explicit product/security owner review of the remaining open items before Phase 2 begins.
+1. Preserve the approved choices in this roadmap: application authorization/scoping plus PostgreSQL RLS defense in depth; OIDC with server-managed sessions; random single-use hashed invitation tokens with a 72-hour expiry and rotation on resend.
+2. Include the approved boundaries for organization, membership, invitation lifecycle, complete customer CRUD, and invoice draft/send/mark-paid lifecycle; do not add billing/payment APIs.
+3. Keep implementation details explicit for the later phase that implements them; do not treat owner approval as proof of deployed or tested security controls.
 
 Do not implement any code or migrations. Do not assume any database schema or that an endpoint, identity provider, RLS policy, UI, or behavior exists. Do not claim a design is independently security-reviewed until that review is recorded.
 
@@ -243,54 +257,55 @@ Do-not rules:
 - Do not create API routes or controllers.
 
 Test cases:
-- Tenant model document lists user, organization, membership, role, and invitation fields.
-- API contract specifies organization creation, organization switching, membership management, invitations, and proposed customer/invoice boundaries with request/response shapes.
-- User-approved application checks plus RLS choice is recorded with rationale and explicit implementation caveats.
-- Negative access-control cases are mapped to test concepts.
+- Tenant model lists user, organization, membership, role, and invitation fields.
+- API contract specifies organization creation/switching, membership and invitation lifecycle, customer CRUD, invoice draft/send/mark-paid transitions and draft deletion, with request/response shapes.
+- Owner-approved application checks plus RLS choice is recorded with rationale and explicit implementation caveats.
+- Negative access-control cases cover tenants, roles, invitations, customers, invoices, and session context.
 
 Expected results for every test case:
 - Model document exists and covers all required fields.
-- API contract includes org creation, member switching, invitation lifecycle, membership management, customer/invoice draft boundaries, and negative access cases.
-- Tenant enforcement choice and rationale are explicit, pending product/security review.
+- API contract includes org creation, member switching, invitation lifecycle, membership management, complete customer CRUD and invoice lifecycle, plus negative access cases.
+- Tenant enforcement choice and rationale are explicitly owner-approved; implementation and security tests remain required before any runtime security claim.
 - Negative access cases are identified and documented.
 
 Acceptance criteria:
-- Tenant model document is complete and reviewed by security owner.
-- API contract is sufficient for Phase 2 migration planning after owner review.
-- The user-approved RLS plus application-checks decision is explicitly documented; product/security review must confirm it.
+- Tenant model and API contract are approved by the user acting as product and security owner; this direct approval is recorded and is not represented as independent review.
+- API contract is sufficient to begin Phase 2 planning after this follow-up PR merges; implementation-specific controls and tests are mandatory before the relevant endpoints ship.
+- The owner-approved RLS plus application-checks decision and rationale are documented; implementation and security tests must verify it before any security claim.
 
 Exit criteria and definition of done:
 - Model and API contract documents are persisted.
-- Security review note is recorded.
-- Phase 2 can begin with clear migration prerequisites.
+- Owner's product/security approval record is persisted; implementation and runtime security verification remain outside Phase 1.
+- Phase 2 is ready to begin after this contract update is merged; implementation-specific details and tests remain phase gates.
 
-User-approved draft decisions (not independently security-reviewed):
-- Tenant enforcement uses application authorization/scoping plus PostgreSQL RLS defense in depth.
-- Authentication uses OIDC with server-managed sessions.
-- Invitation tokens are random, single-use, stored hashed, expire after 72 hours, and rotate on resend.
+Owner approval recorded in this conversation:
+- User approved as both product owner and security owner. This is not independent review or runtime security verification.
+- Application authorization/scoping plus PostgreSQL RLS defense in depth.
+- OIDC with server-managed sessions.
+- Random, single-use, hashed invitation token; 72-hour expiry and rotate on resend.
+- Complete customer CRUD and invoice draft/send/mark-paid lifecycle, including the draft-only deletion boundary; no payment collection or billing APIs.
 
-Open review decisions:
-- Approve or revise the draft contract and per-resource role permission matrix.
+Implementation gates for later phases:
 - Select OIDC provider and settle account linking, verified-email and recovery behavior.
-- Define ownership transfer, organization deletion/retention, invitation delivery/rate limits/duplicate handling, API error/pagination/CSRF conventions, invoice/customer constraints, and RLS transaction/context lifecycle.
-- Confirm whether invoice/customer endpoints belong in the agreed API contract scope; no billing/payment endpoints are included.
+- Define exact role/action enforcement, ownership transfer, organization deletion/retention, invitation delivery/rate limits/duplicate handling, API error/pagination/CSRF conventions, and RLS transaction/context lifecycle.
+- Specify customer address validation/duplicate handling and invoice currency/quantity precision, tax/discount calculation, rounding, snapshots, send side effects and void/cancellation before implementing those rules.
 
-Verified evidence (phase 1): Draft contract is persisted in this roadmap and merged in PR #3 at `4225679eb3a7daccaffacf65bd521636b6cc78ab`. Product/security owner review remains pending; do not mark VERIFIED or start Phase 2 until that review is confirmed.
+Verified evidence (phase 1): Original contract merged in PR #3 at `4225679eb3a7daccaffacf65bd521636b6cc78ab`; the user's explicit product-owner and security-owner approval and completed customer/invoice API boundaries are recorded in this follow-up. No independent review or runtime security verification is claimed. Phase 1 remains IN REVIEW until this documentation update is merged.
 ```
 
 ## Phase 2: Backend domain model and migrations
 
 ### Status: NOT STARTED
-**Reason:** Backend PHP/Composer environment not yet available; migrations not defined.
+**Reason:** The owner-approved Phase 1 contract follow-up is recorded in PR #5 and must merge before this phase begins. Backend persistence design, PHP/Composer verification, and migrations have not started; ephemeral PostgreSQL is approved as the test target but not provisioned.
 
 ### Goal and scope
 Add approved persistence dependencies (Symfony/Doctrine or equivalent) and define migrations for the tenant schema. Test migrations in a disposable DB before any production consideration.
 
 ### Prerequisites and dependencies
-- Phase 1 domain model and API contract documented and reviewed
-- PHP >=8.2 and Composer available on the target system
-- Agreed tenant scoping approach (RLS or application-layer)
-- Disposable/local database target confirmed (not shared or production)
+- Phase 1 owner-approved domain model/API contract merged into `main` (PR #5); use the user-approved application-scoping plus PostgreSQL RLS decision.
+- PHP >=8.2 and Composer available on the target system; verify this in Phase 2 before backend work.
+- Disposable database target is isolated ephemeral PostgreSQL; provision it only for this phase and never use the persistent Compose volume.
+- Select and approve the persistence/ORM strategy before changing dependency manifests.
 
 ### Expected deliverables and files
 - Updated `composer.json` with approved persistence dependencies (or documented alternative)
@@ -341,7 +356,7 @@ Acceptance criteria:
 
 Exit criteria and definition of done:
 - Persistence dependency and migrations are documented and tested.
-- Disposable DB target is confirmed and isolated from Compose volume.
+- Ephemeral PostgreSQL is provisioned and independently verified as isolated from the persistent Compose volume.
 - Phase 3 can begin with frontend work starting independently.
 
 Unresolved business decisions:
