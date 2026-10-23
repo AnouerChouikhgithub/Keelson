@@ -54,4 +54,19 @@ class Membership
         $this->createdAt = $now;
         $this->updatedAt = $now;
     }
+
+    public function isActive(): bool
+    {
+        return 'active' === $this->status;
+    }
+
+    public function canAdminister(): bool
+    {
+        return $this->isActive() && in_array($this->role, ['Owner', 'Admin'], true);
+    }
+
+    public function isOwner(): bool
+    {
+        return $this->isActive() && 'Owner' === $this->role;
+    }
 }

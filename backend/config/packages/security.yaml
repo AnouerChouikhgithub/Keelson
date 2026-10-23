@@ -1,0 +1,38 @@
+security:
+    providers:
+        oidc_principals:
+            id: App\Security\OidcPrincipalProvider
+
+    firewalls:
+        dev:
+            pattern: ^/(_profiler|_wdt|assets|build)/
+            security: false
+        main:
+            lazy: true
+            provider: oidc_principals
+            pattern: ^/(?!login$)
+            oidc:
+                check_path: /login_check
+                login_path: app_login
+                user_identifier_property: sub
+                user_identifier_from_idtoken: true
+                enable_end_session_listener: true
+            logout:
+                path: /logout
+                target: /
+                enable_csrf: true
+
+    access_control:
+        - { path: ^/login$, roles: PUBLIC_ACCESS }
+        - { path: ^/logout$, roles: ROLE_USER }
+        - { path: ^/healthz$, roles: PUBLIC_ACCESS }
+        - { path: ^/, roles: ROLE_USER }
+
+when@test:
+    security:
+        password_hashers:
+            Symfony\Component\Security\Core\User\PasswordAuthenticatedUserInterface:
+                algorithm: auto
+                cost: 4
+                time_cost: 3
+                memory_cost: 10

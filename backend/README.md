@@ -1,0 +1,20 @@
+# Backend setup
+
+The API uses Symfony Security with the Drenso Symfony OIDC bundle and Logto Cloud. Local authentication is not enabled until you configure a private `backend/.env.local` file.
+
+## Configure Logto Cloud
+
+1. In the Logto Console, open **Applications → Create application → Third-party app → Traditional Web**. This is a confidential server-side client; keep its client secret on the server only.
+2. Choose an application name and create it. In the application settings, set the sign-in redirect URI to the exact URL you will use for local development plus `/login_check` (for example, `http://localhost:8000/login_check` if you run `symfony server:start --allow-http`). Add the corresponding post-sign-out redirect URI with `/` (for example, `http://localhost:8000/`). Do not use a wildcard callback.
+3. In the Logto Console, enable the `openid`, `profile`, and `email` scopes; the application requests `openid profile email`. New local principals are created only after the OIDC library verifies the ID-token signature, issuer, audience, expiry, nonce and the callback's state; the configured issuer is paired with the verified ID-token subject. Email is stored as contact/profile data only and never used as an authorization key. No organization membership or role is granted at first login.
+4. Copy the tenant's **OIDC issuer** and **OpenID Provider Configuration URL** from the Logto application integration guide. Do not assume URL paths: enter the exact issuer and discovery URL Logto displays. The provider must advertise S256 PKCE support and an end-session endpoint for the corresponding features.
+5. Copy `backend/.env.example` to the ignored `backend/.env.local`, and replace its four example values with the issuer, discovery URL, client ID, and client secret from Logto. Never commit `.env.local`, paste the secret into chat, put it in frontend code, or share it in logs. No production or real user data is needed for local verification.
+6. Start a locally reachable Symfony server, then try `GET /login`. Confirm it redirects to Logto with `response_type=code`, the `openid profile email` scopes, state, nonce, and S256 PKCE. Complete sign-in with a test account; confirm Symfony returns to the exact `/login_check` URI, creates/loads a `Principal` using the configured issuer + the verified ID-token `sub`, and redirects to `/`. The callback is an authenticator check path and is not a separately listed route. Test a callback with missing/wrong state and confirm it does not authenticate. Submit a POST to `/logout` with the session's Symfony CSRF token; confirm local session invalidation and the provider logout redirect.
+
+The app does not grant organization membership or a tenant role at sign-in. Every authenticated route is protected by default. Controllers must use `PrincipalVoter` with a server-loaded organization id for organization-specific actions; an id from a request is a selector only. The voter checks active membership and grants view access to all four organization roles, administration to Owner/Admin, and organization deletion only to Owner. This policy must be kept in sync with the Phase 1 contract before introducing protected workflows.
+
+## Before deployment
+
+The Drenso OIDC bundle declares Symfony 7 support and implements authorization code flow, state, nonce and S256 PKCE, but Logto is not named in its tested-provider list. A real sign-in/callback/sign-out against the configured Logto tenant remains an explicit provider compatibility check. Do not describe Phase 5 as end-to-end verified until that flow and the negative authorization cases have been run against a local test database.
+
+The phase does not implement PostgreSQL row-level security or tenant-scoped repositories, invitations, organization lifecycle operations, customer or invoice APIs, refresh token rotation, password recovery, or user self-service account linking. Those remain separate roadmap work. No Logto account, client credentials, or production configuration is included in the repository.

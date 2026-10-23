@@ -1,6 +1,6 @@
 # Keelson Development Roadmap
 
-This roadmap scopes the multi-tenant SaaS starter domain only. It does not claim any verified backend implementation, tenant isolation, or billing functionality. All phases are scoped to what can be confirmed from repository evidence as of 2026-10-22.
+This roadmap scopes the multi-tenant SaaS starter domain only. It does not claim verified tenant isolation or billing functionality. Phase statuses are scoped to the evidence described below; partial UI scope, mock-only workflows, and provider-integration gates are stated explicitly.
 
 ## Intro
 
@@ -31,27 +31,30 @@ Keelson is a multi-tenant SaaS starter project with organization membership and 
 | 0: Environment and repository readiness | VERIFIED - PR #2 merged | Frontend build and Compose syntax verified; environment recorded; lint incompatibility deferred; ephemeral PostgreSQL target documented |
 | 1: Requirements, domain model and API contract | VERIFIED - PR #5 merged | Record owner-approved tenant/principal model, customer CRUD, invoice lifecycle, and API boundaries |
 | 2: Backend domain model and migrations | IMPLEMENTED AND VERIFIED | Doctrine entities, repositories, migration, and isolated PostgreSQL up/down evidence |
-| 3: Client app shell and design system | NOT STARTED | Set up React + Vite + Tailwind; integrate shadcn/ui component patterns; implement Home and organization-aware screens |
-| 4: Client workflows — organization onboarding | NOT STARTED | Implement organization creation, switching, and member invitation flows (frontend + API) |
-| 5: Authentication and authorization | NOT STARTED | Implement the approved OIDC + server-managed-session contract; enforce tenant isolation on API routes; role-based access controls |
+| 3: Client app shell and design system | VERIFIED — app-shell foundation; full UI-spec batch remains partial | React/Vite dashboard shell, semantic light/dark/system theme, and organization-aware navigation; known lint and visual-scope gaps remain documented |
+| 4: Client workflows — organization onboarding | VERIFIED — accepted mock-only frontend scope; no backend/API | Mock organization creation/switching and invitation interactions are built and smoke-tested; auth, persistence, token delivery, and API remain unimplemented |
+| 5: Authentication and authorization | IMPLEMENTED — local checks pass; Logto end-to-end not verified | Symfony session firewall, Logto OIDC authorization-code flow with state/nonce/S256 PKCE, local Principal provisioning and membership-based authorization voter; external provider credentials and callback/logout verification remain required |
 | 6: Tenant-scoped data and migrations | NOT STARTED | Implement repository pattern for tenant-separated reads/writes; verify cross-tenant access is denied |
 | 7: Invoicing demonstration | NOT STARTED | Implement customer/invoice lifecycle guided by ui-spec.md; state transitions, totals, validation, audit trail |
 | 8: Billing and usage enforcement | NOT STARTED | Stripe integration scope; subscription lifecycle; usage counters and atomic enforcement; admin separation |
 | 9: Hardening, CI and release readiness | NOT STARTED | CI pipeline for build/lint/tests; security regression suite; documented rollback and observability |
 
-Status evidence (verified 2026-10-22):
+Status evidence (updated 2026-10-23):
 - Phase 0 PR #2 is merged into `main` (merge commit `911b16ff667c9173ca74fb0972e750fc7fc67164`); its recorded environment evidence and blockers are now part of `main`.
 - Phase 1 contract PR #3 is merged into `main` (merge commit `4225679eb3a7daccaffacf65bd521636b6cc78ab`); owner-approved customer CRUD and invoice lifecycle follow-up PR #5 is merged at `02278a6ceaca021889bcd2bb61bff86e46a127a3`. This is direct owner approval, not independent third-party review. Phase 1 is VERIFIED as a documented planning contract; no runtime security verification is claimed.
+- Phase 3/4 frontend work merged in PR #8 (merge commit `120e8c5b6f9487cae95ad6f2872660cabe8d53d8`). `cd frontend && pnpm run build` — PASS; `git diff --check` — PASS. Browser smoke tests exercised dashboard/theme, organization creation with valid and duplicate subdomains, organization switching, and invitation add/resend/revoke; the final browser console had no runtime errors. This verifies the app-shell foundation and accepted mock-only onboarding UI scope—not every screen in `docs/ui-spec.md`, nor any API, auth, persistence, email/token delivery, or authorization behavior.
 - `cd Keelson/frontend && pnpm install` — PASS: `Already up to date`; pnpm 12.14.0.
 - `cd Keelson/frontend && pnpm run build` — PASS: Vite 8.3.4 build completed successfully (20 modules; exit 0).
 - `cd Keelson/frontend && pnpm run lint` — FAIL, exit 2: `typescript-eslint@8.71.2` reports `typescript-eslint does not support TS 7.0.` No dependency/config workaround applied; decision: defer and retain as a blocker for a later scoped phase.
 - `cd Keelson && docker compose -f docker-compose.yml config --quiet` — PASS, exit 0 with no output. Compose syntax validated only; no services started and no DB/volume touched.
 - `cd Keelson && php -v` — PHP 8.5.12; `composer -V` — Composer 2.10.0; `pnpm -v` — 12.14.0; `node -v` — v24.13.0; `docker version --format "{{.Server.Version}}"` — 29.5.2.
 - Disposable migration database decision: use isolated ephemeral PostgreSQL only; this phase did not provision/start it or connect to any database.
-- `cd Keelson && git status --porcelain --ignored` — `?? docs/ORCHESTRATION_READINESS.md`; ignored `.freebuff/`, `backend/vendor/`, `frontend/dist/`, `frontend/node_modules/`. Existing readiness report was not staged or changed.
+- Initial audit state before these follow-up changes: `feat/phase-4-mock-onboarding` at `origin/feat/phase-4-mock-onboarding`, with `DEVELOPMENT_ROADMAP.md` modified and `docs/ORCHESTRATION_READINESS.md` plus `graphify-out/` untracked. The latter two pre-existing untracked paths were left untouched.
 - `cd Keelson && git rev-parse HEAD` before phase changes — `27bf422f8097e564027927f5e08c40215d2bc7b0`; branch was based on up-to-date `origin/main`.
 - `git diff --stat` before phase changes — empty.
-- Backend PHPUnit, PHPStan, container lint and DB migrations were not run: Phase 0 forbids backend operations and database migrations. No backend test cases beyond the bootstrap are noted in the baseline audit.
+- Phase 2 evidence is from its isolated migration verification recorded below. The current Phase 5 checks use disposable PHP containers and an in-memory SQLite URL; no database service, migration, or persistent volume was started or modified for Phase 5.
+- Phase 5: `composer validate --no-check-publish` — PASS; Symfony YAML lint (12 files) — PASS; `lint:container` — PASS; `debug:router` resolves `/login` and the generated logout route — PASS; `debug:firewall main --events` confirms a stateful firewall, OIDC authenticator, session fixation listener and provider logout listener — PASS; PHPUnit — PASS (19 tests, 36 assertions); PHP syntax checks across `backend/src`, `backend/tests`, and `backend/migrations` — PASS; `Principal` session serialize/unserialize smoke test — PASS. Symfony cache compilation was verified with dummy non-secret env values. A subsequent repeated `cache:clear` hit a Windows-mounted Docker cache directory cleanup race (`Directory not empty`); the earlier compile and container lint passed, and no cache files were manually removed. OIDC provider callback/sign-in/logout against a real Logto client was not run because no Logto client or credentials have been configured. The bundle's callback check path is intercepted by the firewall and is not a router-visible route.
+- Current verification rerun: `cd frontend && pnpm run build` — PASS. `cd frontend && pnpm run lint` — FAIL, exit 2: installed `typescript-eslint@8.71.2` does not support TypeScript `7.0.2`; this pre-existing toolchain incompatibility remains deferred. `docker compose -f docker-compose.yml config --quiet` — PASS; no services were started.
 - No frontend test script is defined; no frontend test command was run.
 - No CI workflow was found in the baseline repository inspection.
 
@@ -375,8 +378,8 @@ Verified evidence (phase 2): `composer.json` and `composer.lock` include Doctrin
 
 ## Phase 3: Client app shell and design system
 
-### Status: IN PROGRESS (app shell implemented; visual scope remains partial)
-**Reason:** The React/Vite app shell, semantic light/dark theme tokens, dashboard, responsive organization-aware navigation, and mock organization switcher are implemented and browser-smoke-tested. Phase 3 is not complete against `docs/ui-spec.md`: the remaining named product screens are still placeholders or absent, and mobile horizontal overflow needs follow-up. Do not mark the complete visual screen batch delivered.
+### Status: VERIFIED — app-shell foundation only (full UI-spec screen batch remains partial)
+**Reason:** The Phase 3 app-shell deliverable is implemented and verified: React/Vite dashboard, semantic light/dark/system theme, organization-aware navigation, and responsive shell. This status does not claim completion of the full `docs/ui-spec.md` screen batch: remaining named product screens are placeholders or absent, the lint incompatibility remains unresolved, and mobile page-level horizontal overflow is a known follow-up. Do not describe the whole visual screen batch as delivered.
 
 ### Goal and scope
 Set up the React + Vite + Tailwind environment with shadcn/ui component patterns. Implement the Home screen and organization-aware screens as the client app shell.
@@ -458,8 +461,8 @@ Verified evidence (phase 3, 2026-10-22):
 
 ## Phase 4: Client workflows — organization onboarding
 
-### Status: NOT STARTED
-**Reason:** Organization onboarding flows not yet implemented; requires auth and API foundation from Phases 1-3.
+### Status: VERIFIED — accepted mock-only frontend scope (PR #8 merged)
+**Reason:** The user-approved Phase 4 deliverable was the mock-only frontend workflow. PR #8 implements and browser-smoke-tests organization creation with local subdomain validation/duplicate checks, organization switching, and organization-scoped invitation add/resend/revoke interactions. This status is deliberately limited to that frontend scope; API route placeholders, invitation token issuance/delivery, persistence, authentication, server-enforced roles, and cross-tenant denial tests were not delivered and are not verified. The mock milestone is complete; backend onboarding/security work remains for the authenticated API phases.
 
 ### Goal and scope
 Implement organization creation, switching, and member invitation flows (frontend + API). All API calls should enforce tenant isolation per the model defined in Phase 1.
@@ -528,16 +531,16 @@ Unresolved business decisions:
 - Org switching UI placement and behavior
 - Role hierarchy (admin vs member vs super-admin) definition
 
-Verified evidence (phase 4): NOT APPLICABLE (status is NOT STARTED)
+Verified evidence (phase 4, 2026-10-22): PR #8 is merged at `120e8c5b6f9487cae95ad6f2872660cabe8d53d8`. `cd frontend && pnpm run build` — PASS; `git diff --check` — PASS. Browser smoke tests exercised valid and duplicate subdomains, local organization creation and switching, and invitation add/resend/revoke; no final browser console errors. Verified scope is frontend demo behavior only. No backend route, database persistence, authentication/authorization, email delivery, invitation token generation, or cross-tenant security test is evidenced.
 ```
 
 ## Phase 5: Authentication and authorization
 
-### Status: NOT STARTED
-**Reason:** Auth implementation not yet started; requires PHP/Composer and model decisions from Phase 1.
+### Status: IMPLEMENTED — local checks verified; Logto end-to-end pending
+**Reason:** The backend now has a stateful Symfony security firewall using the Drenso OIDC bundle, Logto-compatible authorization-code configuration, provider-side state/nonce and S256 PKCE, session fixation migration, CSRF-protected local logout with optional provider end-session redirect, first-login Principal provisioning keyed by configured issuer + ID-token `sub`, and a membership/role voter. Unit tests and local Symfony configuration checks pass. The selected Logto Cloud application has not been configured and a real callback, login, provider logout, or request-level authorization flow has not been exercised; therefore provider compatibility and complete Phase 5 acceptance remain unverified. This is not yet a gate-cleared Phase 6 foundation.
 
 ### Goal and scope
-Implement JWT or session-based authentication and enforce tenant isolation on all API routes. Role-based access controls per the defined model.
+Implement the Phase 1-approved OIDC sign-in with a server-managed session, then enforce tenant isolation on all API routes and apply role-based access controls per the approved model. This change establishes the authentication/session and reusable organization-voter foundation; it does not implement tenant-scoped API routes or PostgreSQL RLS.
 
 ### Prerequisites and dependencies
 - Phase 2 backend persistence and migrations operational
@@ -546,9 +549,10 @@ Implement JWT or session-based authentication and enforce tenant isolation on al
 - API route structure from Phase 3 and 4
 
 ### Expected deliverables and files
-- Authentication middleware or guard (Symfony session or JWT)
-- Tenant isolation on all API routes (request-scoped tenant context)
-- Role-based access control checks on protected routes
+- OIDC authentication integration and server-managed session lifecycle (no JWT bearer contract)
+- Reusable membership-based organization voter for view, administration and owner-only deletion decisions; routes must invoke it with a server-loaded organization selector
+- Authentication required for all routes other than the public OIDC entry point
+- Request-scoped tenant isolation across every API route and database context remains unimplemented; deliver it before claiming tenant authorization complete
 - Sign-out and session expiration handling
 - Cross-tenant access denial verified in test concepts
 
@@ -556,12 +560,12 @@ Implement JWT or session-based authentication and enforce tenant isolation on al
 ```
 Focus: Implement authentication and authorization for Keelon backend.
 
-1. Ensure PHP >=8.2 and Composer are available (document if not present).
-2. Add authentication middleware to Symfony kernel (session-based or JWT placeholder).
-3. Add tenant context derivation per the Phase 1 decision (RLS or application-layer).
-4. Add role-based access control check on a sample API route (document the check logic).
-5. Implement sign-out endpoint that invalidates session or revokes JWT.
-6. Document cross-tenant access denial test concept for API routes.
+1. Use the approved Logto OIDC authorization-code integration with Symfony server-managed sessions; provision local principals by issuer + ID-token subject without granting organization membership.
+2. Protect application routes by default; permit the login initiation endpoint and let the OIDC firewall authenticator receive its `/login_check` callback.
+3. Add an organization voter that loads active membership server-side and distinguishes view, Owner/Admin administration, and Owner-only deletion.
+4. Add local sign-out with CSRF protection and session invalidation; enable provider end-session redirect only where the OIDC discovery document supports it.
+5. Test first-login provisioning, mismatched subject rejection, unknown memberships, inactive membership, viewer/admin/owner boundaries, callback state/nonce, and cross-tenant access denial.
+6. Verify the selected Logto Cloud client with an actual test login/callback/logout before calling provider compatibility complete.
 
 Do not use production credentials or configure any real OAuth provider. Do not assume PostgreSQL RLS is configured; document the chosen isolation approach. Do not modify frontend components without corresponding auth state changes.
 
@@ -578,33 +582,36 @@ Do-not rules:
 
 Test cases:
 - Auth middleware is present in Symfony kernel config.
-- Tenant context is derived on a sample API route.
-- Role check is present on a protected route.
-- Sign-out endpoint is present and documented.
+- Organization voter uses authenticated principal + database membership and differentiates role permissions.
+- Unauthenticated application requests cannot reach protected routes.
+- Local CSRF-protected sign-out invalidates the server-managed session.
+- Logto callback verifies issuer, audience, expiry, signature, state, nonce and configured S256 PKCE.
 
 Expected results for every test case:
 - Middleware file exists and is referenced in kernel config.
-- Tenant context variable is set on the request.
-- Role check condition is documented in code comments.
-- Sign-out route is configured and returns a success response.
+- No request-provided organization id can substitute for an active membership returned by the repository.
+- Viewer and Member cannot administer; Admin cannot delete; only an active Owner may delete an organization.
+- Symfony logout invalidates the local session; provider logout is attempted only through discovered OIDC end-session metadata.
+- Callback failures do not authenticate.
 
 Acceptance criteria:
-- Auth middleware is present and documented.
-- Tenant isolation is explicit on all API routes (documented, not necessarily effective).
-- Role-based access checks are present on sample routes.
-- Sign-out is functional (documented behavior).
+- Symfony stateful OIDC firewall and server-managed session configuration compile and pass local checks.
+- Authenticated access is the default; role voter unit tests pass.
+- CSRF-protected sign-out invalidates local state.
+- End-to-end Logto login/callback/logout and negative authorization tests pass against a configured test tenant before Phase 5 can be treated as fully verified.
 
 Exit criteria and definition of done:
-- Auth middleware and tenant isolation are documented.
-- Role checks are present on sample routes.
-- Phase 6 can begin with tenant-scoped data implementation.
+- Stateful authentication, local Principal identity and a reusable membership/role voter are implemented and documented.
+- Unit/configuration checks pass; external IdP behavior and API/RLS authorization are separate gates.
+- Phase 6 may begin only after a Logto test login/callback/logout is demonstrated and its tenant-data scope is explicitly separated from later RLS work; the current code is a local authentication foundation, not a tenant-safe API.
 
 Unresolved business decisions:
-- JWT vs session-based auth approach
-- Tenant context derivation (RLS vs app-layer) final decision
-- Role hierarchy and permission matrix design
+- Exact Logto issuer, discovery URL, client id/secret, callback URI and post-logout URI (operator setup; secrets must remain local/private)
+- Provider end-to-end verification, including verified email claim behavior, state/nonce, S256 PKCE and logout endpoint support
+- Tenant context derivation and request-scoped PostgreSQL RLS lifecycle
+- Full role/action matrix for every route, including owner retention and organization deletion rules
 
-Verified evidence (phase 5): NOT APPLICABLE (status is NOT STARTED)
+Verified evidence (phase 5, 2026-10-23): `backend/composer.json`/`composer.lock` include Drenso Symfony OIDC bundle v4.5.0 and Symfony Security/CSRF components 7.4; the bundle uses Symfony RequestStack sessions and implements code flow with state, nonce, issuer/audience/signature/time validation and configured S256 PKCE. `config/packages/security.yaml` uses a stateful firewall with session-fixation migration, protects all application routes except login initiation/callback handling, and enables CSRF-protected logout/session invalidation plus the bundle end-session listener. `OidcPrincipalProvider` provisions/reloads local `Principal` entities by the configured issuer and verified ID-token `sub`, without granting organization membership; `PrincipalVoter` requires an active repository membership and limits administration/deletion by role. PHPUnit passes: 19 tests, 36 assertions (including subject mismatch, unknown principal, no membership, inactive membership, Member/Viewer/Admin/Owner permission boundaries). Composer validation, 12-file YAML lint, Symfony container lint/cache compilation, and PHP source syntax checks pass in PHP 8.5 containers with dummy non-secret env values. `debug:router` confirms `/login`; `/login_check` is an authenticator check path, not a listed route. **Not verified:** a Logto tenant/client is not configured, so no real redirect/callback/session/logout, provider claim shape, or end-to-end cross-tenant API authorization has been tested. Consequently Phase 5 is implemented as a local foundation but not fully verified or sufficient by itself to declare Phase 6 security readiness.
 ```
 
 ## Phase 6: Tenant-scoped data and migrations
