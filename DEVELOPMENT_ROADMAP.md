@@ -34,7 +34,7 @@ Keelson is a multi-tenant SaaS starter project with organization membership and 
 | 3: Client app shell and design system | VERIFIED — app-shell foundation; full UI-spec batch remains partial | React/Vite dashboard shell, semantic light/dark/system theme, and organization-aware navigation; known lint and visual-scope gaps remain documented |
 | 4: Client workflows — organization onboarding | VERIFIED — accepted mock-only frontend scope; no backend/API | Mock organization creation/switching and invitation interactions are built and smoke-tested; auth, persistence, token delivery, and API remain unimplemented |
 | 5: Authentication and authorization | IMPLEMENTED — local checks pass; Logto end-to-end not verified | Symfony session firewall, Logto OIDC authorization-code flow with state/nonce/S256 PKCE, local Principal provisioning and membership-based authorization voter; external provider credentials and callback/logout verification remain required |
-| 6: Tenant-scoped data and migrations | NOT STARTED | Implement repository pattern for tenant-separated reads/writes; verify cross-tenant access is denied |
+| 6: Tenant-scoped data and migrations | IMPLEMENTED — PostgreSQL repository scope tests pass; API/RLS gate remains | Active membership scopes organization, membership, and invitation reads; cross-tenant denial covered by isolated PostgreSQL tests; tenant-scoped customer/invoice APIs and RLS remain unimplemented |
 | 7: Invoicing demonstration | NOT STARTED | Implement customer/invoice lifecycle guided by ui-spec.md; state transitions, totals, validation, audit trail |
 | 8: Billing and usage enforcement | NOT STARTED | Stripe integration scope; subscription lifecycle; usage counters and atomic enforcement; admin separation |
 | 9: Hardening, CI and release readiness | NOT STARTED | CI pipeline for build/lint/tests; security regression suite; documented rollback and observability |
@@ -54,6 +54,8 @@ Status evidence (updated 2026-10-23):
 - `git diff --stat` before phase changes — empty.
 - Phase 2 evidence is from its isolated migration verification recorded below. The current Phase 5 checks use disposable PHP containers and an in-memory SQLite URL; no database service, migration, or persistent volume was started or modified for Phase 5.
 - Phase 5: `composer validate --no-check-publish` — PASS; Symfony YAML lint (12 files) — PASS; `lint:container` — PASS; `debug:router` resolves `/login` and the generated logout route — PASS; `debug:firewall main --events` confirms a stateful firewall, OIDC authenticator, session fixation listener and provider logout listener — PASS; PHPUnit — PASS (19 tests, 36 assertions); PHP syntax checks across `backend/src`, `backend/tests`, and `backend/migrations` — PASS; `Principal` session serialize/unserialize smoke test — PASS. Symfony cache compilation was verified with dummy non-secret env values. A subsequent repeated `cache:clear` hit a Windows-mounted Docker cache directory cleanup race (`Directory not empty`); the earlier compile and container lint passed, and no cache files were manually removed. OIDC provider callback/sign-in/logout against a real Logto client was not run because no Logto client or credentials have been configured. The bundle's callback check path is intercepted by the firewall and is not a router-visible route.
+- Phase 5 does not establish actual tenant isolation across API routes, PostgreSQL RLS, database-backed session storage, email delivery, or production readiness. Phase 6 implements application-layer scoped organization/membership/invitation repository reads and tests those queries against a disposable PostgreSQL database. Customer/invoice entities and repositories, API routes, and PostgreSQL RLS remain unimplemented.
+- Phase 6 verification (2026-10-23): disposable PostgreSQL 16 test database `keelson_phase6_test` on loopback port 55433, separate from the retained Phase 2 database and Compose volumes; initial domain migration applied to the isolated test database; Doctrine mapping/schema validation PASS; PHPUnit PASS (22 tests, 54 assertions), including 3 PostgreSQL tenant-isolation integration tests; container lint PASS. No schema migration was required.
 - Current verification rerun: `cd frontend && pnpm run build` — PASS. `cd frontend && pnpm run lint` — FAIL, exit 2: installed `typescript-eslint@8.71.2` does not support TypeScript `7.0.2`; this pre-existing toolchain incompatibility remains deferred. `docker compose -f docker-compose.yml config --quiet` — PASS; no services were started.
 - No frontend test script is defined; no frontend test command was run.
 - No CI workflow was found in the baseline repository inspection.
@@ -616,8 +618,8 @@ Verified evidence (phase 5, 2026-10-23): `backend/composer.json`/`composer.lock`
 
 ## Phase 6: Tenant-scoped data and migrations
 
-### Status: NOT STARTED
-**Reason:** Tenant-separated repository pattern not yet implemented; requires auth from Phase 5 and DB from Phase 2.
+### Status: IMPLEMENTED — PostgreSQL repository scope tests pass; API/RLS gate remains
+**Reason:** Organization lookup by principal, membership reads gated by active same-organization membership, and invitation reads gated to active Owner/Admin membership are implemented and verified against a disposable PostgreSQL database. This is application-layer query scoping only: no organization API routes, customer/invoice repositories, PostgreSQL RLS policies, or actual Logto-authenticated request flow are implemented. Phase 5's provider E2E remains explicitly deferred at the user's request.
 
 ### Goal and scope
 Implement repository pattern for tenant-separated reads/writes. Verify cross-tenant access is denied at the data access layer. All queries must scope by authenticated principal membership.
@@ -629,10 +631,10 @@ Implement repository pattern for tenant-separated reads/writes. Verify cross-ten
 - Repository pattern established or documented
 
 ### Expected deliverables and files
-- Repository class or method for tenant-scoped reads/writes
-- Cross-tenant access denial test concepts
-- All API queries scope by authenticated principal membership
-- Migration updates if tenant schema changes
+- Repository methods that scope organization, membership and invitation reads by an authenticated principal's active membership
+- PostgreSQL integration tests for cross-tenant denial and role-gated invitation access
+- Tenant scoping required for all future API queries; no customer/invoice routes exist yet
+- Migration updates if tenant schema changes (none required for this repository-only scope)
 
 ### Coding-agent prompt
 ```
@@ -676,7 +678,7 @@ Unresolved business decisions:
 - Tenant ID field name and consistency across entities
 - Scope condition placement (WHERE clause vs JOIN)
 
-Verified evidence (phase 6): NOT APPLICABLE (status is NOT STARTED)
+Verified evidence (phase 6, 2026-10-23): `OrganizationRepository::findForPrincipal` returns only active organizations with an active membership for that principal; `MembershipRepository` scopes membership lookups and lists to an active organization and membership; `InvitationRepository` requires an active Owner/Admin membership in the requested active organization for both individual and list reads. PHPUnit on isolated PostgreSQL 16 passes (22 tests, 54 assertions, including 3 repository integration tests), Doctrine schema validation passes, and Symfony container lint passes. The disposable `keelson_phase6_test` DB was created only on a new loopback-bound temporary PostgreSQL container on port 55433; the existing Phase 2 DB and shared Compose database were not used. No schema changes were needed. **Still not implemented or verified:** PostgreSQL RLS, tenant-scoped customer/invoice entities or APIs, controller authorization flows, or actual Logto-authenticated HTTP requests. Phase 5 provider E2E is intentionally deferred per user instruction; do not call tenant isolation complete or Phase 6 security-ready on this evidence alone.
 ```
 
 ## Phase 7: Invoicing demonstration
