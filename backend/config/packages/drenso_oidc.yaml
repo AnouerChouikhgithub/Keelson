@@ -1,0 +1,10 @@
+drenso_oidc:
+    clients:
+        default:
+            well_known_url: '%env(resolve:OIDC_WELL_KNOWN_URL)%'
+            client_id: '%env(resolve:OIDC_CLIENT_ID)%'
+            client_secret: '%env(resolve:OIDC_CLIENT_SECRET)%'
+            redirect_route: /login_check
+            code_challenge_method: S256
+            disable_nonce: false
+            token_leeway_seconds: 60
