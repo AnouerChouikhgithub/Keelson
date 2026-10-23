@@ -18,10 +18,15 @@ class MembershipRepository extends ServiceEntityRepository
     public function findForOrganizationAndPrincipal(string $organizationId, string $principalId): ?Membership
     {
         return $this->createQueryBuilder('membership')
+            ->innerJoin('membership.organization', 'organization')
             ->andWhere('IDENTITY(membership.organization) = :organizationId')
             ->andWhere('IDENTITY(membership.principal) = :principalId')
+            ->andWhere('membership.status = :membershipStatus')
+            ->andWhere('organization.status = :organizationStatus')
             ->setParameter('organizationId', $organizationId)
             ->setParameter('principalId', $principalId)
+            ->setParameter('membershipStatus', 'active')
+            ->setParameter('organizationStatus', 'active')
             ->getQuery()
             ->getOneOrNullResult();
     }
@@ -30,21 +35,37 @@ class MembershipRepository extends ServiceEntityRepository
     public function findActiveForPrincipal(string $principalId): array
     {
         return $this->createQueryBuilder('membership')
+            ->innerJoin('membership.organization', 'organization')
             ->andWhere('IDENTITY(membership.principal) = :principalId')
-            ->andWhere('membership.status = :status')
+            ->andWhere('membership.status = :membershipStatus')
+            ->andWhere('organization.status = :organizationStatus')
             ->setParameter('principalId', $principalId)
-            ->setParameter('status', 'active')
+            ->setParameter('membershipStatus', 'active')
+            ->setParameter('organizationStatus', 'active')
             ->orderBy('membership.createdAt', 'ASC')
             ->getQuery()
             ->getResult();
     }
 
     /** @return list<Membership> */
-    public function findForOrganization(string $organizationId): array
+    public function findForOrganization(string $organizationId, string $principalId): array
     {
         return $this->createQueryBuilder('membership')
+            ->innerJoin('membership.organization', 'organization')
+            ->innerJoin(
+                Membership::class,
+                'requesterMembership',
+                'WITH',
+                'requesterMembership.organization = organization AND IDENTITY(requesterMembership.principal) = :principalId AND requesterMembership.status = :requesterStatus'
+            )
             ->andWhere('IDENTITY(membership.organization) = :organizationId')
+            ->andWhere('organization.status = :organizationStatus')
+            ->andWhere('membership.status = :membershipStatus')
             ->setParameter('organizationId', $organizationId)
+            ->setParameter('principalId', $principalId)
+            ->setParameter('requesterStatus', 'active')
+            ->setParameter('membershipStatus', 'active')
+            ->setParameter('organizationStatus', 'active')
             ->orderBy('membership.createdAt', 'ASC')
             ->getQuery()
             ->getResult();
