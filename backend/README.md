@@ -13,7 +13,7 @@ composer install
 
 Local values belong in `backend/.env.local`, which is ignored by Git. Do not commit secrets, and do not reuse production or customer credentials.
 
-Environment note: this machine's PHP has no `ext-sodium`, while the locked `lcobucci/jwt` declares it. `composer install` therefore exits non-zero unless the extension is enabled or Composer is run with `--ignore-platform-req=ext-sodium`; the dependency install recorded for this project used that flag. Runtime sign-in redirect generation does not need sodium, but enabling it is the cleaner fix.
+`ext-sodium` (declared by the locked `lcobucci/jwt`) is enabled on this host since 2026-11-13 through the machine-local CLI ini `C:\Users\Anouer PC\scoop\apps\php\current\cli\php-phase7.ini` (`extension=php_sodium.dll`, libsodium 1.0.22). `php -m` lists `sodium`, and `composer install` plus `composer check-platform-reqs` both exit 0 without flags. That ini is host configuration outside the repository, so a fresh machine must enable the extension first; `--ignore-platform-req=ext-sodium` remains a temporary workaround, not a passing platform check.
 
 Required for the app to run:
 

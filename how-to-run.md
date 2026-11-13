@@ -73,7 +73,7 @@ The OIDC values must come from a test Logto application. No offline/password log
 
 **Sign-in redirect verified on 2026-11-13.** `symfony/translation-contracts` (`^3.8`) was missing, which made `GET /login` throw `LogicException: ... AsciiSlugger ... symfony/translation-contracts ... is not installed` while building the PKCE challenge. The package is now declared, and `GET /login` returns HTTP 302 with `state`, `nonce`, `code_challenge` and `code_challenge_method=S256` (checked with placeholder credentials plus a temporary local discovery document). Completing a real sign-in still requires a Logto client.
 
-Another environment note: this machine's PHP lacks `ext-sodium`, which the locked `lcobucci/jwt` declares. `composer install` fails its platform check unless the extension is enabled or Composer is called with `--ignore-platform-req=ext-sodium`; the install used here did the latter.
+Environment note: the locked `lcobucci/jwt` declares `ext-sodium`. On this machine it is now enabled (2026-11-13) in the host's PHP CLI ini `…\php\cli\php-phase7.ini` via `extension=php_sodium.dll`, so `composer install` and `composer check-platform-reqs` pass with no flags. Other machines must enable the extension before installing; `--ignore-platform-req=ext-sodium` only hides the missing extension and should not be treated as a passing check.
 
 Before migrating, confirm `DATABASE_URL` identifies a local database you own. Then:
 
