@@ -14,8 +14,12 @@ backend/var/
 # env / secrets
 .env.local
 .env.*.local
+backend/.env.phase7
 *.pem
 backend/config/jwt/*.pem
+
+# local tooling output
+graphify-out/
 
 # OS / editor
 .DS_Store
