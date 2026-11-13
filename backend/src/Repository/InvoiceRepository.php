@@ -7,7 +7,7 @@ namespace App\Repository;
 use App\Entity\Invoice;
 use App\Entity\Membership;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
-use Doctrine\ORM\LockMode;
+use Doctrine\DBAL\LockMode;
 use Doctrine\Persistence\ManagerRegistry;
 
 final class InvoiceRepository extends ServiceEntityRepository

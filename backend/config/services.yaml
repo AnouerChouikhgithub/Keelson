@@ -30,5 +30,11 @@ services:
     App\Security\InvoiceVoter:
         tags: ['security.voter']
 
+    # Synthetic dev/test fixtures: the loader needs the target it must refuse.
+    App\DataFixtures\SyntheticFixtureLoader:
+        arguments:
+            $environment: '%kernel.environment%'
+            $databaseUrl: '%env(resolve:DATABASE_URL)%'
+
     # add more service definitions when explicit configuration is needed
     # please note that last definitions always *replace* previous ones

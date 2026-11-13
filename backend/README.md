@@ -58,7 +58,24 @@ php bin/console debug:router --env=test
 php bin/phpunit tests/Unit/Entity tests/Unit/Security tests/Unit/Service tests/Unit/Util
 ```
 
-The full suite additionally contains `tests/Unit/Repository/TenantScopedRepositoryTest.php` and `tests/Integration/InvoiceApiTest.php` / `tests/Integration/InvoiceHttpApiTest.php`. Those tests assert a PostgreSQL platform, insert rows, and delete them in teardown (temporarily disabling the append-only audit trigger for their own random-suffixed rows). They must never run against a shared, production or customer database.
+The full suite additionally contains `tests/Unit/Repository/TenantScopedRepositoryTest.php`, `tests/Integration/InvoiceApiTest.php`, `tests/Integration/InvoiceHttpApiTest.php`, `tests/Integration/InvoiceDraftConcurrencyTest.php` and `tests/Integration/SyntheticFixtureLoaderTest.php`. Those tests assert a PostgreSQL platform, insert rows, and delete them in teardown (temporarily disabling the append-only audit trigger for their own random-suffixed rows). They must never run against a shared, production or customer database.
+
+Verified 2026-11-13 against a throwaway `postgres:16-alpine` container (no volume, dynamic loopback port): `php bin/phpunit` — PASS (45 tests, 187 assertions). That run includes the draft edit/delete race regression tests (`InvoiceDraftConcurrencyTest` holds a real `FOR UPDATE` lock on a second connection and asserts the request blocks) and the fixture loader tests.
+
+## Synthetic fixtures
+
+`backend/src/DataFixtures/` holds the only fixture source: `SyntheticFixtureCatalog` (data definitions), `SyntheticFixtureLoader` (idempotent seeding plus target guard) and the `app:fixtures:load` entry point in `backend/src/Command/`.
+
+```sh
+php bin/console app:fixtures:load --env=test --force
+```
+
+- Data is entirely synthetic: fixture-only issuer `https://fixtures.example.test/oidc`, `example.test` emails, four principals, two organizations, Owner/Admin/Member/Viewer memberships, one principal in both organizations, four customers and six invoices covering draft, sent, overdue and paid.
+- The loader matches records by natural key (issuer+subject, subdomain, organization+principal, organization+name, organization+number). Re-running creates nothing new and deletes, truncates or updates nothing.
+- It refuses `APP_ENV=prod`, non-PostgreSQL URLs, non-loopback hosts, and database names without `test`, `dev` or `fixture`. Seeding the Compose `keelson` database therefore fails unless the owner explicitly changes that target policy.
+- Without `--force` it asks for confirmation and aborts in non-interactive shells. Nothing seeds automatically on boot, migration or test run.
+- Fixture principals have **no login credentials**. A manual OIDC sign-in only maps to one if the configured test provider returns the same issuer and subject; automated tests use `KernelBrowser::loginUser()`.
+- The frontend does not read these records — it is still mock-data-only with no API client.
 
 ### Isolated test database
 
@@ -93,7 +110,7 @@ php bin/phpunit
 docker stop keelson-test-db
 ```
 
-Do not substitute the Compose `keelson` database for this: Doctrine would target `keelson_test` on the persistent volume, which is not guaranteed disposable.
+Do not substitute the Compose `keelson` database for this: Doctrine would target `keelson_test` on the persistent volume, which is not guaranteed disposable. On Windows, fixed host ports can fall inside reserved ranges (`bind: An attempt was made to access a socket in a way forbidden by its access permissions`); use `-p 127.0.0.1::5432` and read the assigned port with `docker port keelson-test-db 5432`. Remove the container with `docker stop keelson-test-db`; never touch the Compose `db_data` volume.
 
 ## Configure Logto Cloud
 

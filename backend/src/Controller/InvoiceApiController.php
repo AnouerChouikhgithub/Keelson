@@ -272,14 +272,25 @@ final class InvoiceApiController extends AbstractController
         if ($denied = $this->checkMutation($request)) {
             return $denied;
         }
-        $invoice = $this->invoices->findForOrganization($organizationId, $invoiceId, $principal->getId());
-        if (null === $invoice) {
-            return $this->denied();
-        }
+        $this->beginTransactionIfNeeded();
         try {
+            // Lock the row before reading it: a concurrent send must never be overwritten by a stale draft edit.
+            $invoice = $this->invoices->findForOrganizationForUpdate($organizationId, $invoiceId, $principal->getId());
+            if (null === $invoice) {
+                $this->entityManager->rollback();
+
+                return $this->denied();
+            }
+            if ('draft' !== $invoice->getStatus()) {
+                $this->entityManager->rollback();
+
+                return $this->error('Only draft invoices may be edited.', Response::HTTP_CONFLICT);
+            }
             $payload = $this->payload($request);
             $allowedFields = ['customerId', 'issueDate', 'dueDate', 'currency', 'lineItems', 'taxRate', 'discountAmount'];
             if ([] === array_intersect(array_keys($payload), $allowedFields) || array_diff(array_keys($payload), $allowedFields)) {
+                $this->entityManager->rollback();
+
                 return $this->error('Invoice patch contains no mutable fields or unsupported fields.', Response::HTTP_BAD_REQUEST);
             }
             $payload += [
@@ -294,6 +305,8 @@ final class InvoiceApiController extends AbstractController
             $data = $this->invoiceInput->parse($payload, $this->calculator);
             $customer = $this->customers->findForOrganization($organizationId, $data['customerId']);
             if (null === $customer) {
+                $this->entityManager->rollback();
+
                 return $this->denied();
             }
             $calculation = $data['calculation'];
@@ -301,12 +314,20 @@ final class InvoiceApiController extends AbstractController
             $this->entityManager->flush();
             $this->audit($organizationId, $principal, 'invoice.updated', $invoiceId, $customer->getId());
             $this->entityManager->flush();
+            $this->entityManager->commit();
 
             return $this->json(['invoice' => $this->serializer->invoice($invoice)]);
         } catch (\DomainException $e) {
+            $this->rollbackIfActive();
+
             return $this->error($e->getMessage(), Response::HTTP_CONFLICT);
         } catch (\InvalidArgumentException $e) {
+            $this->rollbackIfActive();
+
             return $this->error($e->getMessage(), Response::HTTP_UNPROCESSABLE_ENTITY);
+        } catch (\Throwable $e) {
+            $this->rollbackIfActive();
+            throw $e;
         }
     }
 
@@ -332,19 +353,31 @@ final class InvoiceApiController extends AbstractController
         if ($denied = $this->checkMutation($request)) {
             return $denied;
         }
-        $invoice = $this->invoices->findForOrganization($organizationId, $invoiceId, $principal->getId());
-        if (null === $invoice) {
-            return $this->denied();
-        }
-        if ('draft' !== $invoice->getStatus()) {
-            return $this->error('Only draft invoices may be deleted.', Response::HTTP_CONFLICT);
-        }
-        $this->entityManager->remove($invoice);
-        $this->entityManager->flush();
-        $this->audit($organizationId, $principal, 'invoice.deleted', $invoiceId);
-        $this->entityManager->flush();
+        $this->beginTransactionIfNeeded();
+        try {
+            // Same lock-and-recheck rule as edits: never delete an invoice a concurrent send just committed.
+            $invoice = $this->invoices->findForOrganizationForUpdate($organizationId, $invoiceId, $principal->getId());
+            if (null === $invoice) {
+                $this->entityManager->rollback();
 
-        return new Response(null, Response::HTTP_NO_CONTENT);
+                return $this->denied();
+            }
+            if ('draft' !== $invoice->getStatus()) {
+                $this->entityManager->rollback();
+
+                return $this->error('Only draft invoices may be deleted.', Response::HTTP_CONFLICT);
+            }
+            $this->entityManager->remove($invoice);
+            $this->entityManager->flush();
+            $this->audit($organizationId, $principal, 'invoice.deleted', $invoiceId);
+            $this->entityManager->flush();
+            $this->entityManager->commit();
+
+            return new Response(null, Response::HTTP_NO_CONTENT);
+        } catch (\Throwable $e) {
+            $this->rollbackIfActive();
+            throw $e;
+        }
     }
 
     #[Route('/invoice-audit-events', name: 'api_invoice_audit_list', methods: ['GET'])]
@@ -372,9 +405,7 @@ final class InvoiceApiController extends AbstractController
         if ($denied = $this->checkMutation($request)) {
             return $denied;
         }
-        if (!$this->entityManager->getConnection()->isTransactionActive()) {
-            $this->entityManager->beginTransaction();
-        }
+        $this->beginTransactionIfNeeded();
         try {
             $invoice = $this->invoices->findForOrganizationForUpdate($organizationId, $invoiceId, $principal->getId());
             if (null === $invoice) {
@@ -402,16 +433,26 @@ final class InvoiceApiController extends AbstractController
 
             return $this->json(['invoice' => $this->serializer->invoice($invoice)]);
         } catch (\DomainException $e) {
-            if ($this->entityManager->getConnection()->isTransactionActive()) {
-                $this->entityManager->rollback();
-            }
+            $this->rollbackIfActive();
 
             return $this->error($e->getMessage(), Response::HTTP_CONFLICT);
         } catch (\Throwable $e) {
-            if ($this->entityManager->getConnection()->isTransactionActive()) {
-                $this->entityManager->rollback();
-            }
+            $this->rollbackIfActive();
             throw $e;
+        }
+    }
+
+    private function beginTransactionIfNeeded(): void
+    {
+        if (!$this->entityManager->getConnection()->isTransactionActive()) {
+            $this->entityManager->beginTransaction();
+        }
+    }
+
+    private function rollbackIfActive(): void
+    {
+        if ($this->entityManager->getConnection()->isTransactionActive()) {
+            $this->entityManager->rollback();
         }
     }
 

@@ -108,8 +108,18 @@ The full PHPUnit suite requires a separate, verified disposable PostgreSQL datab
 
 ## Current verification status
 
-As of 2026-11-13, frontend frozen install, build, and lint passed. Composer validation, PHP syntax checks, Symfony YAML/container/route checks, and the database-independent backend unit tests passed. The frontend dev server returned HTTP 200 in a local smoke check.
+As of 2026-11-13, frontend frozen install, build, and lint passed. Composer validation, PHP syntax checks, and Symfony YAML/container/route checks passed. The frontend dev server returned HTTP 200 in a local smoke check.
 
-The full PostgreSQL-backed test suite was not run because Docker was unavailable and no disposable database was selected. Real Logto sign-in/callback/logout was not verified, but the `/login` redirect itself now passes: the previously missing `symfony/translation-contracts` package is installed and `GET /login` returned HTTP 302 with `state`, `nonce` and an S256 `code_challenge`. With placeholder OIDC values, an unauthenticated API request was confirmed to reach the firewall and be denied with `AccessDeniedException` instead of a missing-environment error. These are explicit remaining checks, not passing results.
+The **full backend PHPUnit suite now passes against a disposable PostgreSQL 16 container** — `php bin/phpunit` reported 45 tests / 187 assertions with exit 0. That container was created only for the run (`postgres:16-alpine`, no volume, dynamic loopback port) and removed afterwards; the Compose `db_data` volume was never started, migrated or queried. The suite includes the draft edit/delete race regression tests, which hold a real `FOR UPDATE` lock on a second connection and assert the request blocks, plus fixture-loader idempotency and target-guard tests.
+
+Synthetic demo data can be seeded explicitly (never automatically):
+
+```powershell
+php bin/console app:fixtures:load --env=test --force
+```
+
+The command refuses `prod`, non-loopback hosts and database names that do not contain `test`, `dev` or `fixture`; it is idempotent and never deletes data. Fixture principals have no login credentials.
+
+Real Logto sign-in/callback/logout remains unverified, but the `/login` redirect itself passes: `symfony/translation-contracts` is installed and `GET /login` returned HTTP 302 with `state`, `nonce` and an S256 `code_challenge`. With placeholder OIDC values, an unauthenticated API request reached the firewall and was denied with `AccessDeniedException` instead of a missing-environment error.
 
 See [DEVELOPMENT_ROADMAP.md](DEVELOPMENT_ROADMAP.md) for phase status, [README.md](README.md) for the project overview, [backend/README.md](backend/README.md) for OIDC and isolated-database detail, and [frontend/README.md](frontend/README.md) for the frontend scope.

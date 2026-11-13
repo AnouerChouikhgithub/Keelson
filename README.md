@@ -7,9 +7,10 @@ Brand color: `#0F766E`.
 ## Status (verified 2026-11-13)
 
 - **Frontend** — React 19.3.1, Vite 8.3.4, TypeScript 6.0.3. Dashboard, organization switcher, mock onboarding and light/dark/system theme. No API calls, no persistence, no auth.
-- **Backend** — Symfony 7.4 (PHP >=8.2), Doctrine ORM 3 / DBAL 4 / Migrations, Drenso OIDC bundle. Implemented: OIDC session firewall with local principal provisioning, membership-based authorization voters, tenant-scoped organization/membership/invitation reads, and a customer/invoice/audit API (`draft → sent → paid`, derived overdue, TND millime arithmetic).
+- **Backend** — Symfony 7.4 (PHP >=8.2), Doctrine ORM 3 / DBAL 4 / Migrations, Drenso OIDC bundle. Implemented: OIDC session firewall with local principal provisioning, membership-based authorization voters, tenant-scoped organization/membership/invitation reads, and a customer/invoice/audit API (`draft → sent → paid`, derived overdue, TND millime arithmetic) whose draft edits, deletions and status transitions take a row lock so a concurrent send cannot be overwritten.
+- **Fixtures** — `backend/src/DataFixtures/` plus `php bin/console app:fixtures:load --env=test --force` seed idempotent, entirely synthetic demo identities, two organizations with all four roles, customers and draft/sent/overdue/paid invoices. The command refuses `prod`, non-loopback hosts and non-test/dev database names, never deletes data, and creates no login credentials.
 - **Sign-in redirect fixed (2026-11-13)** — `symfony/translation-contracts ^3.8` is now declared; its absence had made `GET /login` throw while building the PKCE challenge. `GET /login` now returns `302` to the authorization endpoint with `state`, `nonce`, `code_challenge` and `code_challenge_method=S256` (verified against a temporary local discovery stub, then the stub was removed). Real Logto sign-in/callback/logout is still unverified: it needs a configured test client and a reachable provider.
-- **Blocked** — the PostgreSQL-backed test suites could not run: the Docker Desktop Linux engine was unavailable and no isolated database was selected. No database was migrated or queried.
+- **Verified** — the full backend suite ran against a disposable `postgres:16-alpine` container (no volume, dynamic loopback port, removed afterwards): 45 tests / 187 assertions, exit 0. The Compose `db_data` volume was never used.
 - **Not implemented or not verified** — PostgreSQL RLS, real Logto sign-in/callback/logout, billing and usage enforcement (Phase 8 is a scope record only), email/invitation delivery, frontend↔API integration, CI, and most `docs/ui-spec.md` screens. Treat tenant isolation as application-layer scoping, not production hardening.
 
 ## Run locally
@@ -32,9 +33,8 @@ Quick orientation: `frontend/` (Vite app), `backend/` (Symfony API), `docker-com
 | --- | --- |
 | `cd frontend && pnpm install --frozen-lockfile`, `pnpm run build`, `pnpm run lint` | PASS |
 | `composer validate`, PHP syntax (40 files), YAML lint (13 files), container lint, `debug:router --env=test` (15 routes) | PASS |
-| Database-independent PHPUnit command | PASS (29 tests, 72 assertions) |
-| `docker compose -f docker-compose.yml ps` | BLOCKED — Docker engine unreachable |
-| Full `php bin/phpunit` | NOT RUN — no disposable database |
+| Full `php bin/phpunit` against a throwaway PostgreSQL 16 container | PASS (45 tests, 187 assertions) |
+| `app:fixtures:load` idempotency + unsafe-target refusal | PASS (second run creates 0; `prod`, non-loopback and non-test names refused) |
 | `GET /login` (local discovery stub, placeholder client) | PASS — HTTP 302 with `state`, `nonce`, S256 `code_challenge` |
 
 There is no frontend test script. Exact commands and the full results table are in [how-to-run.md](how-to-run.md).
