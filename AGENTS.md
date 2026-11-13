@@ -5,8 +5,8 @@ Multi-tenant SaaS starter: organizations, roles, invitations, Stripe subscriptio
 ## Architecture (current branch)
 
 - `backend/` — Symfony 7.4 API (PHP >=8.2) on Doctrine ORM 3 / DBAL 4 / Migrations and PostgreSQL 16, with a Drenso OIDC session firewall. Implemented: local principal provisioning after ID-token verification, membership-based authorization voters, tenant-scoped organization/membership/invitation reads, and a tenant-scoped customer/invoice/audit API.
-- `frontend/` — React + Vite + TypeScript single-page dashboard shell. It renders typed mock data, does **not** call the API, and stores nothing.
-- `docker-compose.yml` — dev-only PostgreSQL 16, Redis 7 and Mailpit. Redis and Mailpit are not used by the code.
+- `frontend/` — React + Vite + TypeScript single-page dashboard shell. It renders typed mock data, does **not** call the API, and persists only the theme preference in `localStorage`; organization switching and invitations are in-memory state.
+- `docker-compose.yml` — dev-only PostgreSQL 16, Redis 7 and Mailpit. Neither Redis nor Mailpit is wired into the application: there is no cache-provider or mailer configuration.
 
 Tenant isolation is application-layer only: repositories and controllers require an active membership for the route organization, and a client-supplied organization ID is a selector, never authority. PostgreSQL row-level security and Stripe webhooks are intended but **not implemented** — do not assume either exists without inspecting schema, queries and code.
 
@@ -29,7 +29,7 @@ Main color: `#0F766E`. Use it as the single primary color across the whole app (
 - Backend checks that need no database: `composer validate --no-check-publish`, `php bin/console lint:yaml config --env=test`, `php bin/console lint:container --env=test`, `php bin/console debug:router --env=test`, `php bin/phpunit tests/Unit/Entity tests/Unit/Security tests/Unit/Service tests/Unit/Util`.
 - Backend HTTP needs `OIDC_ISSUER`, `OIDC_WELL_KNOWN_URL`, `OIDC_CLIENT_ID` and `OIDC_CLIENT_SECRET`; there is no offline or password login, and console commands work without them. Serve with `php -S 127.0.0.1:8000 -t public public/index.php` (the front controller must be explicit, otherwise PHP's built-in server 404s on `/api/...`).
 - Migrations: inspect `DATABASE_URL` and `doctrine:migrations:status` first, then migrate only a confirmed local or disposable database. The Compose database uses the persistent `db_data` volume: never reset it, never run `down -v`, and never point tests at it.
-- Database-backed tests need a separate throwaway PostgreSQL 16 instance (the `test` environment appends `_test` to the configured database name); follow `backend/README.md`.
+- Database-backed tests need a separate throwaway PostgreSQL 16 instance (the `test` environment appends `_test`, plus `TEST_TOKEN` when set, to the configured database name); follow `backend/README.md`.
 - Mail catcher UI: http://localhost:8026
 
 ## Rules
@@ -37,7 +37,7 @@ Main color: `#0F766E`. Use it as the single primary color across the whole app (
 - TypeScript strict mode; no `any` unless justified in a comment.
 - Generate the frontend API client from the backend OpenAPI spec once one exists (openapi-typescript or Orval). Never hand-write API types. No spec exists yet, so the frontend stays mock-only.
 - Small, focused commits (Conventional Commits). Add or update tests with every feature.
-- Never commit secrets; use `.env.local`. Machine-local env snapshots (`backend/.env.phase7`) and generated tool output (`graphify-out/`) are git-ignored — keep them that way.
+- Never commit secrets; use `.env.local`. Machine-local snapshots (`backend/.env.*`, except the tracked `.env`, `.env.dev`, `.env.example` and `.env.test`) and generated tool output (`graphify-out/`) are git-ignored — keep them that way.
 - Prefer simple, readable code over clever code. Explain non-obvious decisions in short comments.
 - Ask before adding a new dependency or changing the architecture.
 

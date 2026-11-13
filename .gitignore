@@ -14,7 +14,11 @@ backend/var/
 # env / secrets
 .env.local
 .env.*.local
-backend/.env.phase7
+# machine-local backend snapshots; the shared defaults below stay tracked
+backend/.env.*
+!backend/.env.dev
+!backend/.env.example
+!backend/.env.test
 *.pem
 backend/config/jwt/*.pem
 
