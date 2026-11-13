@@ -1,15 +1,8 @@
-import { createContext, useContext, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
+import { ThemeContext } from './ThemeContext'
+import type { ThemeMode } from './ThemeContext'
 
-export type ThemeMode = 'light' | 'dark' | 'system'
-
-type ThemeContextValue = {
-  mode: ThemeMode
-  setMode: (mode: ThemeMode) => void
-  resolvedTheme: 'light' | 'dark'
-}
-
-const ThemeContext = createContext<ThemeContextValue | null>(null)
 const preferenceKey = 'keelson-theme'
 
 function readStoredTheme(): ThemeMode {
@@ -49,10 +42,4 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const value = useMemo(() => ({ mode, setMode, resolvedTheme }), [mode, resolvedTheme])
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>
-}
-
-export function useTheme() {
-  const context = useContext(ThemeContext)
-  if (!context) throw new Error('useTheme must be used inside ThemeProvider')
-  return context
 }

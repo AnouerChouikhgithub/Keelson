@@ -4,7 +4,7 @@ This roadmap scopes the multi-tenant SaaS starter domain only. It does not claim
 
 ## Intro
 
-Keelson is a multi-tenant SaaS starter project with organization membership and invoicing described in project guidance. The current tracked repository is a starter baseline: the frontend is a Vite/React TypeScript app, and the backend is a Symfony 7.4 skeleton. No tenant isolation, authentication, authorization, billing, or invoicing code has been verified in tracked source or manifests. This roadmap guides implementation toward a secure tenant foundation before any user-facing features are built.
+Keelson is a multi-tenant SaaS starter project. The frontend is a Vite/React TypeScript app and the backend is Symfony 7.4. The current branch contains implemented organization/principal authentication and authorization, tenant-scoped data access, and a backend-only customer/invoicing demonstration. Billing, PostgreSQL RLS, real identity-provider E2E, and production readiness are not established; roadmap statuses and evidence below distinguish implemented local behavior from remaining gates.
 
 ## Project scope summary
 
@@ -31,15 +31,27 @@ Keelson is a multi-tenant SaaS starter project with organization membership and 
 | 0: Environment and repository readiness | VERIFIED - PR #2 merged | Frontend build and Compose syntax verified; environment recorded; lint incompatibility deferred; ephemeral PostgreSQL target documented |
 | 1: Requirements, domain model and API contract | VERIFIED - PR #5 merged | Record owner-approved tenant/principal model, customer CRUD, invoice lifecycle, and API boundaries |
 | 2: Backend domain model and migrations | IMPLEMENTED AND VERIFIED | Doctrine entities, repositories, migration, and isolated PostgreSQL up/down evidence |
-| 3: Client app shell and design system | VERIFIED — app-shell foundation; full UI-spec batch remains partial | React/Vite dashboard shell, semantic light/dark/system theme, and organization-aware navigation; known lint and visual-scope gaps remain documented |
+| 3: Client app shell and design system | VERIFIED — app-shell foundation; full UI-spec batch remains partial | React/Vite dashboard shell, semantic light/dark/system theme, and organization-aware navigation; visual-scope gaps remain documented; frontend lint passes as of 2026-11-13 |
 | 4: Client workflows — organization onboarding | VERIFIED — accepted mock-only frontend scope; no backend/API | Mock organization creation/switching and invitation interactions are built and smoke-tested; auth, persistence, token delivery, and API remain unimplemented |
-| 5: Authentication and authorization | IMPLEMENTED — local checks pass; Logto end-to-end not verified | Symfony session firewall, Logto OIDC authorization-code flow with state/nonce/S256 PKCE, local Principal provisioning and membership-based authorization voter; external provider credentials and callback/logout verification remain required |
-| 6: Tenant-scoped data and migrations | IMPLEMENTED — PostgreSQL repository scope tests pass; API/RLS gate remains | Active membership scopes organization, membership, and invitation reads; cross-tenant denial covered by isolated PostgreSQL tests; tenant-scoped customer/invoice APIs and RLS remain unimplemented |
-| 7: Invoicing demonstration | NOT STARTED | Implement customer/invoice lifecycle guided by ui-spec.md; state transitions, totals, validation, audit trail |
-| 8: Billing and usage enforcement | NOT STARTED | Stripe integration scope; subscription lifecycle; usage counters and atomic enforcement; admin separation |
+| 5: Authentication and authorization | IMPLEMENTED — local checks pass and the `/login` authorization redirect was verified against a stub provider; Logto end-to-end not verified | Symfony session firewall, Logto OIDC authorization-code flow with state/nonce/S256 PKCE, local Principal provisioning and membership-based authorization voter; external provider credentials and callback/logout verification remain required |
+| 6: Tenant-scoped data and migrations | IMPLEMENTED — PostgreSQL repository scope tests pass; API/RLS gate remains | Active membership scopes organization, membership, and invitation reads; Phase 7 adds customer/invoice APIs; PostgreSQL RLS remains unimplemented |
+| 7: Invoicing demonstration | IMPLEMENTED AND VERIFIED — local PostgreSQL/API tests pass; provider E2E and RLS remain unverified | Backend-only customer CRUD and draft → sent → paid lifecycle with derived overdue status, TND calculation policy, tenant scoping, and audit trail; no frontend or payment processing |
+| 8: Billing and usage enforcement | SCOPE DECISIONS RECORDED — implementation not started | Tunisia-based seller; TND customer charges required; provider unresolved; Free + test-only Pro tier, unset configurable prices/limits, UTC invoice/active-seat caps, defined lifecycle/roles, and signed durable mock events; implementation approval still required |
 | 9: Hardening, CI and release readiness | NOT STARTED | CI pipeline for build/lint/tests; security regression suite; documented rollback and observability |
 
-Status evidence (updated 2026-10-23):
+Status evidence (updated 2026-11-13):
+- **2026-11-13 local run/test readiness (current branch `feat/phase-7-invoicing`, HEAD `323c5bd3166f208463397f8ca05c07e8bd70269b`, all pre-existing work preserved, nothing staged or committed):**
+  - Frontend toolchain: TypeScript was aligned from `7.0.2` to `6.0.3` (still `typescript-eslint@8.71.2`, whose published peer range is `>=4.8.4 <6.1.0`). No lint rule was suppressed and no dependency was added. `cd frontend && pnpm install --frozen-lockfile` — PASS (lockfile up to date).
+  - `cd frontend && pnpm run build` — PASS (21 modules; exit 0). `cd frontend && pnpm run lint` — PASS (exit 0, no findings) after moving the exported theme context/hook out of `ThemeProvider.tsx` into `src/theme/ThemeContext.ts`, which resolved the previously reported `react-refresh/only-export-components` error; component behavior is unchanged.
+  - `cd backend && composer validate --no-check-publish` — PASS. PHP syntax check across `backend/src`, `backend/tests`, `backend/migrations` — PASS (40 files). `php bin/console lint:yaml config --env=test` — PASS (13 files). `php bin/console lint:container --env=test` — PASS. `php bin/console debug:router` in `dev` and `--env=test` — PASS (15 routes, including the seven customer/invoice/audit API routes). The backend boots in `dev` without OIDC credentials; `/login` still needs real provider values.
+  - `cd backend && php bin/phpunit tests/Unit/Entity tests/Unit/Security tests/Unit/Service tests/Unit/Util` — PASS (29 tests, 72 assertions). The PostgreSQL-dependent `tests/Unit/Repository/TenantScopedRepositoryTest.php` and the two `tests/Integration` suites were deliberately excluded from this run.
+  - `docker compose -f docker-compose.yml ps` — BLOCKED (exit 1): `failed to connect to the docker API at npipe:////./pipe/dockerDesktopLinuxEngine`. Docker Desktop was not started, no container or volume was created or removed, and no database was selected, migrated, or queried.
+  - Full `php bin/phpunit` — NOT RUN. It needs a running PostgreSQL 16 instance whose test database is disposable; the default test URL derives from the Compose `keelson` database (plus Doctrine's `_test` suffix), so it would target the persistent Compose volume. This remains BLOCKED until an isolated test database is provided; Phase 7's own 2026-10-24 PostgreSQL evidence is unchanged and is not re-verified by this run.
+  - Local serving check: `php -S 127.0.0.1:<port> -t public public/index.php` reaches Symfony, but with no OIDC values a request to `/login` or `/api/...` returns HTTP 500 `Environment variable not found: "OIDC_CLIENT_ID"`. This is a configuration prerequisite, not a code defect, and there is no offline sign-in path; the docs now state it. The front controller must be passed explicitly, otherwise PHP's built-in server 404s on `/api/...`.
+  - **OIDC sign-in redirect fixed (owner-approved dependency):** `symfony/translation-contracts:^3.8` was added to `backend/composer.json` (installed `v3.8.1`) because `GET /login` previously threw `LogicException: You cannot use the "Symfony\Component\String\Slugger\AsciiSlugger" as the "symfony/translation-contracts" package is not installed` from `Drenso\OidcBundle\OidcClient::generateCodeChallenge()`. Verification with placeholder credentials and a temporary local discovery document (subsequently deleted) gave `GET /login` — HTTP 302, `Location` containing `client_id`, `response_type=code`, `redirect_uri=.../login_check`, `scope=openid+profile+email`, `state`, `nonce`, `code_challenge`, `code_challenge_method=S256`. `composer validate --no-check-publish` — PASS; `AsciiSlugger` now loads. This does not verify a real Logto authorization-code callback, ID-token validation, session creation or logout; those still require a configured provider client and remain unverified.
+  - Environment note: `composer require` initially failed because the locked `lcobucci/jwt` declares `ext-sodium`, which this PHP build lacks; installation succeeded with `--ignore-platform-req=ext-sodium`, and `composer check-platform-reqs` still exits 2 for that single extension. No jwt version was changed. `composer install` on this host needs the extension enabled or the same flag. `composer` also reported 13 security advisories across 9 packages (`composer audit`); none were addressed in this task.
+  - Setup/test instructions were reconciled in `README.md` and `backend/README.md`; `docs/ORCHESTRATION_READINESS.md` is now marked as a superseded 2026-10-20 snapshot rather than current status.
+- Status evidence recorded 2026-10-24:
 - Phase 0 PR #2 is merged into `main` (merge commit `911b16ff667c9173ca74fb0972e750fc7fc67164`); its recorded environment evidence and blockers are now part of `main`.
 - Phase 1 contract PR #3 is merged into `main` (merge commit `4225679eb3a7daccaffacf65bd521636b6cc78ab`); owner-approved customer CRUD and invoice lifecycle follow-up PR #5 is merged at `02278a6ceaca021889bcd2bb61bff86e46a127a3`. This is direct owner approval, not independent third-party review. Phase 1 is VERIFIED as a documented planning contract; no runtime security verification is claimed.
 - Phase 3/4 frontend work merged in PR #8 (merge commit `120e8c5b6f9487cae95ad6f2872660cabe8d53d8`). `cd frontend && pnpm run build` — PASS; `git diff --check` — PASS. Browser smoke tests exercised dashboard/theme, organization creation with valid and duplicate subdomains, organization switching, and invitation add/resend/revoke; the final browser console had no runtime errors. This verifies the app-shell foundation and accepted mock-only onboarding UI scope—not every screen in `docs/ui-spec.md`, nor any API, auth, persistence, email/token delivery, or authorization behavior.
@@ -54,16 +66,16 @@ Status evidence (updated 2026-10-23):
 - `git diff --stat` before phase changes — empty.
 - Phase 2 evidence is from its isolated migration verification recorded below. The current Phase 5 checks use disposable PHP containers and an in-memory SQLite URL; no database service, migration, or persistent volume was started or modified for Phase 5.
 - Phase 5: `composer validate --no-check-publish` — PASS; Symfony YAML lint (12 files) — PASS; `lint:container` — PASS; `debug:router` resolves `/login` and the generated logout route — PASS; `debug:firewall main --events` confirms a stateful firewall, OIDC authenticator, session fixation listener and provider logout listener — PASS; PHPUnit — PASS (19 tests, 36 assertions); PHP syntax checks across `backend/src`, `backend/tests`, and `backend/migrations` — PASS; `Principal` session serialize/unserialize smoke test — PASS. Symfony cache compilation was verified with dummy non-secret env values. A subsequent repeated `cache:clear` hit a Windows-mounted Docker cache directory cleanup race (`Directory not empty`); the earlier compile and container lint passed, and no cache files were manually removed. OIDC provider callback/sign-in/logout against a real Logto client was not run because no Logto client or credentials have been configured. The bundle's callback check path is intercepted by the firewall and is not a router-visible route.
-- Phase 5 does not establish actual tenant isolation across API routes, PostgreSQL RLS, database-backed session storage, email delivery, or production readiness. Phase 6 implements application-layer scoped organization/membership/invitation repository reads and tests those queries against a disposable PostgreSQL database. Customer/invoice entities and repositories, API routes, and PostgreSQL RLS remain unimplemented.
+- Phase 5 does not establish actual tenant isolation across API routes, PostgreSQL RLS, database-backed session storage, email delivery, or production readiness. Phase 6 implements application-layer scoped organization/membership/invitation repository reads and tests those queries against a disposable PostgreSQL database. Phase 7 adds tenant-scoped customer/invoice entities, repositories, APIs and tests; PostgreSQL RLS remains unimplemented.
 - Phase 6 verification (2026-10-23): disposable PostgreSQL 16 test database `keelson_phase6_test` on loopback port 55433, separate from the retained Phase 2 database and Compose volumes; initial domain migration applied to the isolated test database; Doctrine mapping/schema validation PASS; PHPUnit PASS (22 tests, 54 assertions), including 3 PostgreSQL tenant-isolation integration tests; container lint PASS. No schema migration was required.
-- Current verification rerun: `cd frontend && pnpm run build` — PASS. `cd frontend && pnpm run lint` — FAIL, exit 2: installed `typescript-eslint@8.71.2` does not support TypeScript `7.0.2`; this pre-existing toolchain incompatibility remains deferred. `docker compose -f docker-compose.yml config --quiet` — PASS; no services were started.
+- 2026-10-24 verification run: `cd frontend && pnpm run build` — PASS. `cd frontend && pnpm run lint` — FAIL, exit 2: installed `typescript-eslint@8.71.2` does not support TypeScript `7.0.2` (historical; resolved 2026-11-13 by aligning TypeScript to 6.0.3). `docker compose -f docker-compose.yml config --quiet` — PASS; no services were started.
 - No frontend test script is defined; no frontend test command was run.
 - No CI workflow was found in the baseline repository inspection.
 
 ## Phase 0: Environment and repository readiness
 
 ### Status: VERIFIED - merged in PR #2
-**Reason:** Required Phase 0 environment checks and blockers were reviewed in PR #2, which is merged into `main` at `911b16ff667c9173ca74fb0972e750fc7fc67164`. The lint incompatibility remains documented and deferred; verification does not mean every check passed.
+**Reason:** Required Phase 0 environment checks and blockers were reviewed in PR #2, which is merged into `main` at `911b16ff667c9173ca74fb0972e750fc7fc67164`. The lint incompatibility recorded below is historical: it was resolved on 2026-11-13 by aligning TypeScript to `6.0.3`, so `pnpm run build` and `pnpm run lint` both pass now. Verification does not mean every check passed.
 
 ### Goal and scope
 Verify that the development environment is functional and the repository state is sound before implementing any features. Confirm frontend build, Compose syntax, and identify blockers that must be resolved first.
@@ -683,25 +695,29 @@ Verified evidence (phase 6, 2026-10-23): `OrganizationRepository::findForPrincip
 
 ## Phase 7: Invoicing demonstration
 
-### Status: NOT STARTED
-**Reason:** Invoicing not yet implemented; guided by ui-spec.md but requires tenant foundation from Phases 1-6.
+### Status: IMPLEMENTED AND VERIFIED — local PostgreSQL/API checks pass
+**Reason:** The owner-approved backend API scope is implemented on `feat/phase-7-invoicing`; unit, repository integration, authenticated HTTP, migration, schema, and container checks pass against a disposable PostgreSQL test database. This does not claim production readiness, PostgreSQL RLS, or real identity-provider authentication.
 
 ### Goal and scope
-Implement customer/invoice lifecycle guided by `docs/ui-spec.md`. Define state transitions, totals, validation, and audit trail. Tenant isolation must apply (users see only their organization's invoices).
+Implement the owner-approved backend customer/invoice API contract from Phase 1. This phase is backend-only (the user selected Backend API + data); the prior mock-UI coding prompt is superseded. State lifecycle follows the approved contract: `draft → sent → paid`, with `sent → overdue` derived from due date, `overdue → paid`, paid terminal, and no `void` transition. All customer, invoice, and audit access requires active membership in the route organization; request organization IDs are selectors, not authority. No frontend integration or payment processing is included.
 
 ### Prerequisites and dependencies
 - Phase 6 tenant-scoped data and migrations operational
 - Phase 1 domain model and API contract documented
-- Phase 5 authentication and authorization operational
-- ui-spec.md invariants reviewed (not verified as implemented)
+- Phase 5 authentication and authorization operational for provider-backed sessions; local role policy is exercised by voter and HTTP tests, while real OIDC provider flow remains unverified
+- Product owner selected an explicit minimal calculation demo policy: TND only, amounts in millimes (3 fractional digits), quantity up to 3 fractional digits, tax rate up to 4 decimal places of percentage, tax on subtotal less fixed discount, half-up rounding to the nearest millime; no country-specific legal tax assumptions or live collection
+- No invoice numbering scheme had been approved: use a per-organization yearly `YYYY-NNNNNN` demo sequence guarded by a unique database constraint; concurrent collisions fail with 409 and may be retried
+- The approved contract's immutable customer snapshot is captured on invoice create/update; sent invoice edits are rejected
+- Audit events are transactionally recorded where applicable and the database trigger prevents their update/delete. Customer and draft-invoice deletion events are appended after entity deletion within the same database transaction.
 
 ### Expected deliverables and files
-- Customer entity or model (tenant-scoped)
-- Invoice entity or model (tenant-scoped, with state machine)
-- Invoice state transitions (draft → sent → paid → void, with explicit rules)
-- Validation rules for totals, tax, and currency (explicitly defined, not mocked)
-- Audit trail logging for invoice creation, state changes, and deletions
-- Frontend form for invoice creation and management (mock data, tenant-scoped)
+- Tenant-scoped Customer, Invoice, and append-only InvoiceAuditEvent entities, repositories, and reversible PostgreSQL migration
+- Customer list/create/read/update/delete API; referenced customer deletion conflicts
+- Invoice list/create-draft/read/update-draft/send/mark-paid/delete-draft API with status filtering and cursors
+- Role-aware membership authorization, same-origin/CSRF mutation checks, non-enumerating cross-tenant denials, and composite database customer/organization FK
+- Exact decimal calculator and documented TND demo policy; customer snapshot preserved on sent invoices
+- Audit events for customer/invoice create/update/delete and invoice send/pay/overdue transitions
+- Unit tests and isolated PostgreSQL plus authenticated HTTP functional tests; no frontend changes or live payment provider
 
 ### Coding-agent prompt
 ```
@@ -717,9 +733,10 @@ Focus: Implement invoicing demonstration for Keelon guided by ui-spec.md.
 Do not implement any live payment processing. Do not assume any Stripe integration unless explicitly approved. Do not claim any state transition is "valid" without explicit rules documented. Do not modify the frontend design system established in Phase 3.
 
 Scope limits:
-- Only define models, state machine, validation rules, and frontend forms with mock data.
-- Do not implement any Stripe webhook or payment provider integration.
+- Backend API and persistence only; do not add or change frontend screens or the design system.
+- Do not implement Stripe, payment collection, notification delivery, or external provider integrations.
 - Do not claim any invoice state is "verified" without acceptance criteria and tests.
+- Do not implement PostgreSQL RLS in this phase; its absence remains an explicit defense-in-depth limitation for later hardening.
 
 Do-not rules:
 - Do not add any live payment processing or Stripe SDK.
@@ -749,89 +766,90 @@ Exit criteria and definition of done:
 - Frontend form is operational with mock data.
 - Phase 8 can begin with billing and usage enforcement.
 
-Unresolved business decisions:
-- Currency and tax rule explicit definition (or defer to product owner)
-- Audit trail logging detail level and storage location
-- Invoice number generation strategy
+Approved/selected demo decisions:
+- Currency: TND only; values are decimal strings with exactly 3 fractional digits (millimes).
+- Quantity: non-negative decimal string with at most 3 fractional digits; must be positive per line.
+- Tax: optional percentage rate with up to 4 fractional digits; calculated against `max(0, subtotal - fixed discount)` and rounded half-up per invoice to the nearest millime. This is a demo formula, not a legal tax configuration.
+- Discount: optional non-negative fixed TND millime amount; cannot exceed subtotal.
+- Unit prices and quantities use no binary floating point; line extensions and tax use integer arithmetic. Reject excess precision, exponent notation, negative values, and totals beyond NUMERIC capacity.
+- Invoice numbers: per-organization annual `YYYY-NNNNNN` demo sequence with unique tenant constraint; uniqueness conflict is surfaced as retryable 409.
+- Audit: organization/actor/action/entity IDs and timestamp; no sensitive free-text or customer PII in audit metadata; append-only DB trigger.
+- Statuses/transitions: `draft -> sent -> paid`; `sent -> overdue` when due date precedes current day, and `overdue -> paid`. Mark-paid records a bookkeeping timestamp, not proof of receipt. No `void`, reopen, or payment collection.
+- Customer/invoice list use bounded page sizes; customer cursor is UUID ID ordering; invoice cursor is base64url JSON (`id`, `createdAt`) and remains tenant-filtered by query predicates.
 
-Verified evidence (phase 7): NOT APPLICABLE (status is NOT STARTED)
+Verified evidence (phase 7, 2026-10-24):
+- Implementation files added/changed on branch `feat/phase-7-invoicing`; no merge or PR is claimed.
+- PHP syntax checks across `backend/src`, `backend/tests`, and `backend/migrations` — PASS; final syntax verification was rerun after formatting.
+- Focused invoice PHPUnit suite — PASS (16 tests, 70 assertions); full backend PHPUnit suite — PASS (38 tests, 124 assertions). HTTP coverage includes authenticated customer create/list, cross-tenant denials, validation, and rejection of invoice creation using a foreign-tenant customer.
+- `composer validate --no-check-publish` — PASS; Symfony `lint:container --env=test` — PASS; Doctrine mapping/schema validation with `--skip-sync` — PASS. PHP used a temporary ini outside the repository enabling extensions; duplicate-module warnings remain but did not affect checks.
+- Disposable PostgreSQL test database `keelson_phase7_test_test` at loopback `127.0.0.1:55436`; migration status confirms `Version20261022164016` and Phase 7 `Version20261023170000` executed and no migrations pending. Schema synchronicity validation was explicitly skipped; migrations and PostgreSQL repository/API tests exercised the schema. No prior Phase 2 or unrelated database was targeted.
+- `git diff --check` — PASS after removing a trailing blank line. PHP-CS-Fixer was applied to Phase 7 backend source/tests; its final dry-run reported 0 fixable files. HTTP test sessions use Symfony `KernelBrowser::loginUser()` and test-only framework session configuration; fixture cleanup temporarily disables/re-enables the append-only audit trigger only while deleting random-suffixed test rows.
+- Real Logto OIDC login, external browser auth, and PostgreSQL RLS remain unverified/not implemented; application-layer tenant scoping alone is not complete defense-in-depth.
+- 2026-11-13 re-run on the same branch: database-independent checks still pass (`composer validate`, PHP syntax on 40 files, YAML/container lint, 29 unit tests / 72 assertions), but the PostgreSQL-backed repository and HTTP suites were **not re-run** because no disposable database was available (Docker daemon unreachable). The 2026-10-24 results above are therefore historical evidence, not today's confirmation.
 ```
 
 ## Phase 8: Billing and usage enforcement
 
-### Status: NOT STARTED
-**Reason:** Billing not yet implemented; Stripe integration scope to be decided; requires invoicing foundation from Phase 7.
+### Status: SCOPE DECISIONS RECORDED — implementation not started
+**Reason:** The owner has selected a provider-neutral, no-integration scope and recorded the plan catalog shape, subscription lifecycle, usage counters, authorization boundary, and test-event contract below. This is approval to document the scope only—not to add a provider SDK, create checkout or live webhook endpoints, or process payments. Any Phase 8 implementation still requires separate approval.
 
 ### Goal and scope
-Define Stripe integration scope, subscription lifecycle, usage counters, and atomic enforcement. Admin capabilities separated from tenant admin. No production credentials or live data.
+Define a provider-neutral monthly organization subscription with a Free tier and one Pro tier, backed by configurable limits. The seller's legal business is based in Tunisia, and customer charges must be denominated/presented in TND; merchant settlement currency and payout terms are separate and remain unconfirmed. No provider is selected until Tunisia merchant eligibility, TND charging, and recurring-card behavior are verified. In the absence of a provider or checkout, Free is the only live-assignable tier; Pro may be activated only by local/test fixtures until provider selection and implementation are separately approved. Keep prices and numeric limits unset (required configuration; no defaults); trial policy remains undecided. Measure monthly invoice drafts and active memberships, and enforce hard caps atomically. Record access behavior for cancellation/delinquency/downgrade and the security/test-event boundaries without implementing billing in this scope-definition step. No SDK, checkout, payment processing, or production credentials are in scope. Keep platform-admin support capabilities separate from tenant-admin authority.
 
 ### Prerequisites and dependencies
-- Phase 7 invoicing demonstration operational (models, state machine, validation)
-- Phase 1 domain model and API contract documented
-- Phase 5 authentication and authorization operational
-- Stripe account or test mode credentials (not in tracked files; documented only)
+- Phase 7 local PostgreSQL/API verification complete; real provider OIDC authentication and PostgreSQL RLS remain limitations and should be accounted for before production use.
+- Phase 1 domain model and API contract documented.
+- Phase 5 authentication and authorization operational for local application policy; real OIDC provider flow remains unverified.
+- Initial scope decisions are recorded below. A separate implementation approval is required before changing application behavior, schema, or provider integrations; remaining decisions are listed below.
+- Any provider credentials must be provided/configured outside tracked files and must never be recorded in this roadmap.
 
 ### Expected deliverables and files
-- Stripe integration scope decision record (test mode only; no credentials in tracked files)
-- Subscription lifecycle model (plan state source of truth, checkout/customer mapping, entitlement, grace period)
-- Usage counters and atomic enforcement mechanism (documented policy, not implemented unless approved)
-- Admin vs tenant admin capability separation (documented boundary)
-- Provider test-mode fixtures or mocked webhook integration (no production data)
+- Scope decision record: provider deferred; seller business country Tunisia; TND is mandatory for customer charges; no provider integration or live payment processing; no credentials in tracked files
+- Subscription and entitlement policy: organization-owned monthly subscription with Free and one test-only Pro tier; prices and numeric limits are required configuration with no defaults; trial policy remains undecided. No automatic upgrade; immediate cancellation, no grace period, and immediate Free fallback for canceled/past-due subscriptions. Without an approved provider/checkout, only Free may be assigned in live use; Pro activation is limited to local/test fixtures.
+- Provider eligibility gate: require evidence of Tunisia merchant onboarding, TND customer presentment, recurring off-session card charges (if required for paid renewals), signed webhook behavior, and settlement/payout terms before selection. Current docs make Flouci the first vendor to ask, not an approved choice: its [payment API](https://docs.flouci.com/api-reference/generate-transaction) documents TND/millime payments and recurring-payment docs exist, but its [error dictionary](https://docs.flouci.com/essentials/error-dictionary) includes card recurring not enabled/not implemented cases, so card autopay must be confirmed for this merchant. [Konnect's payment endpoint](https://docs.konnect.network/docs/en/api-integration/endpoints/initiate-payment) accepts TND but reviewed docs did not establish reusable-card recurring. [Paymee's API guide](https://www.paymee.tn/paymee-integration-without-redirection/) documents an individual payment flow; recurring/card-on-file support and explicit currency/settlement terms were not verified. Settlement currency must not be inferred from customer charge currency.
+- Usage policy: count successfully created invoice drafts during the UTC calendar month (deletion does not decrement); active accepted memberships count as seats (pending invitations do not); atomically deny cap-exceeding writes with a structured HTTP 409; downgrade takes effect immediately and blocks cap-increasing writes while usage is above the new cap.
+- Admin boundary: tenant admins can view their organization's plan/usage, update billing-profile details, and cancel; they cannot activate Paid. Platform admins may inspect only plan/status and aggregate usage counters across tenants, read-only. Each support read must be audited with actor, organization, timestamp, and support action under the project audit-retention policy; if none exists, retention duration remains open for privacy review. No invoice/customer/member-level details.
+- Test-event signing key: load from secret configuration, separate per environment, never from tracked files or production credentials; support rotation without bypassing verification.
+- Provider-neutral mock/test event contract: timestamped HMAC-SHA256 signature with a 5-minute replay window, plus a durable unique event ID. Validate the signature, then apply the event state change and persist the ID atomically; retain IDs indefinitely. Reject invalid or replayed signatures; acknowledge duplicate IDs without applying them twice. No live provider endpoint or production events in the scope-definition step.
 
 ### Coding-agent prompt
 ```
-Focus: Define billing and usage enforcement for Keelon (scope only; no live integration).
+Focus: Record the owner-approved Phase 8 billing and usage scope for Keelson. This is a planning/documentation task, not authorization to implement it.
 
-1. Document the Stripe integration scope decision: test mode only; no credentials in tracked files.
-2. Define subscription lifecycle model: plan state source of truth, checkout/customer mapping, entitlement semantics, grace-period rules.
-3. Define usage counters and atomic enforcement policy (document measurable counters and concurrency policy; do not implement unless approved).
-4. Separate admin capabilities from tenant admin (document the boundary and authentication/authorization requirements).
-5. Add provider test-mode fixtures or mocked webhook integration (no production data or credentials).
-6. Document entitlement check: subscription state changes do not bypass entitlements (record the check logic).
-
-Do not add any production Stripe credentials or go live with payment processing. Do not assume any delivery guarantees without explicit contract. Do not modify the frontend design system or invoice models beyond documented scope.
+Approved scope decisions:
+1. Defer selecting a billing provider; the seller's legal business is based in Tunisia and customer charges must be in TND. Do not add a provider SDK, checkout, live integration, or payment processing until merchant eligibility, TND charging, recurring-card capability, and payout terms are verified and separately approved.
+2. Use a Free tier and one test-only Pro tier for organization-owned monthly subscriptions. Free is the only live-assignable tier until provider/checkout selection and implementation are separately approved; Pro activation is limited to local/test fixtures. Prices and numeric limits are required configuration with no defaults; trial policy remains undecided. Do not automatically upgrade plans.
+3. Count each successfully created invoice draft in the UTC calendar month; deleting a draft does not decrement usage. Count active accepted memberships as seats; pending invitations do not reserve seats. Enforce caps atomically and return a structured HTTP 409 when an operation would exceed them. A downgrade applies immediately; if usage is above the new caps, allow reads and reductions but deny writes that increase an over-cap counter.
+4. Tenant admins may view their organization's plan/usage, update billing-profile details, and cancel; they cannot activate Paid. Platform admins have a separate role and may inspect only cross-tenant plan/status and aggregate counters, read-only; no invoice/customer/member-level detail and no plan, entitlement, or membership changes. Audit every support read with actor, organization, timestamp, and action; follow the project audit-retention policy, or leave retention duration open for privacy review if no policy exists.
+5. Specify mock/test events using timestamped HMAC-SHA256 signatures with a 5-minute replay window and a durable unique event ID. Load signing keys from environment-specific secret configuration (never tracked files or production credentials) and support rotation without bypassing verification. Validate the signature and timestamp, then apply the state change and persist the event ID atomically; retain IDs indefinitely. Reject invalid signatures and timestamps outside the replay window; acknowledge a valid duplicate event ID without applying it twice. No live provider webhook endpoint or production events in this scope-definition step.
+6. A database-managed subscription is authoritative before provider selection. Cancellation takes effect immediately, has no grace period, and falls back to Free entitlements. A past-due subscription likewise loses paid entitlements immediately and falls back to Free; Free caps continue to apply. Free is the only live-assignable tier until a provider/checkout is separately approved; Paid activation is test-fixture-only in this scope.
 
 Scope limits:
-- Only define the billing scope, subscription model, and usage policy.
-- Do not implement any live Stripe webhooks or production charges.
-- Do not modify any existing database schema beyond documented scope.
-
-Do-not rules:
-- Do not add production Stripe keys to .env or any tracked file.
-- Do not implement any webhook handler that processes live events.
-- Do not assume any usage limit enforcement is effective without documented policy and tests.
-- Do not modify the invoicing models from Phase 7 beyond agreed scope.
-
-Test cases:
-- Scope decision record names test-mode-only integration and no tracked credentials.
-- Subscription lifecycle model has at least 3 decision points (plan, checkout, entitlement).
-- Usage counter policy is documented with at least 2 measurable counters.
-- Admin vs tenant admin boundary is documented with at least 2 capability differences.
-
-Expected results for every test case:
-- Scope decision record exists and names test mode only.
-- Subscription model has documented decision points.
-- Usage policy documents at least 2 counters and concurrency approach.
-- Admin/tenant admin boundary has at least 2 documented differences.
+- Record policy and remaining decisions only; do not implement billing, subscriptions, usage enforcement, or schema changes in this step.
+- Do not add a provider dependency, checkout flow, live webhook handler, production charge, or credentials.
+- Do not modify the frontend design system or Phase 7 invoice models.
+- Any later implementation requires separate approval and must include tests for tenant isolation, atomic limits, role boundaries, signature rejection, and duplicate-event idempotency.
 
 Acceptance criteria:
-- Billing scope decision is recorded and reviewed.
-- Subscription lifecycle model has documented decision points.
-- Usage policy is documented with concurrency approach.
-- Admin/tenant admin boundary is documented.
+- The recorded policy reflects all six approved decisions above: seller country is Tunisia; TND customer charges are required; tier labels are Free and Pro; provider, prices, numeric limits, and trial policy are not selected; prices/limits have no defaults and must be explicitly configured.
+- Pro activation is explicitly limited to local/test fixtures until separate provider/checkout approval; tenant-admin controls, platform support's aggregate-only audited visibility and retention rule, environment-specific signing-key source, and provider-eligibility gate are stated; event ID persistence is atomic and indefinite.
+- Remaining commercial, lifecycle, authorization-action, and event-delivery details are explicitly listed rather than guessed.
+- The boundary between scope approval and implementation approval is clear.
 
 Exit criteria and definition of done:
-- Billing scope decision recorded and reviewed.
-- Subscription model and usage policy documented.
-- Phase 9 can begin with hardening and release readiness.
+- Scope decisions and remaining decisions are documented for review.
+- No provider integration, production credentials, live payment path, or application behavior is added by the scope-definition step.
+- Phase 9 may be planned after this scope record is reviewed; billing implementation remains separately gated.
 
-Unresolved business decisions:
-- Stripe test mode vs alternative billing provider
-- Usage counter granularity and measurement approach
-- Admin vs tenant admin capability boundaries final design
-- Entitlement check automation level
+Remaining business decisions:
+- Provider selection and test-environment boundary: confirm Tunisia onboarding, TND customer charging, recurring off-session card support, signed webhooks, merchant settlement currency/payout schedule/fees, and provider-backed customer mapping before choosing. Flouci is the first vendor to query, not a selected provider; card autopay availability must be confirmed in writing. Konnect/Paymee recurring-card capability was not established in the public docs reviewed.
+- Exact configurable limits/prices, trial policy, and rules for an explicit paid upgrade (automatic upgrades remain out of scope); tier names are Free and Pro. TND customer-charge currency is required; settlement currency is a separate open question.
+- Checkout/customer mapping and any provider-backed source-of-truth reconciliation after a provider is separately selected.
+- Any tenant-admin billing operation beyond viewing usage, updating the billing profile, and canceling; Paid activation remains unavailable outside local/test fixtures.
+- The exact audit-retention duration if the project has no established policy, plus access controls and privacy review for support-read records.
+- Secret-manager/configuration mechanism for environment-specific mock-event key provisioning and rotation; operational recovery for event-application failures. Event IDs are retained indefinitely and delivery retries must preserve duplicate-safe processing.
 
-Verified evidence (phase 8): NOT APPLICABLE (status is NOT STARTED)
+Verified evidence (phase 8): Owner scope choices recorded in this section on 2026-10-24, including Tunisia seller location, mandatory TND customer charges, follow-up lifecycle, quota, role, and mock-event protocol decisions. A current provider-docs review found no vendor yet verified against every required condition; Flouci is an inquiry candidate only, not a selection. No Phase 8 application implementation or integration was performed; implementation and the remaining decisions above are pending.
 ```
 
 ## Phase 9: Hardening, CI and release readiness

@@ -19,6 +19,7 @@
         "symfony/runtime": "7.4.*",
         "symfony/security-bundle": "7.4.*",
         "symfony/security-csrf": "7.4.*",
+        "symfony/translation-contracts": "^3.8",
         "symfony/yaml": "7.4.*"
     },
     "require-dev": {
