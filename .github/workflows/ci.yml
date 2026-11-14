@@ -1,0 +1,125 @@
+name: CI
+
+# Verifies the checks documented in DEVELOPMENT_ROADMAP.md / how-to-run.md.
+# No secrets are used: OIDC values below are dummies because the HTTP tests
+# authenticate with KernelBrowser::loginUser() and never contact a provider.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    name: Frontend build and lint
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.14.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - name: Install (frozen lockfile)
+        run: pnpm install --frozen-lockfile
+      - name: Build
+        run: pnpm run build
+      - name: Lint
+        run: pnpm run lint
+
+  backend:
+    name: Backend validation and PHPUnit
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: keelson
+          POSTGRES_PASSWORD: keelson
+          POSTGRES_DB: keelson
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U keelson -d keelson"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      APP_ENV: test
+      # The test environment appends "_test" to the configured database name,
+      # so this URL targets the CI-only keelson_test database created below.
+      DATABASE_URL: postgresql://keelson:keelson@127.0.0.1:5432/keelson?serverVersion=16&charset=utf8
+      APP_SECRET: ci-only-not-a-secret
+      OIDC_ISSUER: https://issuer.example.test/oidc
+      OIDC_WELL_KNOWN_URL: https://issuer.example.test/oidc/.well-known/openid-configuration
+      OIDC_CLIENT_ID: test-client
+      OIDC_CLIENT_SECRET: test-secret
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.5'
+          extensions: pdo_pgsql, sodium, intl, ctype, iconv
+          coverage: none
+          tools: composer:v2
+      - name: Install PHP dependencies
+        run: composer install --no-interaction --prefer-dist --no-progress
+      - name: Validate Composer metadata
+        run: composer validate --no-check-publish
+      - name: Check platform requirements
+        run: composer check-platform-reqs
+      - name: Lint YAML, container and routes
+        run: |
+          php bin/console lint:yaml config --env=test
+          php bin/console lint:container --env=test
+          php bin/console debug:router --env=test
+      - name: Create test database
+        env:
+          PGPASSWORD: keelson
+        run: psql -h 127.0.0.1 -U keelson -d keelson -c 'CREATE DATABASE keelson_test'
+      - name: Migrate test database
+        run: php bin/console doctrine:migrations:migrate --env=test --no-interaction
+      - name: PHPUnit
+        run: php bin/phpunit
+
+  audit:
+    name: Dependency audit (report only)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.5'
+          coverage: none
+          tools: composer:v2
+      - name: Composer audit
+        working-directory: backend
+        # Audit findings are reported for triage, not auto-remediated.
+        continue-on-error: true
+        run: composer audit --format=plain
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.14.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: pnpm audit
+        working-directory: frontend
+        continue-on-error: true
+        run: pnpm audit --audit-level moderate

@@ -37,5 +37,5 @@ export const mockTeamMembers: TeamMember[] = [
 ]
 
 export const mockInvitations: InvitationRecord[] = [
-  { id: 'invite-ons-001', organizationId: 'atelier-noura', email: 'ons.trabelsi@example.tn', role: 'Member', status: 'Pending', sentAt: '22 Oct 2026', expiresAt: '25 Oct 2026' },
+  { id: 'invite-ons-001', organizationId: 'atelier-noura', email: 'ons.trabelsi@example.tn', role: 'Member', status: 'Pending', sentAt: '2026-10-22', expiresAt: '2026-10-25' },
 ]
