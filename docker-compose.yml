@@ -1,4 +1,6 @@
 # Local development services. Symfony and the frontend run on your machine, not in Docker.
+# The explicit project name keeps containers and networks clearly namespaced as `keelson`.
+name: keelson
 services:
   db:
     image: postgres:16-alpine

@@ -9,7 +9,6 @@ use App\Entity\Invoice;
 use App\Entity\Membership;
 use App\Entity\Organization;
 use App\Entity\Principal;
-use App\Repository\CustomerRepository;
 use App\Service\InvoiceCalculator;
 use Doctrine\ORM\EntityManagerInterface;
 
@@ -102,7 +101,8 @@ final class SyntheticFixtureLoader
         }
         $this->entityManager->flush();
 
-        $creatorId = $principals['owner-a']->getId();
+        $creatorKey = $definitions['principals'][0]['key'];
+        $creatorId = $principals[$creatorKey]->getId();
         foreach ($definitions['invoices'] as $definition) {
             $organization = $organizations[$definition['organization']];
             $exists = $this->entityManager->getRepository(Invoice::class)
@@ -127,13 +127,23 @@ final class SyntheticFixtureLoader
                 $calculation['taxAmount'],
                 $calculation['total'],
             );
-            match ($definition['status']) {
-                'draft' => null,
-                'sent' => $invoice->send(),
-                'overdue' => $invoice->send() && $invoice->deriveOverdue($today),
-                'paid' => $invoice->send() && $invoice->markPaid(),
-                default => throw new \InvalidArgumentException(sprintf('Fixture invoice status "%s" is not supported.', $definition['status'])),
-            };
+            switch ($definition['status']) {
+                case 'draft':
+                    break;
+                case 'sent':
+                    $invoice->send();
+                    break;
+                case 'overdue':
+                    $invoice->send();
+                    $invoice->deriveOverdue($today);
+                    break;
+                case 'paid':
+                    $invoice->send();
+                    $invoice->markPaid();
+                    break;
+                default:
+                    throw new \InvalidArgumentException(sprintf('Fixture invoice status "%s" is not supported.', $definition['status']));
+            }
             $this->entityManager->persist($invoice);
             ++$stats['created']['invoices'];
         }

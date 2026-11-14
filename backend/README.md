@@ -22,7 +22,7 @@ APP_SECRET="<random-local-value>"
 DATABASE_URL="postgresql://app:app@127.0.0.1:5433/keelson?serverVersion=16&charset=utf8"
 ```
 
-`DATABASE_URL` above matches the root Compose PostgreSQL service (`127.0.0.1:5433`, database/user `keelson`/`app`). Start it from the repository root with `docker compose up -d` if you want a local database, and never reset its persistent `db_data` volume.
+`DATABASE_URL` above matches the root Compose PostgreSQL service (`127.0.0.1:5433`, database/user `keelson`/`app`). Start it from the repository root with `docker compose -p keelson up -d` if you want a local database, and never reset its persistent `keelson_db_data` volume.
 
 Required for any HTTP request (see the Logto section below): `OIDC_ISSUER`, `OIDC_WELL_KNOWN_URL`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`. Without them `php bin/console` commands still work, but every request through `public/index.php` fails with HTTP 500 `Environment variable not found: "OIDC_CLIENT_ID"`, because the security firewall resolves the client on each request. There is currently no offline or password-based sign-in path; the HTTP tests avoid it by using `KernelBrowser::loginUser()`.
 
@@ -31,18 +31,32 @@ Required for any HTTP request (see the Logto section below): `OIDC_ISSUER`, `OID
 Apply migrations only against a database you own locally:
 
 ```sh
-php bin/console doctrine:migrations:migrate
 php bin/console doctrine:migrations:status
+php bin/console doctrine:migrations:migrate
 ```
+
+Rollback is the reverse of the same migration set. Verify it on a disposable database (the `bin/test-db.sh` container, never the Compose volume):
+
+```sh
+php bin/console doctrine:migrations:migrate --env=test first --no-interaction
+php bin/console doctrine:migrations:migrate --env=test --no-interaction
+```
+
+Verified 2026-11-14: down applied both migrations (18 SQL queries, leaving only `doctrine_migration_versions`) and up re-applied them (44 queries), exit 0. For a real environment, back up first and stop writes; never "roll back" by deleting a volume.
 
 Serve the API (pass the front controller explicitly so PHP's built-in server does not 404 on `/api/...` paths):
 
 ```sh
+symfony serve --no-tls --port=8000
+# or, with PHP's built-in server:
 php -S 127.0.0.1:8000 -t public public/index.php
-# or: symfony server:start
 ```
 
-Every route except `/login` and `/logout` is behind the session firewall, so requests without a session are redirected to the provider log-in rather than returning data.
+`GET /healthz` is a public, database-free liveness probe. It has its own stateless `security: false` firewall (before `main` in `config/packages/security.yaml`) precisely because the `main` firewall resolves the OIDC client on every request; without that split the probe failed with `Environment variable not found: "OIDC_CLIENT_ID"`. Verified 2026-11-14 with `symfony serve`: HTTP 200 `{"status":"ok","service":"keelson-api"}` and `Cache-Control: no-store`.
+
+Every route except `/login`, `/logout`, `/healthz` and `/api/session` is behind the session firewall, so requests without a session are redirected to the provider log-in rather than returning data.
+
+`GET /api/session` is the shell's session probe. It is `PUBLIC_ACCESS` so the browser shell can render the signed-out state without an OIDC round trip, performs no database query, and returns only the caller's own identity: `{"authenticated":false,"user":null,"logout":null}` when anonymous, or the principal plus the CSRF token required by `POST /logout` (`csrf_token_id` `logout`, Symfony's default) when signed in. Responses are `Cache-Control: no-store, private`. Verified 2026-11-14 against a locally served kernel with placeholder OIDC values: HTTP 200 and the anonymous payload; an anonymous `POST /logout` redirects to `/login`.
 
 ## Tests
 
@@ -60,7 +74,7 @@ php bin/phpunit tests/Unit/Entity tests/Unit/Security tests/Unit/Service tests/U
 
 The full suite additionally contains `tests/Unit/Repository/TenantScopedRepositoryTest.php`, `tests/Integration/InvoiceApiTest.php`, `tests/Integration/InvoiceHttpApiTest.php`, `tests/Integration/InvoiceDraftConcurrencyTest.php` and `tests/Integration/SyntheticFixtureLoaderTest.php`. Those tests assert a PostgreSQL platform, insert rows, and delete them in teardown (temporarily disabling the append-only audit trigger for their own random-suffixed rows). They must never run against a shared, production or customer database.
 
-Verified 2026-11-13 against a throwaway `postgres:16-alpine` container (no volume, dynamic loopback port): `php bin/phpunit` — PASS (45 tests, 187 assertions). That run includes the draft edit/delete race regression tests (`InvoiceDraftConcurrencyTest` holds a real `FOR UPDATE` lock on a second connection and asserts the request blocks) and the fixture loader tests.
+Re-verified 2026-11-14 against a fresh throwaway `postgres:16-alpine` container started by `bin/test-db.sh`: `php bin/phpunit` — PASS (**52 tests, 229 assertions**), exit 0, including the CSRF-protected logout/session invalidation test. The Compose database was not used; the helper-owned volume-free container and generated `.env.test.local` were removed after the run. That run includes the draft edit/delete race regression tests (`InvoiceDraftConcurrencyTest` holds a real `FOR UPDATE` lock on a second connection and asserts the request blocks), two transaction-ownership regressions (a rejected edit must not roll back, and an idempotent send must not commit, a transaction the handler did not open) and the fixture loader tests.
 
 ## Synthetic fixtures
 
@@ -81,18 +95,25 @@ php bin/console app:fixtures:load --env=test --force
 
 In the `test` environment, `config/packages/doctrine.yaml` appends `_test` (plus `TEST_TOKEN` when set) to the configured database name. A `DATABASE_URL` of `.../keelson_test_local` therefore uses the database `keelson_test_local_test`.
 
-Use a throwaway PostgreSQL 16 container that is unrelated to the Compose `db_data` volume:
+Use the helper, which starts a throwaway container unrelated to the Compose `db_data` volume, wires the ignored `backend/.env.test.local`, creates the test database and runs migrations:
 
 ```sh
-docker run --rm -d --name keelson-test-db \
-  -e POSTGRES_USER=app -e POSTGRES_PASSWORD=app -e POSTGRES_DB=keelson_test_local \
-  -p 127.0.0.1:55437:5432 postgres:16-alpine
+bin/test-db.sh start     # start or reuse the container; write .env.test.local; migrate
+php bin/phpunit
+bin/test-db.sh stop      # remove the container and the generated env file
+bin/test-db.sh status    # show the container and its current port
 ```
 
-Create the ignored `backend/.env.test.local` (never commit it):
+- `start` runs `postgres:16-alpine` with **tmpfs** data (no volume at all) and publishes an ephemeral loopback port (`-p 127.0.0.1::5432`), then reads the real port back with `docker port`, so no fixed host port has to be guessed. Fixed ports can fall inside reserved Windows ranges (`bind: An attempt was made to access a socket in a way forbidden by its access permissions`).
+- The container is labelled with `keelson.test-db=1` and a repository-specific id. The helper refuses to reuse, stop or remove any container lacking those labels, and fails on a name collision rather than deleting an unknown container.
+- It writes `DATABASE_URL` plus the dummy OIDC values below only when `.env.test.local` is absent. `start` refuses any pre-existing file, including a previous helper-generated file, rather than overwriting it. `stop` deletes the marker file only after removing the matching helper-owned container.
+- A failed start or migration removes only the container created in that run and deletes only the marker file it generated; it exits non-zero with the underlying console error.
+- The container name, image and credentials can be overridden with `KEELSON_TEST_DB_*` environment variables. All data disappears with the container, and `stop` cleans up only helper-owned resources.
+
+The generated `.env.test.local` contains:
 
 ```sh
-DATABASE_URL="postgresql://app:app@127.0.0.1:55437/keelson_test_local?serverVersion=16&charset=utf8"
+DATABASE_URL="postgresql://keelson:keelson@127.0.0.1:<assigned-port>/keelson_test?serverVersion=16&charset=utf8"
 OIDC_ISSUER="https://issuer.example.test/oidc"
 OIDC_WELL_KNOWN_URL="https://issuer.example.test/oidc/.well-known/openid-configuration"
 OIDC_CLIENT_ID="test-client"
@@ -101,16 +122,7 @@ OIDC_CLIENT_SECRET="test-secret"
 
 All OIDC values may be dummies for these tests. The firewall resolves the client service on every request (so the four variables must exist), while the HTTP tests sign in with `KernelBrowser::loginUser()` and never contact the provider; `OIDC_ISSUER` is also used to build the test `Principal` rows. Placeholder values were confirmed on 2026-11-13 to let an unauthenticated API request reach the firewall, which denies it with `AccessDeniedException` rather than failing on a missing environment variable.
 
-Then create and migrate the test database and run the suite:
-
-```sh
-php bin/console doctrine:database:create --env=test --if-not-exists
-php bin/console doctrine:migrations:migrate --env=test --no-interaction
-php bin/phpunit
-docker stop keelson-test-db
-```
-
-Do not substitute the Compose `keelson` database for this: Doctrine would target `keelson_test` on the persistent volume, which is not guaranteed disposable. On Windows, fixed host ports can fall inside reserved ranges (`bind: An attempt was made to access a socket in a way forbidden by its access permissions`); use `-p 127.0.0.1::5432` and read the assigned port with `docker port keelson-test-db 5432`. Remove the container with `docker stop keelson-test-db`; never touch the Compose `db_data` volume.
+Do not substitute the Compose `keelson` database for this: Doctrine would target `keelson_test` on the persistent volume, which is not guaranteed disposable. Never touch the Compose `db_data` volume.
 
 ## Configure Logto Cloud
 
@@ -126,5 +138,7 @@ The app does not grant organization membership or a tenant role at sign-in. Ever
 ## Before deployment
 
 The Drenso OIDC bundle declares Symfony 7 support and implements authorization code flow, state, nonce and S256 PKCE, but Logto is not named in its tested-provider list. A real sign-in/callback/sign-out against the configured Logto tenant remains an explicit provider compatibility check; as of 2026-11-13 it has not been run.
+
+CI and dependency audit: `.github/workflows/ci.yml` runs Composer validation, YAML/container/route lint, migrations and this PHPUnit suite against a `postgres:16-alpine` service using dummy OIDC values, plus report-only `composer audit`/`pnpm audit`. The workflow was YAML-validated locally but has not run on GitHub-hosted runners. `composer audit` on 2026-11-14 reported 13 advisories across 9 packages; none were remediated because dependency changes need approval.
 
 Still not implemented: PostgreSQL row-level security, invitation issuance/acceptance flows, organization lifecycle operations beyond reads, billing/subscription/usage enforcement, notification delivery, refresh token rotation, password recovery and user self-service account linking. No Logto account, client credentials, or production configuration is included in the repository.

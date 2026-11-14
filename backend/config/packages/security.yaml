@@ -7,6 +7,13 @@ security:
         dev:
             pattern: ^/(_profiler|_wdt|assets|build)/
             security: false
+        # Liveness must answer before OIDC is configured: the main firewall
+        # builds the OIDC authenticator per request and would fail with a
+        # missing-client error instead of returning a probe response.
+        healthz:
+            pattern: ^/healthz$
+            security: false
+            stateless: true
         main:
             lazy: true
             provider: oidc_principals
@@ -24,6 +31,9 @@ security:
 
     access_control:
         - { path: ^/login$, roles: PUBLIC_ACCESS }
+        # The browser shell must learn it is signed out without being bounced
+        # through OIDC; the controller exposes only the caller's own identity.
+        - { path: ^/api/session$, roles: PUBLIC_ACCESS }
         - { path: ^/logout$, roles: ROLE_USER }
         - { path: ^/healthz$, roles: PUBLIC_ACCESS }
         - { path: ^/, roles: ROLE_USER }

@@ -272,24 +272,24 @@ final class InvoiceApiController extends AbstractController
         if ($denied = $this->checkMutation($request)) {
             return $denied;
         }
-        $this->beginTransactionIfNeeded();
+        $ownsTransaction = $this->beginTransactionIfNeeded();
         try {
             // Lock the row before reading it: a concurrent send must never be overwritten by a stale draft edit.
             $invoice = $this->invoices->findForOrganizationForUpdate($organizationId, $invoiceId, $principal->getId());
             if (null === $invoice) {
-                $this->entityManager->rollback();
+                $this->rollbackIfOwned($ownsTransaction);
 
                 return $this->denied();
             }
             if ('draft' !== $invoice->getStatus()) {
-                $this->entityManager->rollback();
+                $this->rollbackIfOwned($ownsTransaction);
 
                 return $this->error('Only draft invoices may be edited.', Response::HTTP_CONFLICT);
             }
             $payload = $this->payload($request);
             $allowedFields = ['customerId', 'issueDate', 'dueDate', 'currency', 'lineItems', 'taxRate', 'discountAmount'];
             if ([] === array_intersect(array_keys($payload), $allowedFields) || array_diff(array_keys($payload), $allowedFields)) {
-                $this->entityManager->rollback();
+                $this->rollbackIfOwned($ownsTransaction);
 
                 return $this->error('Invoice patch contains no mutable fields or unsupported fields.', Response::HTTP_BAD_REQUEST);
             }
@@ -305,7 +305,7 @@ final class InvoiceApiController extends AbstractController
             $data = $this->invoiceInput->parse($payload, $this->calculator);
             $customer = $this->customers->findForOrganization($organizationId, $data['customerId']);
             if (null === $customer) {
-                $this->entityManager->rollback();
+                $this->rollbackIfOwned($ownsTransaction);
 
                 return $this->denied();
             }
@@ -314,19 +314,19 @@ final class InvoiceApiController extends AbstractController
             $this->entityManager->flush();
             $this->audit($organizationId, $principal, 'invoice.updated', $invoiceId, $customer->getId());
             $this->entityManager->flush();
-            $this->entityManager->commit();
+            $this->commitIfOwned($ownsTransaction);
 
             return $this->json(['invoice' => $this->serializer->invoice($invoice)]);
         } catch (\DomainException $e) {
-            $this->rollbackIfActive();
+            $this->rollbackIfOwned($ownsTransaction);
 
             return $this->error($e->getMessage(), Response::HTTP_CONFLICT);
         } catch (\InvalidArgumentException $e) {
-            $this->rollbackIfActive();
+            $this->rollbackIfOwned($ownsTransaction);
 
             return $this->error($e->getMessage(), Response::HTTP_UNPROCESSABLE_ENTITY);
         } catch (\Throwable $e) {
-            $this->rollbackIfActive();
+            $this->rollbackIfOwned($ownsTransaction);
             throw $e;
         }
     }
@@ -353,17 +353,17 @@ final class InvoiceApiController extends AbstractController
         if ($denied = $this->checkMutation($request)) {
             return $denied;
         }
-        $this->beginTransactionIfNeeded();
+        $ownsTransaction = $this->beginTransactionIfNeeded();
         try {
             // Same lock-and-recheck rule as edits: never delete an invoice a concurrent send just committed.
             $invoice = $this->invoices->findForOrganizationForUpdate($organizationId, $invoiceId, $principal->getId());
             if (null === $invoice) {
-                $this->entityManager->rollback();
+                $this->rollbackIfOwned($ownsTransaction);
 
                 return $this->denied();
             }
             if ('draft' !== $invoice->getStatus()) {
-                $this->entityManager->rollback();
+                $this->rollbackIfOwned($ownsTransaction);
 
                 return $this->error('Only draft invoices may be deleted.', Response::HTTP_CONFLICT);
             }
@@ -371,11 +371,11 @@ final class InvoiceApiController extends AbstractController
             $this->entityManager->flush();
             $this->audit($organizationId, $principal, 'invoice.deleted', $invoiceId);
             $this->entityManager->flush();
-            $this->entityManager->commit();
+            $this->commitIfOwned($ownsTransaction);
 
             return new Response(null, Response::HTTP_NO_CONTENT);
         } catch (\Throwable $e) {
-            $this->rollbackIfActive();
+            $this->rollbackIfOwned($ownsTransaction);
             throw $e;
         }
     }
@@ -405,21 +405,21 @@ final class InvoiceApiController extends AbstractController
         if ($denied = $this->checkMutation($request)) {
             return $denied;
         }
-        $this->beginTransactionIfNeeded();
+        $ownsTransaction = $this->beginTransactionIfNeeded();
         try {
             $invoice = $this->invoices->findForOrganizationForUpdate($organizationId, $invoiceId, $principal->getId());
             if (null === $invoice) {
-                $this->entityManager->rollback();
+                $this->rollbackIfOwned($ownsTransaction);
 
                 return $this->denied();
             }
             if ('send' === $transition && 'draft' !== $invoice->getStatus()) {
-                $this->entityManager->commit();
+                $this->commitIfOwned($ownsTransaction);
 
                 return $this->json(['invoice' => $this->serializer->invoice($invoice)]);
             }
             if ('paid' === $transition && 'paid' === $invoice->getStatus()) {
-                $this->entityManager->commit();
+                $this->commitIfOwned($ownsTransaction);
 
                 return $this->json(['invoice' => $this->serializer->invoice($invoice)]);
             }
@@ -429,29 +429,46 @@ final class InvoiceApiController extends AbstractController
                 $this->audit($organizationId, $principal, 'paid' === $transition ? 'invoice.paid' : 'invoice.sent', $invoiceId);
                 $this->entityManager->flush();
             }
-            $this->entityManager->commit();
+            $this->commitIfOwned($ownsTransaction);
 
             return $this->json(['invoice' => $this->serializer->invoice($invoice)]);
         } catch (\DomainException $e) {
-            $this->rollbackIfActive();
+            $this->rollbackIfOwned($ownsTransaction);
 
             return $this->error($e->getMessage(), Response::HTTP_CONFLICT);
         } catch (\Throwable $e) {
-            $this->rollbackIfActive();
+            $this->rollbackIfOwned($ownsTransaction);
             throw $e;
         }
     }
 
-    private function beginTransactionIfNeeded(): void
+    /**
+     * Opens the transaction that owns the row lock, and reports whether this
+     * handler opened it. Callers must pass that flag to commitIfOwned()/
+     * rollbackIfOwned(): an already-active transaction belongs to an outer unit
+     * of work (a test, a console command, a wrapping decorator) and resolving
+     * it here would silently commit or discard that caller's writes.
+     */
+    private function beginTransactionIfNeeded(): bool
     {
-        if (!$this->entityManager->getConnection()->isTransactionActive()) {
-            $this->entityManager->beginTransaction();
+        if ($this->entityManager->getConnection()->isTransactionActive()) {
+            return false;
+        }
+        $this->entityManager->beginTransaction();
+
+        return true;
+    }
+
+    private function commitIfOwned(bool $ownsTransaction): void
+    {
+        if ($ownsTransaction) {
+            $this->entityManager->commit();
         }
     }
 
-    private function rollbackIfActive(): void
+    private function rollbackIfOwned(bool $ownsTransaction): void
     {
-        if ($this->entityManager->getConnection()->isTransactionActive()) {
+        if ($ownsTransaction && $this->entityManager->getConnection()->isTransactionActive()) {
             $this->entityManager->rollback();
         }
     }

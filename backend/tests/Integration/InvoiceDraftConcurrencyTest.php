@@ -170,6 +170,59 @@ final class InvoiceDraftConcurrencyTest extends WebTestCase
         self::assertSame('10.000', $subtotalAfter);
     }
 
+    public function testRejectedDraftEditLeavesACallerOwnedTransactionOpen(): void
+    {
+        $invoice = $this->draftInvoice();
+        $invoice->send();
+        $this->entityManager->flush();
+        $connection = $this->entityManager->getConnection();
+        $connection->beginTransaction();
+
+        try {
+            // An outer unit of work owns this transaction; the handler must not resolve it.
+            $connection->executeStatement('UPDATE customers SET name = ? WHERE id = ?', ['Outer marker', $this->id($this->customer)]);
+            $this->client->request('PATCH', $this->invoicePath($invoice), server: $this->jsonServer(), content: json_encode([
+                'lineItems' => [['description' => 'Late edit', 'quantity' => '9.000', 'unitPrice' => '99.000']],
+            ], JSON_THROW_ON_ERROR));
+
+            self::assertResponseStatusCodeSame(409);
+            self::assertTrue($connection->isTransactionActive(), 'The rejected edit resolved a transaction it did not open.');
+            self::assertSame('Outer marker', (string) $connection->fetchOne(
+                'SELECT name FROM customers WHERE id = ?',
+                [$this->id($this->customer)],
+            ));
+        } finally {
+            if ($connection->isTransactionActive()) {
+                $connection->rollBack();
+            }
+        }
+    }
+
+    public function testIdempotentSendLeavesACallerOwnedTransactionOpen(): void
+    {
+        $invoice = $this->draftInvoice();
+        $invoice->send();
+        $this->entityManager->flush();
+        $connection = $this->entityManager->getConnection();
+        $connection->beginTransaction();
+
+        try {
+            $connection->executeStatement('UPDATE customers SET name = ? WHERE id = ?', ['Outer marker', $this->id($this->customer)]);
+            $this->client->request('POST', $this->invoicePath($invoice).'/send', server: ['HTTP_ORIGIN' => 'http://localhost']);
+
+            self::assertResponseIsSuccessful();
+            self::assertTrue($connection->isTransactionActive(), 'The idempotent send committed a transaction it did not open.');
+            self::assertSame('Outer marker', (string) $connection->fetchOne(
+                'SELECT name FROM customers WHERE id = ?',
+                [$this->id($this->customer)],
+            ));
+        } finally {
+            if ($connection->isTransactionActive()) {
+                $connection->rollBack();
+            }
+        }
+    }
+
     private function draftInvoice(): Invoice
     {
         $invoice = new Invoice(
