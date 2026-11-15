@@ -53,4 +53,24 @@ class Organization
         $this->createdAt = $now;
         $this->updatedAt = $now;
     }
+
+    public function getId(): string
+    {
+        return $this->id;
+    }
+
+    public function getName(): string
+    {
+        return $this->name;
+    }
+
+    public function getSubdomain(): string
+    {
+        return $this->subdomain;
+    }
+
+    public function getStatus(): string
+    {
+        return $this->status;
+    }
 }

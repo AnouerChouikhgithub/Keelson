@@ -1,24 +1,33 @@
-import { Icon } from '../components/Icon'
+import type { OrganizationRole } from '../api/types'
 import { SessionCard } from '../components/SessionCard'
 import { useI18n } from '../i18n/I18nContext'
-import type { OrganizationSummary } from '../mocks/organizations'
+import { initialsOf } from '../utils/initials'
 
-const owner = {
-  name: 'Amine Ben Salah',
-  email: 'amine@atelier-noura.tn',
-  initials: 'AB',
-}
-
+/**
+ * The signed-in identity, as reported by `/api/session`, plus the caller's role
+ * in the active organization as reported by `/api/me/organizations`. Nothing on
+ * this screen is demo data, and nothing is editable because the backend exposes
+ * no profile write endpoint yet.
+ */
 export function AccountScreen({
+  displayName,
+  email,
   activeOrganization,
+  role,
   onLogout,
   logoutPending,
 }: {
-  activeOrganization: OrganizationSummary
+  displayName: string | null
+  email: string | null
+  activeOrganization: { id: string; name: string } | null
+  role: OrganizationRole | null
   onLogout: () => void
   logoutPending: boolean
 }) {
   const { m } = useI18n()
+  const name = displayName ?? email ?? m.account.unknownIdentity
+  const roleLabel = role === null ? m.account.noWorkspace : m.roles[role.toLowerCase() as keyof typeof m.roles]
+  const organizationName = activeOrganization?.name ?? m.account.noWorkspace
 
   return (
     <div className="account-page">
@@ -28,23 +37,23 @@ export function AccountScreen({
           <h1>{m.account.title}</h1>
           <p>{m.account.subtitle}</p>
         </div>
-        <span className="demo-notice"><Icon name="shield" size={15} /> {m.account.demoNotice}</span>
+        <span className="demo-notice">{m.account.source}</span>
       </section>
 
       <section className="panel account-card">
         <div className="account-identity">
-          <span className="account-avatar" aria-hidden="true">{owner.initials}</span>
+          <span className="account-avatar" aria-hidden="true">{initialsOf(name)}</span>
           <div>
-            <h2>{owner.name}</h2>
-            <p>{owner.email}</p>
+            <h2>{name}</h2>
+            <p>{email ?? '—'}</p>
           </div>
         </div>
 
         <dl className="detail-grid">
-          <div><dt>{m.account.name}</dt><dd>{owner.name}</dd></div>
-          <div><dt>{m.account.email}</dt><dd>{owner.email}</dd></div>
-          <div><dt>{m.account.organization}</dt><dd>{activeOrganization.name}</dd></div>
-          <div><dt>{m.account.role}</dt><dd>{m.roles.owner}</dd></div>
+          <div><dt>{m.account.name}</dt><dd>{displayName ?? '—'}</dd></div>
+          <div><dt>{m.account.email}</dt><dd>{email ?? '—'}</dd></div>
+          <div><dt>{m.account.organization}</dt><dd>{organizationName}</dd></div>
+          <div><dt>{m.account.role}</dt><dd>{roleLabel}</dd></div>
         </dl>
 
         <p className="account-note">{m.account.demoBody}</p>

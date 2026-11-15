@@ -76,6 +76,9 @@ export async function readSession(): Promise<ServerSession | null> {
       credentials: 'same-origin',
       headers: { Accept: 'application/json' },
       cache: 'no-store',
+      // The shell gates on this probe; without a deadline an unresponsive API
+      // would leave the application on its loading screen indefinitely.
+      signal: AbortSignal.timeout(10_000),
     })
     if (!response.ok) return null
     return parseSessionPayload(await response.json())

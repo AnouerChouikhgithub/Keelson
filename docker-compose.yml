@@ -1,28 +1,60 @@
-# Local development services. Symfony and the frontend run on your machine, not in Docker.
-# The explicit project name keeps containers and networks clearly namespaced as `keelson`.
+# Local development services only. Symfony and the frontend run on the host,
+# not in Docker. The explicit project name keeps containers, networks and the
+# volume clearly namespaced as `keelson`.
+#
+# The credentials below are development placeholders and are also the defaults
+# in backend/.env.example. Production must supply its own values externally;
+# see docs/ENVIRONMENT_CONFIGURATION.md and docs/DEPLOYMENT_GUIDE.md.
+#
+# Ports are published on 127.0.0.1 only: a development database with a known
+# password must not be reachable from the network. Override a port with the
+# matching *_PORT variable in the shell or a root .env file.
 name: keelson
 services:
   db:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: app
-      POSTGRES_PASSWORD: app
-      POSTGRES_DB: keelson
+      POSTGRES_USER: ${POSTGRES_USER:-app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-app}
+      POSTGRES_DB: ${POSTGRES_DB:-keelson}
     ports:
-      - "5433:5432"
+      - "127.0.0.1:${POSTGRES_PORT:-5433}:5432"
     volumes:
       - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+    restart: unless-stopped
 
   redis:
     image: redis:7-alpine
     ports:
-      - "6380:6379"
+      - "127.0.0.1:${REDIS_PORT:-6380}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    # Not wired into the application yet (no cache or session pool uses it).
+    restart: unless-stopped
 
   mailpit:
     image: axllent/mailpit
     ports:
-      - "1026:1025"
-      - "8026:8025"
+      - "127.0.0.1:${MAILPIT_SMTP_PORT:-1026}:1025"
+      - "127.0.0.1:${MAILPIT_UI_PORT:-8026}:8025"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8025/livez"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    # No mailer is configured; this is a convenience UI for later work.
+    restart: unless-stopped
 
 volumes:
+  # Persistent on purpose: `docker compose down` keeps it, `down -v` destroys it.
+  # Never use `down -v` against a database you need, and never point tests here.
   db_data:

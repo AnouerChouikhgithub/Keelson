@@ -1,0 +1,181 @@
+parameters:
+	ignoreErrors:
+		-
+			message: '#^Dead catch \- JsonException is never thrown in the try block\.$#'
+			identifier: catch.neverThrown
+			count: 1
+			path: src/Controller/InvoiceApiController.php
+
+		-
+			message: '#^Property App\\Entity\\Customer\:\:\$id is never written, only read\.$#'
+			identifier: property.onlyRead
+			count: 1
+			path: src/Entity/Customer.php
+
+		-
+			message: '#^Property App\\Entity\\Customer\:\:\$invoices is never read, only written\.$#'
+			identifier: property.onlyWritten
+			count: 1
+			path: src/Entity/Customer.php
+
+		-
+			message: '#^Property App\\Entity\\Customer\:\:\$updatedAt is never read, only written\.$#'
+			identifier: property.onlyWritten
+			count: 1
+			path: src/Entity/Customer.php
+
+		-
+			message: '#^Property App\\Entity\\Invitation\:\:\$acceptedAt \(DateTimeImmutable\|null\) is never assigned DateTimeImmutable so it can be removed from the property type\.$#'
+			identifier: property.unusedType
+			count: 1
+			path: src/Entity/Invitation.php
+
+		-
+			message: '#^Property App\\Entity\\Invitation\:\:\$acceptedAt is never read, only written\.$#'
+			identifier: property.onlyWritten
+			count: 1
+			path: src/Entity/Invitation.php
+
+		-
+			message: '#^Property App\\Entity\\Invitation\:\:\$createdAt is never read, only written\.$#'
+			identifier: property.onlyWritten
+			count: 1
+			path: src/Entity/Invitation.php
+
+		-
+			message: '#^Property App\\Entity\\Invitation\:\:\$email is never read, only written\.$#'
+			identifier: property.onlyWritten
+			count: 1
+			path: src/Entity/Invitation.php
+
+		-
+			message: '#^Property App\\Entity\\Invitation\:\:\$expiresAt is never read, only written\.$#'
+			identifier: property.onlyWritten
+			count: 1
+			path: src/Entity/Invitation.php
+
+		-
+			message: '#^Property App\\Entity\\Invitation\:\:\$id is unused\.$#'
+			identifier: property.unused
+			count: 1
+			path: src/Entity/Invitation.php
+
+		-
+			message: '#^Property App\\Entity\\Invitation\:\:\$invitedBy is never read, only written\.$#'
+			identifier: property.onlyWritten
+			count: 1
+			path: src/Entity/Invitation.php
+
+		-
+			message: '#^Property App\\Entity\\Invitation\:\:\$organization is never read, only written\.$#'
+			identifier: property.onlyWritten
+			count: 1
+			path: src/Entity/Invitation.php
+
+		-
+			message: '#^Property App\\Entity\\Invitation\:\:\$revokedAt \(DateTimeImmutable\|null\) is never assigned DateTimeImmutable so it can be removed from the property type\.$#'
+			identifier: property.unusedType
+			count: 1
+			path: src/Entity/Invitation.php
+
+		-
+			message: '#^Property App\\Entity\\Invitation\:\:\$revokedAt is never read, only written\.$#'
+			identifier: property.onlyWritten
+			count: 1
+			path: src/Entity/Invitation.php
+
+		-
+			message: '#^Property App\\Entity\\Invitation\:\:\$role is never read, only written\.$#'
+			identifier: property.onlyWritten
+			count: 1
+			path: src/Entity/Invitation.php
+
+		-
+			message: '#^Property App\\Entity\\Invitation\:\:\$status is never read, only written\.$#'
+			identifier: property.onlyWritten
+			count: 1
+			path: src/Entity/Invitation.php
+
+		-
+			message: '#^Property App\\Entity\\Invitation\:\:\$tokenHash is never read, only written\.$#'
+			identifier: property.onlyWritten
+			count: 1
+			path: src/Entity/Invitation.php
+
+		-
+			message: '#^Property App\\Entity\\Invitation\:\:\$updatedAt is never read, only written\.$#'
+			identifier: property.onlyWritten
+			count: 1
+			path: src/Entity/Invitation.php
+
+		-
+			message: '#^Property App\\Entity\\Invoice\:\:\$id is never written, only read\.$#'
+			identifier: property.onlyRead
+			count: 1
+			path: src/Entity/Invoice.php
+
+		-
+			message: '#^Property App\\Entity\\Invoice\:\:\$updatedAt is never read, only written\.$#'
+			identifier: property.onlyWritten
+			count: 1
+			path: src/Entity/Invoice.php
+
+		-
+			message: '#^Property App\\Entity\\InvoiceAuditEvent\:\:\$id is never written, only read\.$#'
+			identifier: property.onlyRead
+			count: 1
+			path: src/Entity/InvoiceAuditEvent.php
+
+		-
+			message: '#^Property App\\Entity\\Membership\:\:\$id is never written, only read\.$#'
+			identifier: property.onlyRead
+			count: 1
+			path: src/Entity/Membership.php
+
+		-
+			message: '#^Property App\\Entity\\Organization\:\:\$createdAt is never read, only written\.$#'
+			identifier: property.onlyWritten
+			count: 1
+			path: src/Entity/Organization.php
+
+		-
+			message: '#^Property App\\Entity\\Organization\:\:\$id is never written, only read\.$#'
+			identifier: property.onlyRead
+			count: 1
+			path: src/Entity/Organization.php
+
+		-
+			message: '#^Property App\\Entity\\Organization\:\:\$updatedAt is never read, only written\.$#'
+			identifier: property.onlyWritten
+			count: 1
+			path: src/Entity/Organization.php
+
+		-
+			message: '#^Property App\\Entity\\Principal\:\:\$createdAt is never read, only written\.$#'
+			identifier: property.onlyWritten
+			count: 1
+			path: src/Entity/Principal.php
+
+		-
+			message: '#^Property App\\Entity\\Principal\:\:\$id is never written, only read\.$#'
+			identifier: property.onlyRead
+			count: 1
+			path: src/Entity/Principal.php
+
+		-
+			message: '#^Property App\\Entity\\Principal\:\:\$updatedAt is never read, only written\.$#'
+			identifier: property.onlyWritten
+			count: 1
+			path: src/Entity/Principal.php
+
+		-
+			message: '#^Call to function is_array\(\) with array\{description\: mixed, quantity\: mixed, unitPrice\: mixed\} will always evaluate to true\.$#'
+			identifier: function.alreadyNarrowedType
+			count: 1
+			path: src/Service/InvoiceCalculator.php
+
+		-
+			message: '#^If condition is always false\.$#'
+			identifier: if.alwaysFalse
+			count: 1
+			path: src/Service/TransactionBoundary.php

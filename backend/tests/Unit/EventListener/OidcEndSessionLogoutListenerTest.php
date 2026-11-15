@@ -14,7 +14,8 @@ use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
-use Symfony\Component\Security\Http\Authenticator\Passport\Passport;
+use Symfony\Component\Security\Http\Authenticator\Passport\Badge\UserBadge;
+use Symfony\Component\Security\Http\Authenticator\Passport\SelfValidatingPassport;
 use Symfony\Component\Security\Http\Event\LogoutEvent;
 use Symfony\Component\Security\Http\Authenticator\Token\PostAuthenticationToken;
 
@@ -48,7 +49,12 @@ final class OidcEndSessionLogoutListenerTest extends TestCase
         $oidc = $this->createMock(OidcClientInterface::class);
         $oidc->method('generateEndSessionEndpointRedirect')->willThrowException(new \RuntimeException('discovery unavailable'));
         $logger = $this->createMock(LoggerInterface::class);
-        $logger->expects(self::once())->method('warning');
+        $logger->expects(self::once())
+            ->method('warning')
+            ->with(
+                'OIDC provider end-session redirect unavailable; completed the local sign-out only.',
+                ['exception_class' => \RuntimeException::class],
+            );
 
         $listener = new OidcEndSessionLogoutListener(new ProviderEndSessionRedirector($oidc, $logger));
         $listener->onLogout($event);
@@ -91,7 +97,7 @@ final class OidcEndSessionLogoutListenerTest extends TestCase
     private function oidcToken(OidcTokens $tokens): OidcToken
     {
         $principal = new Principal('https://issuer.example', 'subject-'.bin2hex(random_bytes(4)));
-        $passport = new Passport($principal);
+        $passport = new SelfValidatingPassport(new UserBadge($principal->getUserIdentifier(), static fn (): Principal => $principal));
         $passport->setAttribute(OidcToken::AUTH_DATA_ATTR, $tokens);
 
         return new OidcToken($passport, 'main');

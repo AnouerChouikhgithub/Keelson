@@ -1,7 +1,5 @@
 import type { Messages } from '../i18n/messages'
-import { recentInvoices } from '../mocks/dashboard'
 import type { AppNotification } from '../mocks/notifications'
-import type { OrganizationSummary } from '../mocks/organizations'
 import { notificationText } from '../notifications/notificationText'
 import type { PageId } from '../pages'
 
@@ -38,7 +36,7 @@ export function buildSearchResults({
   notifications,
 }: {
   m: Messages
-  organizations: OrganizationSummary[]
+  organizations: { id: string; name: string; subdomain: string }[]
   notifications: AppNotification[]
 }): SearchResult[] {
   const results: SearchResult[] = searchablePages.map((page) => ({
@@ -53,30 +51,13 @@ export function buildSearchResults({
       id: `organization-${organization.id}`,
       kind: 'organization',
       title: organization.name,
-      subtitle: `${organization.location} · ${organization.subdomain}.keelson.app`,
+      subtitle: `${organization.subdomain}.keelson.app`,
       page: 'onboarding',
     })
   }
 
-  for (const invoice of recentInvoices) {
-    results.push({
-      id: `invoice-${invoice.number}`,
-      kind: 'invoice',
-      title: invoice.number,
-      subtitle: invoice.customer,
-      page: 'invoices',
-    })
-  }
-
-  for (const customer of new Set(recentInvoices.map((invoice) => invoice.customer))) {
-    results.push({
-      id: `customer-${customer}`,
-      kind: 'customer',
-      title: customer,
-      page: 'customers',
-    })
-  }
-
+  // Invoices and customers are intentionally absent: the list is built from
+  // local state, and search must not surface mock records as if they were real.
   for (const notification of notifications) {
     results.push({
       id: `notification-${notification.id}`,

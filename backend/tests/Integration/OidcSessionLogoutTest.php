@@ -11,7 +11,8 @@ use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\BrowserKit\Cookie;
-use Symfony\Component\Security\Http\Authenticator\Passport\Passport;
+use Symfony\Component\Security\Http\Authenticator\Passport\Badge\UserBadge;
+use Symfony\Component\Security\Http\Authenticator\Passport\SelfValidatingPassport;
 
 /**
  * Sign-out for a real OIDC-authenticated session.
@@ -71,13 +72,17 @@ final class OidcSessionLogoutTest extends WebTestCase
         $csrfToken = (string) $session['logout']['csrfToken'];
         self::assertNotSame('', $csrfToken);
 
-        $this->client->request('POST', '/logout', ['_csrf_token' => $csrfToken]);
+        $this->client->request('POST', '/logout', [
+            '_csrf_token' => $csrfToken,
+            '_target_path' => 'https://attacker.example/steal-session',
+        ]);
 
         self::assertResponseStatusCodeSame(302);
         $location = (string) $this->client->getResponse()->headers->get('Location');
         self::assertStringContainsString('/session/end', $location, 'Logout must reach the provider end-session endpoint.');
         self::assertStringContainsString('id_token_hint=id.token.value', $location);
         self::assertStringContainsString('post_logout_redirect_uri='.rawurlencode('http://localhost/'), $location);
+        self::assertStringNotContainsString('attacker.example', $location, 'A request-supplied logout target must not create an open redirect.');
         self::assertStringContainsString('client_id=test-client', $location);
 
         // The local session is really gone, not just hidden in the SPA.
@@ -111,7 +116,7 @@ final class OidcSessionLogoutTest extends WebTestCase
             'access_token' => 'access-token',
             'expires_in' => 3600,
         ]);
-        $passport = new Passport($this->principal);
+        $passport = new SelfValidatingPassport(new UserBadge($this->principal->getUserIdentifier(), fn (): Principal => $this->principal));
         $passport->setAttribute(OidcToken::AUTH_DATA_ATTR, $tokens);
         $token = new OidcToken($passport, 'main');
 

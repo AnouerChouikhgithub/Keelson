@@ -31,10 +31,12 @@ final class ProviderEndSessionRedirector
         try {
             return $this->oidcClient->generateEndSessionEndpointRedirect($token->getAuthData(), $postLogoutRedirectUrl);
         } catch (\Throwable $exception) {
-            // The exception object can contain the discovery URL but never a
-            // credential; it is useful for diagnosing provider configuration.
+            // Do not log the exception message or object: discovery failures can
+            // include provider response details. The exception class is enough to
+            // distinguish transport/configuration failure without risking tokens,
+            // URLs containing secrets, or provider payloads in logs.
             $this->logger->warning('OIDC provider end-session redirect unavailable; completed the local sign-out only.', [
-                'exception' => $exception,
+                'exception_class' => $exception::class,
             ]);
 
             return null;

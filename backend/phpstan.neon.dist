@@ -1,0 +1,13 @@
+# Static analysis for application code. The baseline records the 30 findings
+# that existed when the check was introduced on 2026-11-15; new code must not
+# add findings. Fix a baselined entry and delete its line rather than widening
+# the baseline. See docs/sprints/sprint-4-report.md (Task F).
+includes:
+    - phpstan-baseline.neon
+
+parameters:
+    level: 5
+    paths:
+        - src
+    excludePaths:
+        - var

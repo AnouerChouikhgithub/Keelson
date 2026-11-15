@@ -14,10 +14,19 @@ security:
             pattern: ^/healthz$
             security: false
             stateless: true
+        # Readiness performs one database query and must answer without an
+        # OIDC client, so it gets the same treatment as liveness.
+        readiness:
+            pattern: ^/readyz$
+            security: false
+            stateless: true
         main:
             lazy: true
             provider: oidc_principals
             pattern: ^/(?!login$)
+            # API clients get 401 JSON; browser navigations still redirect to
+            # /login and start the OIDC flow.
+            entry_point: App\Security\ApiAuthenticationEntryPoint
             oidc:
                 check_path: /login_check
                 login_path: app_login
@@ -40,6 +49,7 @@ security:
         - { path: ^/api/session$, roles: PUBLIC_ACCESS }
         - { path: ^/logout$, roles: ROLE_USER }
         - { path: ^/healthz$, roles: PUBLIC_ACCESS }
+        - { path: ^/readyz$, roles: PUBLIC_ACCESS }
         - { path: ^/, roles: ROLE_USER }
 
 when@test:

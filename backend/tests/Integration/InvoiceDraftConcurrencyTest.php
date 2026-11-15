@@ -130,6 +130,21 @@ final class InvoiceDraftConcurrencyTest extends WebTestCase
         self::assertResponseIsSuccessful();
         self::assertSame('paid', json_decode((string) $this->client->getResponse()->getContent(), true, 512, JSON_THROW_ON_ERROR)['invoice']['status']);
         self::assertSame('paid', $this->column($invoice, 'status'));
+
+        // Retrying completed transitions is a no-op and must not append a
+        // duplicate status event.
+        $this->client->request('POST', $this->invoicePath($invoice).'/send', server: ['HTTP_ORIGIN' => 'http://localhost']);
+        self::assertResponseIsSuccessful();
+        $this->client->request('POST', $this->invoicePath($invoice).'/mark-paid', server: ['HTTP_ORIGIN' => 'http://localhost']);
+        self::assertResponseIsSuccessful();
+        self::assertSame(1, (int) $this->entityManager->getConnection()->fetchOne(
+            "SELECT COUNT(*) FROM invoice_audit_events WHERE organization_id = ? AND invoice_id = ? AND action = 'invoice.sent'",
+            [$this->id($this->organization), $this->id($invoice)],
+        ));
+        self::assertSame(1, (int) $this->entityManager->getConnection()->fetchOne(
+            "SELECT COUNT(*) FROM invoice_audit_events WHERE organization_id = ? AND invoice_id = ? AND action = 'invoice.paid'",
+            [$this->id($this->organization), $this->id($invoice)],
+        ));
     }
 
     public function testDraftEditWaitsForAConcurrentRowLock(): void

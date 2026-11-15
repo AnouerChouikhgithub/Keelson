@@ -18,11 +18,13 @@ function MemberPreview({ member }: { member: TeamMember }) {
 }
 
 type OnboardingProps = {
-  onOrganizationCreated: (organization: OrganizationSummary) => void
+  /** Demo only: the backend has no organization-create endpoint yet, so this
+   *  must not add anything to the real workspace list. */
+  onOrganizationCreated?: (organization: OrganizationSummary) => void
   onInvitationCreated: (invitation: InvitationRecord) => void
   invitations: InvitationRecord[]
-  organizations: OrganizationSummary[]
-  activeOrganizationId: string
+  organizations: { id: string; name: string; subdomain: string }[]
+  activeOrganizationId: string | null
 }
 
 export function Onboarding({ onOrganizationCreated, onInvitationCreated, invitations, organizations, activeOrganizationId }: OnboardingProps) {
@@ -53,7 +55,7 @@ export function Onboarding({ onOrganizationCreated, onInvitationCreated, invitat
       location: 'Tunisia',
     }
     setCreatedOrganization(created)
-    onOrganizationCreated(created)
+    onOrganizationCreated?.(created)
     setMessage(m.onboarding.messages.orgCreated(created.name, plan))
     setName('')
     setSubdomain('')
@@ -74,6 +76,9 @@ export function Onboarding({ onOrganizationCreated, onInvitationCreated, invitat
 
   function submitInvitation(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    // Invitations are a local demo until the backend exposes the flow, so there
+    // is nothing to attach them to without an active workspace.
+    if (activeOrganizationId === null) return
     const normalizedEmail = email.trim().toLowerCase()
     const now = new Date()
     const invitation: InvitationRecord = {

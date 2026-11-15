@@ -1,4 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { deleteInvoiceDraft, listInvoices, markInvoicePaid, sendInvoice } from '../api/invoices'
+import type { InvoiceStatusFilter } from '../api/invoices'
+import { canDeleteInvoiceResources, canWriteInvoiceResources } from '../api/organizations'
+import { isConflict, presentError } from '../api/presentError'
+import type { Invoice, OrganizationRole } from '../api/types'
+import { useApiResource } from '../api/useApiResource'
 import { EmptyState } from '../components/EmptyState'
 import { Icon } from '../components/Icon'
 import { PersonCell } from '../components/PersonCell'
@@ -7,26 +13,52 @@ import { StatusBadge } from '../components/StatusBadge'
 import { statusTone } from '../components/statusTone'
 import { useEscapeKey } from '../hooks/useEscapeKey'
 import { useI18n } from '../i18n/I18nContext'
-import type { InvoiceStatus } from '../mocks/dashboard'
-import { invoiceRecords } from '../mocks/invoices'
+import { initialsOf } from '../utils/initials'
 
-type Filter = 'all' | InvoiceStatus
 type SortKey = 'number' | 'amount' | 'dueDate'
 
-const filters: Filter[] = ['all', 'draft', 'sent', 'paid', 'overdue']
+const filters: InvoiceStatusFilter[] = ['all', 'draft', 'sent', 'paid', 'overdue']
 const pageSize = 6
 
-export function InvoicesScreen({ onOpenEditor }: { onOpenEditor: () => void }) {
+/**
+ * Amounts arrive as three-decimal strings. They are converted for display only;
+ * the server's decimal string is the authoritative value and is never written
+ * back after being parsed.
+ */
+function displayAmount(value: string): number {
+  const parsed = Number.parseFloat(value)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+export function InvoicesScreen({
+  organizationId,
+  role,
+  onOpenEditor,
+}: {
+  organizationId: string
+  role: OrganizationRole
+  onOpenEditor: (invoiceId: string | null) => void
+}) {
   const { m, currency, date } = useI18n()
   const copy = m.workspace.invoices
-  const [rows, setRows] = useState(invoiceRecords)
-  const [filter, setFilter] = useState<Filter>('all')
+  const [filter, setFilter] = useState<InvoiceStatusFilter>('all')
   const [query, setQuery] = useState('')
   const [sort, setSort] = useState<{ key: SortKey; asc: boolean }>({ key: 'dueDate', asc: false })
   const [selected, setSelected] = useState<string[]>([])
   const [page, setPage] = useState(0)
   const [menuFor, setMenuFor] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
+  const [pendingId, setPendingId] = useState<string | null>(null)
   const menuCell = useRef<HTMLTableCellElement>(null)
+
+  const canWrite = canWriteInvoiceResources(role)
+  const canDelete = canDeleteInvoiceResources(role)
+
+  const load = useCallback(
+    (signal: AbortSignal) => listInvoices(organizationId, { status: filter, signal }),
+    [organizationId, filter],
+  )
+  const { state, reload } = useApiResource(load)
 
   useEscapeKey(menuFor !== null, () => setMenuFor(null))
 
@@ -39,24 +71,23 @@ export function InvoicesScreen({ onOpenEditor }: { onOpenEditor: () => void }) {
     return () => document.removeEventListener('mousedown', handlePointerDown)
   }, [menuFor])
 
+  const rows = useMemo(() => state.status === 'ready' ? state.data.items : [], [state])
+  const morePages = state.status === 'ready' && state.data.nextCursor !== null
+
   const filtered = useMemo(() => {
-    const needle = query.trim().toLowerCase()
-    const matches = rows.filter((invoice) => {
-      const inFilter = filter === 'all' || invoice.status === filter
-      const inQuery = needle === ''
-        || invoice.number.toLowerCase().includes(needle)
-        || invoice.customer.toLowerCase().includes(needle)
-      return inFilter && inQuery
-    })
+    const needle = query.trim().toLocaleLowerCase()
+    const matches = rows.filter((invoice) => needle === ''
+      || invoice.number.toLocaleLowerCase().includes(needle)
+      || invoice.customer.name.toLocaleLowerCase().includes(needle))
     return [...matches].sort((left, right) => {
       const comparison = sort.key === 'amount'
-        ? left.amount - right.amount
+        ? displayAmount(left.total) - displayAmount(right.total)
         : sort.key === 'number'
           ? left.number.localeCompare(right.number)
           : left.dueDate.localeCompare(right.dueDate)
       return sort.asc ? comparison : -comparison
     })
-  }, [rows, filter, query, sort])
+  }, [rows, query, sort])
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize))
   const currentPage = Math.min(page, pageCount - 1)
@@ -77,33 +108,57 @@ export function InvoicesScreen({ onOpenEditor }: { onOpenEditor: () => void }) {
       : [...new Set([...current, ...visible.map((invoice) => invoice.id)])])
   }
 
-  function markPaid(ids: string[]) {
-    setRows((current) => current.map((invoice) => ids.includes(invoice.id) ? { ...invoice, status: 'paid' } : invoice))
-    setSelected((current) => current.filter((id) => !ids.includes(id)))
-    setMenuFor(null)
+  async function markPaid(invoices: Invoice[]) {
+    const payable = invoices.filter((invoice) => invoice.status !== 'paid')
+    if (payable.length === 0 || pendingId !== null) return
+    setPendingId(payable[0].id)
+    setNotice(null)
+    try {
+      for (const invoice of payable) {
+        await markInvoicePaid(organizationId, invoice.id)
+      }
+      setNotice(payable.length === 1 ? copy.markedPaid(payable[0].number) : copy.markedPaidMany(payable.length))
+      setSelected((current) => current.filter((id) => !payable.some((invoice) => invoice.id === id)))
+    } catch (error) {
+      setNotice(isConflict(error) ? copy.statusChanged : presentError(m, error))
+    } finally {
+      setPendingId(null)
+      setMenuFor(null)
+      reload()
+    }
   }
 
-  function deleteDraft(id: string) {
-    setRows((current) => current.filter((invoice) => invoice.id !== id || invoice.status !== 'draft'))
-    setSelected((current) => current.filter((item) => item !== id))
-    setMenuFor(null)
+  async function removeDraft(invoice: Invoice) {
+    if (pendingId !== null) return
+    setPendingId(invoice.id)
+    setNotice(null)
+    try {
+      await deleteInvoiceDraft(organizationId, invoice.id)
+      setNotice(copy.deletedDraft(invoice.number))
+      setSelected((current) => current.filter((id) => id !== invoice.id))
+    } catch (error) {
+      setNotice(isConflict(error) ? copy.statusChanged : presentError(m, error))
+    } finally {
+      setPendingId(null)
+      setMenuFor(null)
+      reload()
+    }
   }
 
-  function createDraft() {
-    const nextNumber = `INV-2026-${String(rows.length + 85).padStart(3, '0')}`
-    setRows((current) => [{
-      id: `inv-new-${current.length}`,
-      number: nextNumber,
-      customer: copy.newCustomer,
-      initials: 'NC',
-      issueDate: '2026-11-14',
-      dueDate: '2026-11-28',
-      amount: 0,
-      status: 'draft',
-    }, ...current])
-    setFilter('all')
-    setQuery('')
-    setPage(0)
+  async function send(invoice: Invoice) {
+    if (pendingId !== null) return
+    setPendingId(invoice.id)
+    setNotice(null)
+    try {
+      const sent = await sendInvoice(organizationId, invoice.id)
+      setNotice(m.workspace.editor.sentServer(sent.number))
+    } catch (error) {
+      setNotice(isConflict(error) ? copy.statusChanged : presentError(m, error))
+    } finally {
+      setPendingId(null)
+      setMenuFor(null)
+      reload()
+    }
   }
 
   const columns: { key: SortKey | null; label: string }[] = [
@@ -122,9 +177,11 @@ export function InvoicesScreen({ onOpenEditor }: { onOpenEditor: () => void }) {
           <h1>{m.page.invoices}</h1>
           <p>{m.placeholder.invoices}</p>
         </div>
-        <button className="button button-primary" type="button" onClick={createDraft}>
-          <Icon name="plus" size={18} /> {m.dashboard.createInvoice}
-        </button>
+        {canWrite && (
+          <button className="button button-primary" type="button" onClick={() => onOpenEditor(null)}>
+            <Icon name="plus" size={18} /> {m.dashboard.createInvoice}
+          </button>
+        )}
       </div>
 
       <div className="toolbar">
@@ -141,31 +198,74 @@ export function InvoicesScreen({ onOpenEditor }: { onOpenEditor: () => void }) {
               role="tab"
               aria-selected={filter === id}
               className={`filter-tab ${filter === id ? 'active' : ''}`}
-              onClick={() => { setFilter(id); setPage(0) }}
+              onClick={() => {
+                // A different filter is a different list: stale selections or a
+                // page number past the end would point at rows no longer shown.
+                setFilter(id)
+                setSelected([])
+                setPage(0)
+                setMenuFor(null)
+              }}
             >
               {copy.filters[id]}
-              <span className="filter-count">{id === 'all' ? rows.length : rows.filter((invoice) => invoice.status === id).length}</span>
             </button>
           ))}
         </div>
       </div>
 
-      {selected.length > 0 && (
+      {notice && (
+        <div className="inline-feedback" role="status">
+          <Icon name="check" size={16} />
+          <span>{notice}</span>
+          <button type="button" aria-label={m.common.dismiss} onClick={() => setNotice(null)}><Icon name="close" size={15} /></button>
+        </div>
+      )}
+
+      {selected.length > 0 && canWrite && (
         <div className="bulk-bar">
           <span>{copy.selected(selected.length)}</span>
-          <button type="button" className="button button-secondary" onClick={() => markPaid(selected)}>{copy.markPaid}</button>
+          <button
+            type="button"
+            className="button button-secondary"
+            disabled={pendingId !== null}
+            onClick={() => void markPaid(rows.filter((invoice) => selected.includes(invoice.id)))}
+          >
+            {copy.markPaid}
+          </button>
           <button type="button" className="button button-ghost" onClick={() => setSelected([])}>{copy.clearSelection}</button>
         </div>
       )}
 
-      {visible.length === 0 ? (
+      {state.status === 'loading' && <p className="mock-note" role="status">{m.api.loading}</p>}
+
+      {state.status === 'error' && (
+        <EmptyState
+          icon="file"
+          title={copy.loadFailed}
+          body={presentError(m, state.error)}
+          action={{ label: m.api.reload, onClick: reload }}
+        />
+      )}
+
+      {state.status === 'ready' && rows.length === 0 && (
+        <EmptyState
+          icon="file"
+          title={copy.noInvoices}
+          body={copy.noInvoicesHint}
+          action={canWrite ? { label: m.dashboard.createInvoice, onClick: () => onOpenEditor(null) } : undefined}
+        />
+      )}
+
+      {state.status === 'ready' && rows.length > 0 && visible.length === 0 && (
         <EmptyState
           icon="file"
           title={copy.empty}
           body={copy.emptyHint}
           action={{ label: copy.clear, onClick: () => { setFilter('all'); setQuery('') } }}
         />
-      ) : (
+      )}
+
+      {visible.length > 0 && (
         <div className="table-wrap">
           <table>
             <thead>
@@ -210,11 +310,11 @@ export function InvoicesScreen({ onOpenEditor }: { onOpenEditor: () => void }) {
                   </td>
                   <td className="invoice-number">{invoice.number}</td>
                   <td>
-                    <PersonCell initials={invoice.initials} name={invoice.customer} tone={statusTone[invoice.status]} />
+                    <PersonCell initials={initialsOf(invoice.customer.name)} name={invoice.customer.name} tone={statusTone[invoice.status]} />
                   </td>
                   <td>{date(invoice.issueDate)}</td>
                   <td>{date(invoice.dueDate)}</td>
-                  <td className="amount-cell">{currency(invoice.amount)}</td>
+                  <td className="amount-cell">{currency(displayAmount(invoice.total))}</td>
                   <td><StatusBadge status={invoice.status} /></td>
                   <td className="row-menu-cell" ref={menuFor === invoice.id ? menuCell : null}>
                     <button
@@ -222,20 +322,24 @@ export function InvoicesScreen({ onOpenEditor }: { onOpenEditor: () => void }) {
                       type="button"
                       aria-label={copy.rowMenu(invoice.number)}
                       aria-expanded={menuFor === invoice.id}
+                      disabled={pendingId !== null}
                       onClick={() => setMenuFor(menuFor === invoice.id ? null : invoice.id)}
                     >
                       <Icon name="more" />
                     </button>
                     {menuFor === invoice.id && (
                       <div className="row-menu" role="menu">
-                        {invoice.status !== 'paid' && (
-                          <button type="button" role="menuitem" onClick={() => markPaid([invoice.id])}>{copy.markPaid}</button>
+                        {canWrite && invoice.status !== 'paid' && (
+                          <button type="button" role="menuitem" onClick={() => void markPaid([invoice])}>{copy.markPaid}</button>
                         )}
-                        {invoice.status === 'draft' && (
-                          <button type="button" role="menuitem" onClick={() => { setMenuFor(null); onOpenEditor() }}>{copy.openEditor}</button>
+                        {canWrite && invoice.status === 'draft' && (
+                          <button type="button" role="menuitem" onClick={() => { setMenuFor(null); onOpenEditor(invoice.id) }}>{copy.openEditor}</button>
                         )}
-                        {invoice.status === 'draft' && (
-                          <button type="button" role="menuitem" className="danger-item" onClick={() => deleteDraft(invoice.id)}>{copy.deleteDraft}</button>
+                        {canWrite && invoice.status === 'draft' && (
+                          <button type="button" role="menuitem" onClick={() => void send(invoice)}>{copy.send}</button>
+                        )}
+                        {canDelete && invoice.status === 'draft' && (
+                          <button type="button" role="menuitem" className="danger-item" onClick={() => void removeDraft(invoice)}>{copy.deleteDraft}</button>
                         )}
                       </div>
                     )}
@@ -248,16 +352,18 @@ export function InvoicesScreen({ onOpenEditor }: { onOpenEditor: () => void }) {
       )}
 
       <div className="table-footer">
-        <span className="mock-note">{copy.mockNote}</span>
-        <div className="pagination">
-          <button type="button" className="icon-button" aria-label={copy.previous} disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)}>
-            <Icon name="chevron" size={16} />
-          </button>
-          <span>{copy.pageOf(currentPage + 1, pageCount)}</span>
-          <button type="button" className="icon-button pagination-next" aria-label={copy.next} disabled={currentPage >= pageCount - 1} onClick={() => setPage(currentPage + 1)}>
-            <Icon name="chevron" size={16} />
-          </button>
-        </div>
+        <span className="mock-note">{morePages ? copy.partial : copy.sourceNote}</span>
+        {visible.length > 0 && (
+          <div className="pagination">
+            <button type="button" className="icon-button" aria-label={copy.previous} disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)}>
+              <Icon name="chevron" size={16} />
+            </button>
+            <span>{copy.pageOf(currentPage + 1, pageCount)}</span>
+            <button type="button" className="icon-button pagination-next" aria-label={copy.next} disabled={currentPage >= pageCount - 1} onClick={() => setPage(currentPage + 1)}>
+              <Icon name="chevron" size={16} />
+            </button>
+          </div>
+        )}
       </div>
     </section>
   )

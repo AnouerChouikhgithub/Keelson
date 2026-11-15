@@ -21,6 +21,22 @@ final class OrganizationRepository extends ServiceEntityRepository
         return $this->findOneBy(['subdomain' => $normalizedSubdomain]);
     }
 
+    public function findActiveForPrincipalInOrganization(string $organizationId, string $principalId): ?Organization
+    {
+        return $this->createQueryBuilder('organization')
+            ->innerJoin(Membership::class, 'membership', 'WITH', 'membership.organization = organization')
+            ->andWhere('organization.id = :organizationId')
+            ->andWhere('IDENTITY(membership.principal) = :principalId')
+            ->andWhere('membership.status = :membershipStatus')
+            ->andWhere('organization.status = :organizationStatus')
+            ->setParameter('organizationId', $organizationId)
+            ->setParameter('principalId', $principalId)
+            ->setParameter('membershipStatus', 'active')
+            ->setParameter('organizationStatus', 'active')
+            ->getQuery()
+            ->getOneOrNullResult();
+    }
+
     /** @return list<Organization> */
     public function findForPrincipal(string $principalId): array
     {

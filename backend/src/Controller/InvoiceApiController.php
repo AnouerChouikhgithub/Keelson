@@ -73,7 +73,7 @@ final class InvoiceApiController extends AbstractController
         try {
             return $this->transactions->run(function () use ($organizationId, $principal, $request): JsonResponse {
                 $data = $this->payload($request);
-                $organization = $this->organizations->find($organizationId);
+                $organization = $this->organizations->findActiveForPrincipalInOrganization($organizationId, $principal->getId());
                 if (null === $organization) {
                     return $this->denied();
                 }
@@ -97,7 +97,8 @@ final class InvoiceApiController extends AbstractController
         if (!$this->isGranted(InvoiceVoter::READ, $organizationId)) {
             return $this->denied();
         }
-        $customer = $this->customers->findForOrganization($organizationId, $customerId);
+        $principal = $this->principal();
+        $customer = $this->customers->findForOrganization($organizationId, $customerId, $principal->getId());
 
         return null === $customer ? $this->denied() : $this->json(['customer' => $this->serializer->customer($customer)]);
     }
@@ -114,7 +115,7 @@ final class InvoiceApiController extends AbstractController
         $principal = $this->principal();
         try {
             return $this->transactions->run(function () use ($organizationId, $customerId, $principal, $request): JsonResponse {
-                $customer = $this->customers->findForOrganization($organizationId, $customerId);
+                $customer = $this->customers->findForOrganization($organizationId, $customerId, $principal->getId());
                 if (null === $customer) {
                     return $this->denied();
                 }
@@ -156,7 +157,7 @@ final class InvoiceApiController extends AbstractController
                 // it, so a concurrent invoice cannot appear between the check and
                 // the delete. A customer created concurrently cannot race either,
                 // because the id is already known to be visible.
-                $customer = $this->customers->findForOrganizationForUpdate($organizationId, $customerId);
+                $customer = $this->customers->findForOrganizationForUpdate($organizationId, $customerId, $principal->getId());
                 if (null === $customer) {
                     return $this->denied();
                 }
@@ -217,12 +218,12 @@ final class InvoiceApiController extends AbstractController
         try {
             return $this->transactions->run(function () use ($organizationId, $principal, $request): JsonResponse {
                 $data = $this->invoiceInput->parse($this->payload($request), $this->calculator);
-                $customer = $this->customers->findForOrganization($organizationId, $data['customerId']);
+                $customer = $this->customers->findForOrganization($organizationId, $data['customerId'], $principal->getId());
                 if (null === $customer) {
                     return $this->denied();
                 }
                 $calculation = $data['calculation'];
-                $organization = $this->organizations->find($organizationId);
+                $organization = $this->organizations->findActiveForPrincipalInOrganization($organizationId, $principal->getId());
                 if (null === $organization) {
                     return $this->denied();
                 }
@@ -298,7 +299,7 @@ final class InvoiceApiController extends AbstractController
                     'discountAmount' => $invoice->getDiscountAmount(),
                 ];
                 $data = $this->invoiceInput->parse($payload, $this->calculator);
-                $customer = $this->customers->findForOrganization($organizationId, $data['customerId']);
+                $customer = $this->customers->findForOrganization($organizationId, $data['customerId'], $principal->getId());
                 if (null === $customer) {
                     return $this->denied();
                 }

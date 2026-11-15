@@ -1,22 +1,40 @@
 # Frontend (React + Vite + TypeScript)
 
-The web app is a **mock-data dashboard shell** for Keelson. It renders a dashboard, invoices, a two-pane invoice editor with live preview, customers, team, billing, a public pricing page, an organization switcher, an onboarding flow (create organization, invite teammates), an account screen, a notifications inbox and functional settings. It does **not** call the backend API, persist data to a server, send email, or enforce permissions; organization switching, invitations, notification read state and preferences only change local state or `localStorage`.
+The web app is the Keelson dashboard shell. Since the Sprint 2 integration it is connected to the
+Symfony API for everything that has a backend:
 
-Billing is a mock screen that follows the recorded Phase 8 policy (Free and Pro only, prices and limits shown as unset configuration, Pro test-only). PostgreSQL RLS, real sign-in, the organization-settings profile/danger zone, the platform-admin console and the sign-in/sign-up/recovery screens are not implemented here. Platform admin is deliberately absent: the Phase 1 contract leaves super-admin authority, impersonation and auditing unresolved.
+- the **session** (`GET /api/session`), including the signed-out and unavailable states;
+- the caller's **organizations and role** (`GET /api/me/organizations`);
+- **customers** — list, read, create, update, delete, including the `409` raised when invoices
+  reference a customer;
+- **invoices** — list with the server status filter, read, create draft, update draft, send,
+  mark paid, delete draft, with `409` conflict handling and server-returned totals.
+
+Still mock, clearly labelled, and never mixed into an API-backed list: dashboard metrics,
+onboarding and invitations, team, billing, pricing and notifications. Nothing on those screens is
+sent to a server except local preferences and notification read state.
+
+The verified request/response contract is [`../docs/api-contract.md`](../docs/api-contract.md).
 
 ## Stack (from `package.json` / `pnpm-lock.yaml`)
 
 - React 19.3.1, React DOM 19.3.1
 - Vite 8.3.4, `@vitejs/plugin-react` 6.1.2
-- TypeScript 6.0.3 — deliberately pinned below 6.1 because `typescript-eslint` 8.71.2 supports `>=4.8.4 <6.1.0` and rejects TypeScript 7 (`typescript-eslint does not support TS 7.0`). Move back to TypeScript 7 only once typescript-eslint ships support.
-- ESLint 10.13.0 with `typescript-eslint` 8.71.2, `eslint-plugin-react-hooks`, `eslint-plugin-react-refresh`
+- TypeScript 6.0.3 — deliberately pinned below 6.1 because `typescript-eslint` 8.71.2 supports
+  `>=4.8.4 <6.1.0` and rejects TypeScript 7. Move back to TypeScript 7 only once typescript-eslint
+  ships support.
+- ESLint 10.13.0 with `typescript-eslint` 8.71.2, `eslint-plugin-react-hooks`,
+  `eslint-plugin-react-refresh`
+- Vitest 5.1.0 (Node environment — no `jsdom`, no Testing Library)
 
-No routing, i18n or UI component library is installed; navigation, translations and styles are local code.
+No routing, i18n or UI component library is installed; navigation, translations and styles are local
+code. The API layer is hand-written because the backend has no OpenAPI document yet.
 
 ## Prerequisites
 
 - Node.js `^20.19.0 || >=22.12.0` (verified on v22.13.0)
 - pnpm 12.14.0
+- A running backend for anything past the signed-out screen (see `../how-to-run.md`)
 
 ## Commands
 
@@ -24,59 +42,150 @@ Run from `frontend/`:
 
 ```sh
 pnpm install --frozen-lockfile   # install exactly what the lockfile pins
-npm start                        # Vite on 127.0.0.1:5173 (verified 2026-11-14)
+npm start                        # Vite on 127.0.0.1:5173
 pnpm dev                         # Vite dev server (http://localhost:5173)
-pnpm dev --host 127.0.0.1        # same, bound to IPv4 loopback (verified)
 pnpm run build                   # tsc -b && vite build → dist/
 pnpm run lint                    # eslint .
+pnpm test                        # vitest run (56 tests, Node environment)
 pnpm preview                     # serve the production build
 ```
 
-`npm start` is a script alias for `vite --host 127.0.0.1`; it runs with the already-installed dependencies and does not create a second lockfile. Install with pnpm (the committed `pnpm-lock.yaml`) and start with either command.
+`npm start` is a script alias for `vite --host 127.0.0.1`.
 
-The dev server needs no backend, database or environment variables. `docs`/root notes for the whole project are in [`../how-to-run.md`](../how-to-run.md).
+## Configuration
+
+| Variable | Where | Meaning |
+| --- | --- | --- |
+| `VITE_API_BASE_URL` | build/runtime env, optional | Absolute API origin for a deployment where the API is not same-origin. Empty by default. **Never** put a secret here: Vite inlines every `VITE_*` value into the public bundle. |
+| `KEELSON_BACKEND_ORIGIN` | dev-server env, optional | Proxy target for `/api`, `/login`, `/login_check` and `/logout`. Defaults to `http://127.0.0.1:8000`. |
+
+The dev proxy uses `changeOrigin: false` on purpose: the Symfony session cookie must stay
+same-origin, and the API's mutation guard compares the request `Origin` with
+`getSchemeAndHttpHost()`. Do not add permissive CORS to work around a proxy misconfiguration.
+
+## API architecture (`src/api/`)
+
+| File | Responsibility |
+| --- | --- |
+| `client.ts` | The only `fetch` call site. Same-origin credentials, `cache: 'no-store'`, JSON in/out, `204` and empty bodies, non-JSON error pages, network failures, abort passthrough, and an HTML success body on an API path mapped to `401` (an expired session is redirected to the provider's sign-in page, which `fetch` follows). No retries, no CSRF header invention. |
+| `errors.ts` | `ApiError` with `kind: 'http' \| 'network' \| 'parse'`, `status` and a sanitized `serverMessage`. |
+| `types.ts` | Types mirroring the verified responses (customer, invoice, membership, draft input). |
+| `organizations.ts` | `listOrganizations`, plus `canWriteInvoiceResources` / `canDeleteInvoiceResources`, which mirror `InvoiceVoter` only to hide actions that the server would reject. |
+| `customers.ts`, `invoices.ts` | One function per endpoint, building paths and payloads; nothing else in the app calls `fetch`. |
+| `useApiResource.ts` | Loads one resource, aborts on unmount or loader change, discards stale responses, and derives `loading` instead of synchronizing it in an effect. |
+| `presentError.ts` | Maps `ApiError` to localized copy (401/403/404/409/429/5xx, network, unexpected) and exposes `isConflict`. Server `detail` is shown only for validation failures. |
+
+Session and logout live in `src/session/session.ts` (the established place, already covered by
+tests) rather than a duplicate `api/session.ts`. It parses `/api/session`, validates the logout
+target, and performs sign-out as a real top-level form POST so the browser follows the provider's
+end-session redirect.
+
+### Session and tenant rules
+
+- The shell renders nothing but a gate until `/api/session` answers: loading, signed-out, or
+  "session unavailable" with a retry.
+- The authenticated name/email come from the session; the organization list and role come from
+  `/api/me/organizations`. There is no demo identity anywhere in that path.
+- The selected organization is a **client-side selection**. It is not authorization: every request
+  carries the organization in its path and is re-authorized by the server. Switching organizations
+  remounts the organization-scoped screens, so no data from the previous tenant survives, and the
+  open draft is cleared.
+- A membership the server no longer reports cannot be selected.
+
+### Error behaviour
+
+| Status | Shown as |
+| --- | --- |
+| `400`/`422` | the server's message at form level (field messages are not exposed per field by the API) |
+| `401` (client-mapped) | session ended — the next shell load shows the signed-out screen |
+| `403` | permission denied (the mutation origin/CSRF guard) |
+| `404` | "not found" — also what a foreign tenant returns |
+| `409` | conflict explanation and a refetch, never a silent overwrite or an automatic retry |
+| `429` | rate-limited message |
+| `5xx` | generic server error; internals are never rendered |
+| network | connection message with retry |
+| abort | nothing — the superseded request is ignored |
 
 ## Localization, account and notifications
 
-- **Languages**: English, French and Arabic, with `lang`/`dir` set on `<html>` and Arabic rendered right-to-left. Choice persists in `localStorage` under `keelson-locale`.
-- **Dictionaries**: `src/i18n/messages.ts` defines a typed English dictionary; French and Arabic are typed as `Messages`, so a missing or renamed key is a TypeScript error. Labels that interpolate values are functions with typed parameters.
-- **Formatting**: `src/i18n/format.ts` formats dates, numbers, percentages and TND currency with `Intl` for the active locale. Mock data stores ISO dates and numeric amounts, never pre-formatted English strings.
-- **Account menu**: the profile row's overflow button opens a keyboard-accessible menu (`Escape`, arrow keys, `Home`/`End`, outside click) with My account, Notifications and Settings. It is not a popover `<dialog>`; focus returns to the trigger.
-- **Notifications**: All/Unread filters, mark-one and mark-all-as-read, an empty state, and a bell badge reflecting the unread count. Read ids persist under `keelson-notifications-read`; notifications themselves are typed mock data in `src/mocks/notifications.ts`.
-- **Settings**: appearance reuses the existing `ThemeProvider` (light/dark/system), language applies instantly, and notification preferences persist under `keelson-notification-prefs`. All three are labelled demo controls; no server is contacted.
-- **Account**: a read-only demo profile showing the signed-in owner and the active organization; nothing is editable.
-- **Search**: `src/components/SearchDialog.tsx` is an accessible modal search over local mock data only — pages, organizations, invoices, customers and notifications. It opens from the top-bar control or `Ctrl+K`/`Meta+K` (the shortcut is only intercepted to open it), supports arrow keys/Enter/Escape, traps focus, restores focus to the trigger, and shows empty and no-result states. Result labels and kinds are localized. It performs no backend or global search.
-- **Storage safety**: JSON values read back from `localStorage` are validated (`keelson-locale`, `keelson-theme`, `keelson-notifications-read`, `keelson-notification-prefs`); invalid or corrupt values fall back to defaults, and storage failures never break the session.
-- **Favicon**: `index.html` links `/Keelson.svg`, the project logo, instead of the removed Vite starter icon.
+- **Languages**: English, French and Arabic, with `lang`/`dir` set on `<html>` and Arabic rendered
+  right-to-left. Choice persists in `localStorage` under `keelson-locale`.
+- **Dictionaries**: `src/i18n/messages.ts` defines a typed English dictionary; French and Arabic are
+  typed as `Messages`, so a missing or renamed key is a TypeScript error. Labels that interpolate
+  values are functions with typed parameters.
+- **Formatting**: `src/i18n/format.ts` formats dates, numbers, percentages and TND currency with
+  `Intl` for the active locale. API amounts arrive as decimal strings and are formatted for display,
+  never re-summed as authoritative totals.
+- **Account menu**: the profile row's overflow button opens a keyboard-accessible menu (`Escape`,
+  arrow keys, `Home`/`End`, outside click) with My account, Notifications and Settings.
+- **Account screen**: shows the real session identity, the active organization and the caller's role;
+  it is read-only because the backend has no profile write endpoint.
+- **Notifications**: All/Unread filters, mark-one/mark-all, empty state, bell badge. Read ids persist
+  under `keelson-notifications-read`; the notifications themselves are typed mock data.
+- **Settings**: appearance reuses `ThemeProvider` (light/dark/system), language applies instantly,
+  notification preferences persist under `keelson-notification-prefs`. Labelled as local.
+- **Search**: `src/components/SearchDialog.tsx` is an accessible modal over pages, organizations and
+  notifications, opened from the top bar or `Ctrl+K`/`Meta+K`, with arrow keys/Enter/Escape, focus
+  trapping and restoration, and localized labels. Invoice/customer results were removed: only the
+  loaded API page is known locally, so offering them would have implied a search the backend does not
+  have.
+- **Storage safety**: JSON read back from `localStorage` is validated; invalid or corrupt values fall
+  back to defaults, and storage failures never break the session.
 
-Layout uses CSS logical properties (`inset-inline-*`, `margin-inline-start`, `text-align: start`), with a small number of `[dir='rtl']` rules for directional icons and the mobile sidebar. Colors come from `src/theme/tokens.css` only.
+Layout uses CSS logical properties, with a few `[dir='rtl']` rules for directional icons and the
+mobile sidebar. Colors come from `src/theme/tokens.css` only (`#0F766E` primary).
 
 ## Source layout
 
-- `src/App.tsx` — single-page shell: sidebar navigation, topbar, organization switcher, page switch and theme control.
+- `src/App.tsx` — shell: session gate, sidebar navigation, topbar, real organization switcher, page
+  switch, editor route state and theme control.
+- `src/api/` — the API layer described above (with its tests).
+- `src/session/session.ts` — session probe parsing, logout-target validation, form-POST sign-out.
 - `src/pages.ts` — shared `PageId`/`NavPageId` types.
-- `src/screens/` — `Dashboard`, `InvoicesScreen`, `InvoiceEditorScreen`, `CustomersScreen`, `TeamScreen`, `BillingScreen`, `PricingScreen`, `Onboarding`, `NotificationsScreen`, `AccountScreen`, `SettingsScreen` and `Placeholder`.
-- `src/components/` — shared `StatusBadge`, `PersonCell`, `SearchField`, `EmptyState`, `OverlaySurface`, `Icon`, `SearchDialog`, `ProfileMenu`, `ThemeControl`; `src/hooks/useEscapeKey.ts` closes transient surfaces on Escape.
-- `src/mocks/invoices.ts`, `src/mocks/customers.ts`, `src/mocks/billing.ts` — invoice table rows, customer records with TND totals, and the Free/Pro catalog with deliberately unset limits.
-- `src/components/Icon.tsx`, `src/components/ProfileMenu.tsx`, `src/components/SearchDialog.tsx` — shared icon set, account menu and search dialog.
-- `src/search/search.ts` — local search index (pages, organizations, invoices, customers, notifications), filtering and platform shortcut label.
-- `src/i18n/` — dictionaries, `Intl` formatters, `I18nProvider` and `useI18n`.
-- `src/mocks/dashboard.ts`, `src/mocks/organizations.ts`, `src/mocks/notifications.ts` — typed, locale-neutral mock data. Add sample data here rather than inline.
-- `src/notifications/useNotifications.ts`, `src/settings/usePreferences.ts` — `localStorage`-backed read state and preferences.
-- `src/theme/ThemeProvider.tsx`, `src/theme/ThemeContext.ts`, `src/theme/tokens.css` — theme provider (persisted as `keelson-theme`), context/hook and semantic tokens, including the primary brand color `#0F766E`.
+- `src/screens/` — `Dashboard`, `InvoicesScreen`, `InvoiceEditorScreen`, `CustomersScreen`,
+  `TeamScreen`, `BillingScreen`, `PricingScreen`, `Onboarding`, `NotificationsScreen`,
+  `AccountScreen`, `SettingsScreen`, `SignedOutScreen` and `Placeholder`.
+- `src/components/` — shared `StatusBadge`, `PersonCell`, `SearchField`, `EmptyState`,
+  `OverlaySurface`, `Icon`, `SearchDialog`, `ProfileMenu`, `ThemeControl`, `SessionCard`.
+- `src/mocks/` — the remaining mock surfaces: dashboard metrics, organization/invitation demo data,
+  billing catalog, notifications.
+- `src/search/search.ts` — local search index and filtering.
+- `src/i18n/`, `src/notifications/`, `src/settings/`, `src/theme/`, `src/utils/initials.ts`.
 
-## Verified checks (2026-11-13)
+## Tests (2026-11-15)
 
-- `pnpm install --frozen-lockfile` — PASS (lockfile up to date)
-- `pnpm run build` — PASS (`tsc -b && vite build`, 40 modules, exit 0)
-- `pnpm run lint` — PASS (exit 0, no findings)
-- `git diff --check` — PASS (no whitespace errors)
-- Number formatting — PASS: `formatNumber('en', 28.6, 0)` → `29`, `(…, 1)` → `28.6`, and a repeat call with `0` still returns `29` (precision is part of the formatter cache key). French returns `29` and `28,6`.
-- Dev-server smoke test — PASS: all five screens (Dashboard, Onboarding, Account, Notifications, Settings) rendered in all three languages for each appearance option (light, dark, system — system resolved to dark on this machine), 45 screen/language/appearance combinations. Search opened via the button and `Ctrl+K`, matched an invoice/customer, navigated with Enter, showed the no-result state, closed with Escape and restored focus; Arabic results used localized kinds. Arabic set `dir="rtl"` with the sidebar on the right; the search dialog fit a 430 px viewport; dates/amounts used locale formats; mark-one/mark-all and preferences persisted after reload. The favicon resolved to `/Keelson.svg`. No console errors or failed requests.
-- No automated UI tests exist, so the smoke test is manual only.
+`pnpm test` — **56 tests, exit 0**:
 
-## Not implemented
+| File | Covers |
+| --- | --- |
+| `src/session/session.test.ts` (18) | session parsing, logout-target validation and rejection of unsafe targets |
+| `src/api/client.test.ts` (12) | JSON success, 204, credentials/headers, validation error, non-JSON error, network failure, abort passthrough, HTML-success-as-`401`, non-JSON success |
+| `src/api/customers.test.ts` (7) | list path/limit/cursor, read, create payload, patch subset, delete `204`, delete `409` |
+| `src/api/invoices.test.ts` (9) | status filter, cursor, read, draft create, draft patch, send/mark-paid routes, delete, `409`, `422` |
+| `src/api/organizations.test.ts` (10) | membership shape filtering, capability helpers, `presentError` mapping, `isConflict` |
 
-- No test runner or test script is configured; adding one requires owner approval first.
-- No API client: the project convention is to generate types from the backend OpenAPI spec, which does not exist yet.
-- No auth integration, persistence beyond `localStorage`, routing library, Tailwind/shadcn setup, or CI workflow in this package.
+There are **no component/DOM tests**: the project has no `jsdom` or Testing Library dependency, and
+adding one needs owner approval. Screens are therefore verified by type-checking, lint, the backend
+functional tests and the manual check below.
+
+## Verified checks
+
+- 2026-11-15: `tsc -b` exit 0; `pnpm run lint` exit 0 (0 findings); `pnpm run build` exit 0
+  (`dist/assets/index-*.js` 370.64 kB / 108.62 kB gzip); `pnpm test` 56/56 pass.
+- 2026-11-15 live: SPA served on `127.0.0.1:5175` through the dev proxy to an API on
+  `127.0.0.1:8001`. `GET /api/session` returned `500` (no `backend/.env.local`, so no OIDC client),
+  and the shell showed the session-unavailable gate with a retry button and no demo identity
+  (`../docs/screenshots/session-unavailable.png`); console showed only the two expected 500s.
+- 2026-11-13 (historical, mock-only build): five screens rendered in EN/FR/AR across light/dark/system,
+  search, profile menu, Arabic RTL, 430 px viewport, storage persistence and favicon verified manually.
+
+**Not verified in a browser:** the authenticated shell, customer CRUD and the invoice lifecycle,
+because this checkout has no Logto credentials. Those flows are covered by
+`backend/tests/Integration/InvoiceHttpApiTest.php` (HTTP contract), the authorization matrix, and the
+frontend API tests — not by a real sign-in round trip.
+
+## Not implemented here
+
+Billing/subscription screens against a real API, the organization-settings danger zone, the
+platform-admin console, profile editing, server-side search/sort for customers and invoices (the UI
+loads up to 100 rows and says when more exist), component/DOM tests, and real-provider sign-in.

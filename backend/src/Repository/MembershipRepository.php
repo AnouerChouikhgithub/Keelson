@@ -36,6 +36,9 @@ class MembershipRepository extends ServiceEntityRepository
     {
         return $this->createQueryBuilder('membership')
             ->innerJoin('membership.organization', 'organization')
+            // The caller serializes each membership's organization; selecting it
+            // here keeps the read at one query instead of one per membership.
+            ->addSelect('organization')
             ->andWhere('IDENTITY(membership.principal) = :principalId')
             ->andWhere('membership.status = :membershipStatus')
             ->andWhere('organization.status = :organizationStatus')
