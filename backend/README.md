@@ -127,17 +127,49 @@ Do not substitute the Compose `keelson` database for this: Doctrine would target
 ## Configure Logto Cloud
 
 1. In the Logto Console, open **Applications → Create application → Third-party app → Traditional Web**. This is a confidential server-side client; keep its client secret on the server only.
-2. Choose an application name and create it. In the application settings, set the sign-in redirect URI to the exact URL you will use for local development plus `/login_check` (for example, `http://localhost:8000/login_check` if you run `symfony server:start --allow-http`). Add the corresponding post-sign-out redirect URI with `/` (for example, `http://localhost:8000/`). Do not use a wildcard callback.
+2. Choose an application name and create it. Register the exact URLs below (**Redirect URIs** and **Post sign-out redirect URIs** in the application's settings); do not use a wildcard callback and do not add a trailing slash to the callback.
+
+   | Logto setting | Value for the verified local setup |
+   | --- | --- |
+   | Redirect URI | `http://127.0.0.1:5173/login_check` |
+   | Post sign-out redirect URI | `http://127.0.0.1:5173/` |
+
+   Both URLs use the SPA origin because the browser only ever talks to `http://127.0.0.1:5173`, which proxies `/api`, `/login`, `/login_check` and `/logout` to Symfony on `http://127.0.0.1:8000`. Use one host name everywhere: session cookies are scoped by host name and ignore the port, so `127.0.0.1` and `localhost` are different cookie hosts. If the console rejects the `127.0.0.1` literal, register the same two URLs under `localhost` (`http://localhost:5173/login_check` and `http://localhost:5173/`) and browse the app at `http://localhost:5173`; never mix the two host names.
+
+   `redirect_uri` is built from the `Host` header of the current request, and the Vite proxy forwards `Host: 127.0.0.1:5173` unchanged (`changeOrigin: false`), so a sign-in started at `http://127.0.0.1:5173/login` requests exactly the callback registered above, and Vite now proxies `/login_check` to Symfony's authenticator instead of answering with the SPA's HTML. The test database must be running and migrated, because the callback provisions the `Principal` row on first sign-in.
+
+   Sign-out is a top-level form POST to `/logout` carrying the session's `_csrf_token` (`frontend/src/session/session.ts` builds and submits the form). Symfony invalidates its session and answers with a redirect to Logto's `end_session_endpoint` (`id_token_hint` plus `post_logout_redirect_uri=http://127.0.0.1:5173/`); because the browser performs a real navigation, it follows that redirect and Logto ends its SSO session. This deliberately is not a `fetch()`: with `redirect: 'manual'` the browser never navigates, and a `fetch()` cannot follow the cross-origin, credentialed redirect either, so the provider session would survive and the next sign-in would silently succeed without prompting.
 3. In the Logto Console, enable the `openid`, `profile`, and `email` scopes; the application requests `openid profile email`. New local principals are created only after the OIDC library verifies the ID-token signature, issuer, audience, expiry, nonce and the callback's state; the configured issuer is paired with the verified ID-token subject. Email is stored as contact/profile data only and never used as an authorization key. No organization membership or role is granted at first login.
-4. Copy the tenant's **OIDC issuer** and **OpenID Provider Configuration URL** from the Logto application integration guide. Do not assume URL paths: enter the exact issuer and discovery URL Logto displays. The provider must advertise S256 PKCE support and an end-session endpoint for the corresponding features.
-5. Copy `backend/.env.example` to the ignored `backend/.env.local`, and replace its four example values with the issuer, discovery URL, client ID, and client secret from Logto. Never commit `.env.local`, paste the secret into chat, put it in frontend code, or share it in logs. No production or real user data is needed for local verification.
-6. Start a locally reachable Symfony server, then try `GET /login`. Confirm it redirects to Logto with `response_type=code`, the `openid profile email` scopes, state, nonce, and S256 PKCE. Complete sign-in with a test account; confirm Symfony returns to the exact `/login_check` URI, creates/loads a `Principal` using the configured issuer + the verified ID-token `sub`, and redirects to `/`. The callback is an authenticator check path and is not a separately listed route. Test a callback with missing/wrong state and confirm it does not authenticate. Submit a POST to `/logout` with the session's Symfony CSRF token; confirm local session invalidation and the provider logout redirect.
+4. Copy the tenant's **OIDC issuer** and **OpenID Provider Configuration URL** from the application's **Endpoints & Credentials** panel, or read them from Settings → Domains. For a Logto Cloud tenant they have the fixed shape below (`<tenant>` is the tenant endpoint Logto shows, e.g. `abc123.logto.app`); do not assume a different path, and use the values the console displays.
+
+   | Value | Shape | Source |
+   | --- | --- | --- |
+   | Issuer | `https://<tenant>/oidc` | application endpoints, or the discovery document's `issuer` |
+   | Discovery URL | `https://<tenant>/oidc/.well-known/openid-configuration` | application endpoints |
+
+   The discovery document must advertise `code_challenge_methods_supported` containing `S256` and an `end_session_endpoint`; the bundle refuses `/login` with a PKCE exception when `S256` is absent, and logout cannot redirect to the provider without the end-session endpoint. Confirm both before starting a browser run.
+
+5. Create the ignored private config at `backend/.env.local` (`cp backend/.env.example backend/.env.local`) and fill in exactly these names. Symfony loads `.env.local` in every environment; do not use `.env.test.local` for a browser run, because the test helper owns and deletes that file.
+
+   | Variable | Value |
+   | --- | --- |
+   | `APP_SECRET` | any random local value |
+   | `DATABASE_URL` | the local PostgreSQL URL, e.g. `postgresql://app:app@127.0.0.1:5433/keelson?serverVersion=16&charset=utf8` |
+   | `OIDC_ISSUER` | `https://<tenant>/oidc` |
+   | `OIDC_WELL_KNOWN_URL` | `https://<tenant>/oidc/.well-known/openid-configuration` |
+   | `OIDC_CLIENT_ID` | the application's **Application ID** |
+   | `OIDC_CLIENT_SECRET` | the application's **App Secret** (confidential Traditional web apps only) |
+
+   `backend/.env.local` is ignored by Git and is the only place these values belong. Never commit it, paste the secret into chat or an issue, put it in frontend code, or let it appear in logs. No production or real user data is needed; use a dedicated test tenant and a test user account.
+6. Run both servers (`php -S 127.0.0.1:8000 -t public public/index.php` from `backend/`, and `pnpm dev --host 127.0.0.1` from `frontend/`), then open `http://127.0.0.1:5173` and use the **Sign in** link, which navigates to the proxied `/login`. Confirm the redirect to Logto carries `response_type=code`, the `openid profile email` scopes, state, nonce, S256 PKCE, and `redirect_uri` exactly `http://127.0.0.1:5173/login_check`. Complete sign-in with a test account; confirm the browser returns to that exact callback and that it is answered by Symfony through the proxy rather than by the SPA's HTML fallback, that a `Principal` is created/loaded from the configured issuer + the verified ID-token `sub`, and that the redirect to `/` lands back on the shell, where `/api/session` reports the authenticated principal. Also test a callback with a missing or wrong `state` and confirm it does not authenticate.
+
+   Then sign out from the account menu or Settings. The browser must navigate to Logto's `end_session_endpoint` (the address bar leaves the app), return to `http://127.0.0.1:5173/`, show the signed-out screen, report `{"authenticated":false,...}` from `/api/session`, and — the part that proves the provider session ended — make a fresh `GET /login` prompt for credentials instead of signing straight back in.
 
 The app does not grant organization membership or a tenant role at sign-in. Every authenticated route is protected by default. Controllers must use a server-loaded organization ID with an active membership check for organization-specific actions; an ID from a request is a selector only. The voters check active membership and grant view access to all four organization roles, administration to Owner/Admin, and destructive customer/draft-invoice operations to Owner/Admin. Keep this policy in sync with the Phase 1 contract before introducing further protected workflows.
 
 ## Before deployment
 
-The Drenso OIDC bundle declares Symfony 7 support and implements authorization code flow, state, nonce and S256 PKCE, but Logto is not named in its tested-provider list. A real sign-in/callback/sign-out against the configured Logto tenant remains an explicit provider compatibility check; as of 2026-11-13 it has not been run.
+The Drenso OIDC bundle declares Symfony 7 support and implements authorization code flow, state, nonce and S256 PKCE, but Logto is not named in its tested-provider list. A real sign-in/callback/sign-out against the configured Logto tenant remains an explicit provider compatibility check. As of 2026-11-14 it has still not been run: no test tenant or client credentials are configured on this checkout (`backend/.env.local` and the OIDC variables are absent). The two blockers found on that date are now fixed in source — Vite proxies `/login_check`, and sign-out is a top-level form POST that lets the browser follow the provider's end-session redirect — but neither has been exercised against a real provider yet.
 
 CI and dependency audit: `.github/workflows/ci.yml` runs Composer validation, YAML/container/route lint, migrations and this PHPUnit suite against a `postgres:16-alpine` service using dummy OIDC values, plus report-only `composer audit`/`pnpm audit`. The workflow was YAML-validated locally but has not run on GitHub-hosted runners. `composer audit` on 2026-11-14 reported 13 advisories across 9 packages; none were remediated because dependency changes need approval.
 

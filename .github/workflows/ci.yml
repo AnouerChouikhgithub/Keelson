@@ -18,7 +18,7 @@ concurrency:
 
 jobs:
   frontend:
-    name: Frontend build and lint
+    name: Frontend build, lint and tests
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -39,6 +39,8 @@ jobs:
         run: pnpm run build
       - name: Lint
         run: pnpm run lint
+      - name: Unit tests
+        run: pnpm test
 
   backend:
     name: Backend validation and PHPUnit
@@ -99,7 +101,7 @@ jobs:
         run: php bin/phpunit
 
   audit:
-    name: Dependency audit (report only)
+    name: Dependency audit
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -110,8 +112,8 @@ jobs:
           tools: composer:v2
       - name: Composer audit
         working-directory: backend
-        # Audit findings are reported for triage, not auto-remediated.
-        continue-on-error: true
+        # Blocking: the lockfile currently has no advisories. A new advisory
+        # must be triaged (upgrade, or a documented exception) before merging.
         run: composer audit --format=plain
       - uses: pnpm/action-setup@v4
         with:
@@ -119,7 +121,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-      - name: pnpm audit
+      - name: pnpm audit (high and critical block)
         working-directory: frontend
+        run: pnpm audit --audit-level high
+      - name: pnpm audit report (moderate and above)
+        working-directory: frontend
+        # Reported for triage. The known moderate finding is a dev-only
+        # minimatch DoS reachable through ESLint; it needs an ESLint/minimatch
+        # major upgrade and has no runtime exposure.
         continue-on-error: true
         run: pnpm audit --audit-level moderate

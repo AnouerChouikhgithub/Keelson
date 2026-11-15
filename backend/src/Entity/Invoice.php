@@ -200,15 +200,38 @@ class Invoice
         return true;
     }
 
-    public function deriveOverdue(?\DateTimeImmutable $today = null): bool
+    /**
+     * Explicit sent -> overdue transition for an operation that owns a lock on
+     * this row. Reads never call it: a GET must not write status.
+     */
+    public function markOverdue(?\DateTimeImmutable $today = null): bool
     {
-        if ('sent' !== $this->status || $this->dueDate >= ($today ?? new \DateTimeImmutable('today'))) {
+        if ('sent' !== $this->status) {
+            return false;
+        }
+        $today ??= new \DateTimeImmutable('today');
+        if ($this->dueDate >= $today) {
             return false;
         }
         $this->status = 'overdue';
-        $this->updatedAt = $today ?? new \DateTimeImmutable();
+        $this->updatedAt = $today;
 
         return true;
+    }
+
+    /**
+     * The status a reader should see. Overdue is derived from the due date so
+     * that reads need no write and cannot overwrite a concurrent payment; the
+     * persisted columns remain draft/sent/paid until an explicit transition
+     * records the change.
+     */
+    public function effectiveStatus(?\DateTimeImmutable $today = null): string
+    {
+        if ('sent' === $this->status && $this->dueDate < ($today ?? new \DateTimeImmutable('today'))) {
+            return 'overdue';
+        }
+
+        return $this->status;
     }
 
     public function getId(): string
@@ -286,6 +309,11 @@ class Invoice
     public function getCurrency(): string
     {
         return $this->currency;
+    }
+
+    public function getCreatedByPrincipalId(): string
+    {
+        return $this->createdByPrincipalId;
     }
 
     public function getPaidAt(): ?\DateTimeImmutable

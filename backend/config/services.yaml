@@ -24,6 +24,12 @@ services:
         arguments:
             $issuer: '%app.oidc.issuer%'
 
+    # The bundle registers the OIDC client per client name, not as an interface
+    # alias, so the end-session redirector is wired to the default client here.
+    App\Service\ProviderEndSessionRedirector:
+        arguments:
+            $oidcClient: '@drenso_oidc.client.default'
+
     App\Security\PrincipalVoter:
         tags: ['security.voter']
 

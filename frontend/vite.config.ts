@@ -3,7 +3,9 @@ import { defineConfig } from 'vite'
 
 // The SPA mirrors the Symfony session, so session/login/logout calls must reach
 // the API from the same origin in development; otherwise the browser would not
-// send or receive the session cookie.
+// send or receive the session cookie. `/login_check` is the OIDC callback: the
+// provider redirects the browser there after sign-in, and it must reach Symfony
+// rather than being answered with the SPA's HTML.
 const backendOrigin = process.env.KEELSON_BACKEND_ORIGIN ?? 'http://127.0.0.1:8000'
 const proxy = { target: backendOrigin, changeOrigin: false }
 
@@ -13,6 +15,7 @@ export default defineConfig({
     proxy: {
       '/api': proxy,
       '/login': proxy,
+      '/login_check': proxy,
       '/logout': proxy,
     },
   },

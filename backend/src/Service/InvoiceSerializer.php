@@ -28,17 +28,13 @@ final class InvoiceSerializer
     /** @return array<string, mixed> */
     public function invoice(Invoice $invoice): array
     {
-        $status = $invoice->getStatus();
-        if ('sent' === $status && $invoice->getDueDate() < new \DateTimeImmutable('today')) {
-            $status = 'overdue';
-        }
-
         return [
             'id' => $invoice->getId(),
             'number' => $invoice->getNumber(),
             'customerId' => $invoice->getCustomer()->getId(),
             'customer' => $invoice->getCustomerSnapshot(),
-            'status' => $status,
+            // Derived for presentation only: no read writes invoice state.
+            'status' => $invoice->effectiveStatus(),
             'issueDate' => $invoice->getIssueDate()->format('Y-m-d'),
             'dueDate' => $invoice->getDueDate()->format('Y-m-d'),
             'currency' => $invoice->getCurrency(),

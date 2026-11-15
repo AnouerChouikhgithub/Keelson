@@ -23,7 +23,11 @@ security:
                 login_path: app_login
                 user_identifier_property: sub
                 user_identifier_from_idtoken: true
-                enable_end_session_listener: true
+                # The provider redirect is implemented by
+                # App\EventListener\OidcEndSessionLogoutListener so that a
+                # provider failure degrades to the local logout instead of
+                # failing the request after the session was invalidated.
+                enable_end_session_listener: false
             logout:
                 path: /logout
                 target: /
