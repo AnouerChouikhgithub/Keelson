@@ -1,6 +1,6 @@
 # How to Run Keelson Locally
 
-This guide covers the currently implemented local development scope. The frontend is a mock-data dashboard shell; it does not call the backend API. The backend has organization-scoped customer and invoice endpoints, but billing, PostgreSQL RLS, and real Logto end-to-end verification are not implemented.
+This guide covers the currently implemented local development scope. The frontend reads its session, organizations/roles, customers and invoices from the backend API; dashboard metrics, onboarding/invitations, team, billing, pricing and notifications remain labelled mock surfaces. The backend has organization-scoped customer and invoice endpoints, but billing, PostgreSQL RLS, and real Logto end-to-end verification are not implemented. The verified API shapes are in [`docs/api-contract.md`](docs/api-contract.md).
 
 ## Prerequisites
 
@@ -41,16 +41,19 @@ The proxy must be same-origin so the browser sends and receives the session cook
 
 Sign-out is not simulated. The **Log out** item in the account menu submits a real form POST to `/logout` with the session's CSRF token, which makes the browser follow Symfony's redirect to the provider's `end_session_endpoint`; the provider then returns to the app, whose `/api/session` probe reports the anonymous state and whose shell shows the signed-out screen. A `fetch()` was deliberately not used: with `redirect: 'manual'` the browser never leaves the page, so the provider session survived. Without an OIDC session the UI reports that there is no active session. Real end-to-end sign-in/sign-out still requires a configured test Logto tenant (see `backend/README.md`), which is not present on this checkout.
 
-The frontend runs independently using typed mock data; it does not require the backend or database. It supports English, French and Arabic (with Arabic right-to-left), the existing light/dark/system appearance, a profile menu with My account/Notifications/Settings, an inbox with All/Unread filters and mark-one/mark-all read actions, labelled notification preferences, and a search dialog (`Ctrl+K`/`Meta+K`) over local mock pages, organizations, invoices, customers and notifications. JSON in `localStorage` is validated on read: invalid values fall back to defaults rather than being trusted. Language, theme, read state and preferences persist under `keelson-locale`, `keelson-theme`, `keelson-notifications-read` and `keelson-notification-prefs`; nothing is sent to a server. The browser tab uses the existing `public/Keelson.svg` logo.
+The frontend needs a running backend for anything beyond the signed-out screen, because the shell's first request is `GET /api/session`. Configuration is one optional variable, `VITE_API_BASE_URL` (default: empty, i.e. same origin) — it must never hold a secret, since Vite inlines `VITE_*` values into the public bundle. The dev server proxies `/api`, `/login`, `/login_check` and `/logout` to `KEELSON_BACKEND_ORIGIN` (default `http://127.0.0.1:8000`) with `changeOrigin: false`, so the session cookie stays same-origin and the API's same-origin mutation guard accepts the browser's `Origin` header. Set `KEELSON_BACKEND_ORIGIN` when the API is on another port, for example `KEELSON_BACKEND_ORIGIN=http://127.0.0.1:8001 pnpm run start`.
+
+It supports English, French and Arabic (with Arabic right-to-left), the existing light/dark/system appearance, a profile menu with My account/Notifications/Settings, an inbox with All/Unread filters and mark-one/mark-all read actions, labelled notification preferences, and a search dialog (`Ctrl+K`/`Meta+K`) over pages, organizations and notifications (marketable invoice/customer results were removed because only the loaded API page is known locally). JSON in `localStorage` is validated on read: invalid values fall back to defaults rather than being trusted. Language, theme, read state and preferences persist under `keelson-locale`, `keelson-theme`, `keelson-notifications-read` and `keelson-notification-prefs`; nothing is sent to a server. The browser tab uses the existing `public/Keelson.svg` logo.
 
 Frontend checks:
 
 ```powershell
 pnpm run build
 pnpm run lint
+pnpm test
 ```
 
-There is currently no frontend test script.
+`pnpm test` runs Vitest (no jsdom/RTL dependency) over the pure session/logout parsers (`src/session/session.test.ts`) and the API layer (`src/api/*.test.ts`: client status handling, customers, invoices, organizations, error mapping) — 56 tests. There are no component/DOM tests; adding jsdom + Testing Library needs owner approval.
 
 ## Start local backend services
 
@@ -119,7 +122,7 @@ symfony serve --no-tls --port=8000
 php -S 127.0.0.1:8000 -t public public/index.php
 ```
 
-`GET http://127.0.0.1:8000/healthz` is a public liveness probe with its own stateless firewall, so it returns `{"status":"ok"}` even before OIDC values are configured — verified 2026-11-14 with `symfony serve` (HTTP 200). `GET /api/session` is also reachable while signed out, because the shell must learn it is anonymous without being bounced through OIDC; it performs no database query and exposes only the caller's own identity. Every other route requires a configured OIDC provider and an authenticated session. Passing `public/index.php` explicitly is necessary for Symfony to receive `/api/...` paths when using PHP's built-in server.
+`GET http://127.0.0.1:8000/healthz` is a public liveness probe with its own stateless firewall, so it returns `{"status":"ok"}` even before OIDC values are configured — verified 2026-11-14 with `symfony serve` (HTTP 200). `GET /api/me/organizations` (added 2026-11-15) lists the caller's active memberships and is the only tenant-related read the shell needs besides `/api/session`. `GET /api/session` is also reachable while signed out, because the shell must learn it is anonymous without being bounced through OIDC; it performs no database query and exposes only the caller's own identity. Every other route requires a configured OIDC provider and an authenticated session. Passing `public/index.php` explicitly is necessary for Symfony to receive `/api/...` paths when using PHP's built-in server.
 
 ## Run backend checks
 
@@ -133,7 +136,7 @@ php bin/console debug:router --env=test
 php bin/phpunit tests/Unit/Entity tests/Unit/Security tests/Unit/Service tests/Unit/Util
 ```
 
-The unit-test command above was verified at 29 tests / 72 assertions. It avoids the PostgreSQL-dependent repository and integration suites.
+The unit-test command above avoids the PostgreSQL-dependent repository and integration suites. The Sprint 3 full suite was verified on 2026-11-15 at **97 tests / 527 assertions, exit 0** against the helper's throwaway container. The earlier Sprint 2 run was 86 tests / 450 assertions; its count is historical. See [`docs/sprints/sprint-3-preflight.md`](docs/sprints/sprint-3-preflight.md) for preflight findings and current backend checks.
 
 The full PHPUnit suite requires a separate, verified disposable PostgreSQL database. The test environment appends `_test` to the configured database name, and the database-backed tests write and delete rows. From `backend/`:
 
@@ -142,6 +145,8 @@ bash bin/test-db.sh start   # throwaway postgres:16-alpine, wires .env.test.loca
 php bin/phpunit
 bash bin/test-db.sh stop    # removes the container and the generated env file
 ```
+
+Known limitation: `php bin/console doctrine:schema:validate --env=test` currently fails with `An index with name "idx_6a2f2f95a5a280d" was already defined on table "invoices"`. PostgreSQL introspection sees the `fk_invoices_customer` supporting index and the migration-declared index under the same DBAL-generated name; mapping validation passes. Do not run `doctrine:schema:update` or `migrations:diff` against this schema until it is resolved.
 
 The helper publishes an ephemeral loopback port and reads it back from Docker, so no port has to be guessed. Its container is labelled per checkout and stores data in tmpfs (no volume); it refuses to reuse, stop or remove any container it did not create. `start` refuses if `.env.test.local` already exists, even if marked as a previous helper file; it never overwrites a developer's file. `stop` removes the generated file only after the owned container is removed. A failed start or migration removes only resources created by that run. See [backend/README.md](backend/README.md) for details; never point the test URL at the Compose `keelson` database or any database with data to preserve.
 
@@ -162,7 +167,9 @@ Dependency audit findings recorded 2026-11-14 (not remediated; remediation needs
 
 ## Current verification status
 
-**2026-11-14 run (current):** Docker Desktop was started and the Compose engine reported 29.5.2. `docker compose -p keelson up -d` started `keelson-db-1`, `keelson-redis-1` and `keelson-mailpit-1`; PostgreSQL accepts connections, Redis answers `PONG`, Mailpit returns HTTP 200, and the persistent `keelson_db_data` volume was not reset, migrated or queried. A separate `bash bin/test-db.sh start` provisioned the labelled tmpfs PostgreSQL 16.15 container. `php bin/phpunit` passed **52 tests / 229 assertions**, exit 0; the helper-owned container and generated ignored env file were removed afterwards. The Compose database was not used. `npm start` served the frontend on `127.0.0.1:5173` (HTTP 200); `symfony serve` served the backend and `GET /healthz` returned 200. `pnpm run build` and `pnpm run lint` passed; `composer validate`, YAML lint (13 files), container lint and the router listing (including `app_healthz`) passed. Migration down/up was verified on the disposable database. Full detail is in `DEVELOPMENT_ROADMAP.md`.
+**2026-11-15 Sprint 2 integration run (historical; 86 backend tests / 450 assertions):** the frontend now reads `/api/session`, `/api/me/organizations`, the customer CRUD routes and the invoice lifecycle routes. Backend: `php bin/phpunit` **86 tests / 450 assertions, exit 0** against the helper's disposable container (started for this run, port from `bash bin/test-db.sh status`); `composer validate --no-check-publish`, `composer check-platform-reqs`, `php -l` on the changed files, `lint:yaml` (14 files), `lint:container --env=test` and `debug:router --env=test` (18 routes) all exit 0. Frontend: `tsc -b`, `pnpm run lint` and `pnpm run build` exit 0; `pnpm test` **56 tests, exit 0**. Live: the API was served with `php -S 127.0.0.1:8001 -t public public/index.php` (port 8000 is occupied on this host by an unrelated process), `pnpm run start` served the SPA on `127.0.0.1:5175` (5173/5174 were already in use) through the proxy, and `GET /api/session` answered `500 Environment variable not found: "OIDC_CLIENT_ID"` because no `backend/.env.local` exists. The shell rendered its "session unavailable" gate with a retry action instead of a demo identity (screenshot: `docs/screenshots/session-unavailable.png`), and the browser console showed only the two expected 500s. Authenticated flows are therefore verified by the backend functional tests and the frontend API tests, **not** against a real provider. Full detail is in `DEVELOPMENT_ROADMAP.md`.
+
+**2026-11-14 run (historical):** Docker Desktop was started and the Compose engine reported 29.5.2. `docker compose -p keelson up -d` started `keelson-db-1`, `keelson-redis-1` and `keelson-mailpit-1`; PostgreSQL accepts connections, Redis answers `PONG`, Mailpit returns HTTP 200, and the persistent `keelson_db_data` volume was not reset, migrated or queried. A separate `bash bin/test-db.sh start` provisioned the labelled tmpfs PostgreSQL 16.15 container. `php bin/phpunit` passed **52 tests / 229 assertions**, exit 0; the helper-owned container and generated ignored env file were removed afterwards. The Compose database was not used. `npm start` served the frontend on `127.0.0.1:5173` (HTTP 200); `symfony serve` served the backend and `GET /healthz` returned 200. `pnpm run build` and `pnpm run lint` passed; `composer validate`, YAML lint (13 files), container lint and the router listing (including `app_healthz`) passed. Migration down/up was verified on the disposable database. Full detail is in `DEVELOPMENT_ROADMAP.md`.
 
 **2026-11-13 (historical):** frontend frozen install, build, and lint passed. Composer validation, PHP syntax checks, and Symfony YAML/container/route checks passed. The frontend dev server returned HTTP 200 in a local smoke check.
 

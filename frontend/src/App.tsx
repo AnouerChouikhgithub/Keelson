@@ -1,13 +1,17 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
+import { listOrganizations } from './api/organizations'
+import type { OrganizationMembership } from './api/types'
+import { presentError } from './api/presentError'
+import { useApiResource } from './api/useApiResource'
 import { Icon } from './components/Icon'
 import type { IconName } from './components/Icon'
 import { ProfileMenu } from './components/ProfileMenu'
 import { SearchDialog } from './components/SearchDialog'
 import { ThemeControl } from './components/ThemeControl'
 import { useI18n } from './i18n/I18nContext'
-import { mockInvitations, mockOrganizations } from './mocks/organizations'
-import type { InvitationRecord, OrganizationSummary } from './mocks/organizations'
+import { mockInvitations } from './mocks/organizations'
+import type { InvitationRecord } from './mocks/organizations'
 import { useNotifications } from './notifications/useNotifications'
 import type { NavPageId, PageId } from './pages'
 import { AccountScreen } from './screens/AccountScreen'
@@ -26,6 +30,7 @@ import { SignedOutScreen } from './screens/SignedOutScreen'
 import { buildSearchResults, searchShortcutLabel } from './search/search'
 import { beginEndSession, clearSessionEnded, readSession, readSessionEnded } from './session/session'
 import type { ServerSession } from './session/session'
+import { initialsOf } from './utils/initials'
 import './App.css'
 
 const navItems: { id: NavPageId; icon: IconName }[] = [
@@ -39,20 +44,36 @@ const navItems: { id: NavPageId; icon: IconName }[] = [
   { id: 'pricing', icon: 'globe' },
 ]
 
+type SessionState =
+  | { status: 'loading' }
+  | { status: 'anonymous' }
+  | { status: 'error' }
+  | { status: 'authenticated'; session: Extract<ServerSession, { status: 'authenticated' }> }
+
 function OrganizationSwitcher({
   organizations,
   activeOrganizationId,
   onSelect,
   onCreate,
 }: {
-  organizations: OrganizationSummary[]
-  activeOrganizationId: string
+  organizations: OrganizationMembership[]
+  activeOrganizationId: string | null
   onSelect: (organizationId: string) => void
   onCreate: () => void
 }) {
   const { m } = useI18n()
   const [isOpen, setIsOpen] = useState(false)
   const activeOrganization = organizations.find((item) => item.id === activeOrganizationId) ?? organizations[0]
+
+  if (!activeOrganization) {
+    return (
+      <button className="organization-switcher" type="button" onClick={onCreate}>
+        <span className="org-avatar">—</span>
+        <span className="org-text"><strong>{m.account.noWorkspace}</strong><small>{m.nav.createOrg}</small></span>
+        <Icon name="plus" size={16} />
+      </button>
+    )
+  }
 
   return (
     <div className="organization-menu-wrap">
@@ -64,8 +85,11 @@ function OrganizationSwitcher({
         aria-haspopup="menu"
         onClick={() => setIsOpen(!isOpen)}
       >
-        <span className="org-avatar">{activeOrganization.initials}</span>
-        <span className="org-text"><strong>{activeOrganization.name}</strong><small>{activeOrganization.location}</small></span>
+        <span className="org-avatar">{initialsOf(activeOrganization.name)}</span>
+        <span className="org-text">
+          <strong>{activeOrganization.name}</strong>
+          <small>{m.roles[activeOrganization.role.toLowerCase() as keyof typeof m.roles]} · {activeOrganization.subdomain}</small>
+        </span>
         <Icon name="chevron" size={16} />
       </button>
       {isOpen && (
@@ -80,8 +104,11 @@ function OrganizationSwitcher({
               key={item.id}
               onClick={() => { onSelect(item.id); setIsOpen(false) }}
             >
-              <span className="org-avatar">{item.initials}</span>
-              <span><strong>{item.name}</strong><small>{item.location} · {item.subdomain}.keelson.app</small></span>
+              <span className="org-avatar">{initialsOf(item.name)}</span>
+              <span>
+                <strong>{item.name}</strong>
+                <small>{item.subdomain} · {m.roles[item.role.toLowerCase() as keyof typeof m.roles]}</small>
+              </span>
               {item.id === activeOrganizationId && <Icon name="check" size={16} />}
             </button>
           ))}
@@ -96,42 +123,112 @@ function OrganizationSwitcher({
   )
 }
 
+/**
+ * Shown while the session or the caller's memberships cannot be read. It never
+ * falls back to demo identity or demo records.
+ */
+function StatusGate({ title, message, onRetry }: { title: string; message: string; onRetry: () => void }) {
+  const { m } = useI18n()
+  return (
+    <main className="signed-out-screen">
+      <section className="panel signed-out-card">
+        <img src="/Keelson.svg" alt="" width={34} height={34} />
+        <h1>{title}</h1>
+        <p>{message}</p>
+        <button type="button" className="button button-secondary" onClick={onRetry}>{m.api.reload}</button>
+      </section>
+    </main>
+  )
+}
+
 function App() {
   const { m } = useI18n()
   const notifications = useNotifications()
   const [activePage, setActivePage] = useState<PageId>('dashboard')
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
-  const [organizations, setOrganizations] = useState<OrganizationSummary[]>(mockOrganizations)
-  const [activeOrganizationId, setActiveOrganizationId] = useState(mockOrganizations[0].id)
-  const [invitations, setInvitations] = useState<InvitationRecord[]>(mockInvitations)
   const [searchOpen, setSearchOpen] = useState(false)
-  // Server-owned authentication state. `null` means it could not be read, which
-  // is never treated as signed in or signed out.
-  const [session, setSession] = useState<ServerSession | null>(null)
+  const [sessionState, setSessionState] = useState<SessionState>({ status: 'loading' })
+  const [sessionAttempt, setSessionAttempt] = useState(0)
+  const [activeOrganizationId, setActiveOrganizationId] = useState<string | null>(null)
+  const [invitations, setInvitations] = useState<InvitationRecord[]>(mockInvitations)
+  const [editorInvoiceId, setEditorInvoiceId] = useState<string | null>(null)
   // Survives the full-page sign-out navigation, so the returning tab shows the
   // signed-out screen instead of briefly re-rendering the shell.
   const [signedOut, setSignedOut] = useState(readSessionEnded)
   const [logoutPending, setLogoutPending] = useState(false)
   const [logoutNotice, setLogoutNotice] = useState<string | null>(null)
-  const activeOrganization = organizations.find((item) => item.id === activeOrganizationId) ?? mockOrganizations[0]
-  const searchResults = useMemo(
-    () => buildSearchResults({ m, organizations, notifications: notifications.notifications }),
-    [m, organizations, notifications.notifications],
-  )
 
   useEffect(() => {
     let cancelled = false
     void readSession().then((state) => {
       if (cancelled) return
-      setSession(state)
-      // An authenticated session always overrides the tab's sign-out marker.
-      if (state?.status === 'authenticated') {
-        clearSessionEnded()
-        setSignedOut(false)
+      if (state === null) {
+        setSessionState({ status: 'error' })
+        return
       }
+      if (state.status === 'anonymous') {
+        setSessionState({ status: 'anonymous' })
+        return
+      }
+      clearSessionEnded()
+      setSignedOut(false)
+      setSessionState({ status: 'authenticated', session: state })
     })
     return () => { cancelled = true }
-  }, [])
+  }, [sessionAttempt])
+
+  const sessionUser = sessionState.status === 'authenticated' ? sessionState.session.user : null
+
+  const loadOrganizations = useCallback(
+    (signal: AbortSignal) => (sessionState.status === 'authenticated'
+      ? listOrganizations(signal)
+      : Promise.resolve([])),
+    // A new session must refetch the memberships.
+    [sessionState.status],
+  )
+  const organizations = useApiResource(loadOrganizations)
+  const membershipList = useMemo(
+    () => organizations.state.status === 'ready' ? organizations.state.data : [],
+    [organizations.state],
+  )
+
+  // The selected organization is a UI preference; the server re-authorizes every
+  // request. The selection is resolved during render rather than synchronized
+  // by an effect, so a revoked membership simply stops matching.
+  const activeMembership = membershipList.find((item) => item.id === activeOrganizationId)
+    ?? membershipList[0]
+    ?? null
+  const activeOrganization = activeMembership
+    ? { id: activeMembership.id, name: activeMembership.name }
+    : null
+
+  /** Renders organization-scoped content, or an honest gate while it is unknown. */
+  function withWorkspace(render: (organizationId: string, role: OrganizationMembership['role']) => ReactNode): ReactNode {
+    const retry = () => { organizations.reload() }
+    if (organizations.state.status === 'loading') return <StatusGate title={m.nav.workspace} message={m.api.loading} onRetry={retry} />
+    if (organizations.state.status === 'error') {
+      return <StatusGate title={m.nav.workspace} message={presentError(m, organizations.state.error)} onRetry={retry} />
+    }
+    if (activeMembership === null) return <StatusGate title={m.account.noWorkspace} message={m.account.noWorkspaceHint} onRetry={retry} />
+    return render(activeMembership.id, activeMembership.role)
+  }
+
+  const searchResults = useMemo(
+    () => buildSearchResults({ m, organizations: membershipList, notifications: notifications.notifications }),
+    [m, membershipList, notifications.notifications],
+  )
+
+  function selectPage(page: PageId) {
+    setActivePage(page)
+    setMobileNavOpen(false)
+  }
+
+  function selectOrganization(organizationId: string) {
+    // Different tenant => different data; close the editor so it cannot keep a
+    // draft ID that belongs to the previous organization.
+    setActiveOrganizationId(organizationId)
+    setEditorInvoiceId(null)
+  }
 
   /**
    * Sign-out goes through the server as a top-level form POST, so the browser
@@ -141,27 +238,21 @@ function App() {
   function handleLogout() {
     if (logoutPending) return
     setLogoutNotice(null)
-    if (session === null) {
-      // Unknown state is not the same as signed out: say so instead of
-      // pretending there was a session to end.
+    if (sessionState.status === 'loading' || sessionState.status === 'error') {
       setLogoutNotice(m.session.sessionUnavailable)
       return
     }
-    if (session.status === 'anonymous') {
+    if (sessionState.status === 'anonymous') {
       setLogoutNotice(m.session.noActiveSession)
       return
     }
     setLogoutPending(true)
-    beginEndSession(session.logout)
+    beginEndSession(sessionState.session.logout)
   }
-
-  // Handed to the menu and every sign-out card.
-  const requestLogout = handleLogout
 
   useEffect(() => {
     function handleShortcut(event: KeyboardEvent) {
       if ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === 'k') {
-        // Only the app search owns the shortcut; never intercept it while it is already open.
         if (searchOpen) return
         event.preventDefault()
         setSearchOpen(true)
@@ -171,41 +262,67 @@ function App() {
     return () => window.removeEventListener('keydown', handleShortcut)
   }, [searchOpen])
 
-  function selectPage(page: PageId) {
-    setActivePage(page)
-    setMobileNavOpen(false)
+  if (signedOut) return <SignedOutScreen />
+
+  if (sessionState.status === 'loading') {
+    return <StatusGate title={m.session.cardTitle} message={m.api.loading} onRetry={() => setSessionAttempt((attempt) => attempt + 1)} />
   }
 
-  // Reached only after the server confirmed the session ended.
-  if (signedOut) return <SignedOutScreen />
+  if (sessionState.status === 'error') {
+    return <StatusGate title={m.session.cardTitle} message={m.session.sessionUnavailable} onRetry={() => setSessionAttempt((attempt) => attempt + 1)} />
+  }
+
+  // No invented identity: an anonymous session shows the real sign-in entry point.
+  if (sessionState.status === 'anonymous') return <SignedOutScreen />
+
+  const displayName = sessionUser?.displayName ?? sessionUser?.email ?? null
+  const profileName = displayName ?? m.account.unknownIdentity
 
   let pageContent: ReactNode
   switch (activePage) {
     case 'dashboard':
-      pageContent = <Dashboard activeOrganization={activeOrganization} />
+      pageContent = activeOrganization === null
+        ? withWorkspace(() => null)
+        : <Dashboard activeOrganization={activeOrganization} />
       break
     case 'onboarding':
       pageContent = (
         <Onboarding
-          onOrganizationCreated={(newOrganization) => { setOrganizations((current) => [...current, newOrganization]); setActiveOrganizationId(newOrganization.id) }}
           onInvitationCreated={(invitation) => setInvitations((current) => [invitation, ...current.filter((item) => item.id !== invitation.id)])}
           invitations={invitations.filter((invitation) => invitation.organizationId === activeOrganizationId)}
-          organizations={organizations}
+          organizations={membershipList}
           activeOrganizationId={activeOrganizationId}
         />
       )
       break
     case 'invoices':
-      pageContent = <InvoicesScreen onOpenEditor={() => selectPage('editor')} />
+      pageContent = withWorkspace((organizationId, role) => (
+        <InvoicesScreen
+          key={`invoices-${organizationId}`}
+          organizationId={organizationId}
+          role={role}
+          onOpenEditor={(invoiceId) => { setEditorInvoiceId(invoiceId); selectPage('editor') }}
+        />
+      ))
       break
     case 'editor':
-      pageContent = <InvoiceEditorScreen onBack={() => selectPage('invoices')} />
+      pageContent = withWorkspace((organizationId, role) => (
+        <InvoiceEditorScreen
+          key={`editor-${organizationId}-${editorInvoiceId ?? 'new'}`}
+          organizationId={organizationId}
+          role={role}
+          invoiceId={editorInvoiceId}
+          onBack={() => selectPage('invoices')}
+        />
+      ))
       break
     case 'pricing':
       pageContent = <PricingScreen onStartFree={() => selectPage('onboarding')} />
       break
     case 'customers':
-      pageContent = <CustomersScreen />
+      pageContent = withWorkspace((organizationId, role) => (
+        <CustomersScreen key={`customers-${organizationId}`} organizationId={organizationId} role={role} />
+      ))
       break
     case 'team':
       pageContent = <TeamScreen />
@@ -214,7 +331,16 @@ function App() {
       pageContent = <BillingScreen />
       break
     case 'account':
-      pageContent = <AccountScreen activeOrganization={activeOrganization} onLogout={requestLogout} logoutPending={logoutPending} />
+      pageContent = (
+        <AccountScreen
+          displayName={displayName}
+          email={sessionUser?.email ?? null}
+          activeOrganization={activeOrganization}
+          role={activeMembership?.role ?? null}
+          onLogout={handleLogout}
+          logoutPending={logoutPending}
+        />
+      )
       break
     case 'notifications':
       pageContent = (
@@ -229,7 +355,7 @@ function App() {
       )
       break
     case 'settings':
-      pageContent = <SettingsScreen onLogout={requestLogout} logoutPending={logoutPending} />
+      pageContent = <SettingsScreen onLogout={handleLogout} logoutPending={logoutPending} />
       break
     default:
       pageContent = <Placeholder page={activePage} />
@@ -242,7 +368,12 @@ function App() {
           <img src="/Keelson.svg" alt="" />
           <span>keelson</span>
         </a>
-        <OrganizationSwitcher organizations={organizations} activeOrganizationId={activeOrganizationId} onSelect={setActiveOrganizationId} onCreate={() => selectPage('onboarding')} />
+        <OrganizationSwitcher
+          organizations={membershipList}
+          activeOrganizationId={activeOrganizationId}
+          onSelect={selectOrganization}
+          onCreate={() => selectPage('onboarding')}
+        />
         <div className="nav-label">{m.nav.workspace}</div>
         <nav className="primary-nav" aria-label={m.nav.mainNav}>
           {navItems.map((item) => (
@@ -255,7 +386,6 @@ function App() {
             >
               <Icon name={item.icon} />
               <span>{m.nav[item.id]}</span>
-              {item.id === 'invoices' && <span className="nav-count">8</span>}
             </button>
           ))}
         </nav>
@@ -266,9 +396,12 @@ function App() {
           <Icon name="arrow" size={15} />
         </div>
         <div className="profile-row">
-          <span className="profile-avatar">AB</span>
-          <span className="profile-info"><strong>Amine Ben Salah</strong><small>{m.roles.owner}</small></span>
-          <ProfileMenu onNavigate={selectPage} onLogout={requestLogout} logoutPending={logoutPending} />
+          <span className="profile-avatar">{initialsOf(profileName)}</span>
+          <span className="profile-info">
+            <strong>{profileName}</strong>
+            <small>{activeMembership ? m.roles[activeMembership.role.toLowerCase() as keyof typeof m.roles] : m.account.noWorkspace}</small>
+          </span>
+          <ProfileMenu onNavigate={selectPage} onLogout={handleLogout} logoutPending={logoutPending} />
         </div>
       </aside>
 
@@ -278,7 +411,7 @@ function App() {
             <Icon name="menu" />
           </button>
           <div className="breadcrumbs">
-            <span>{activeOrganization.name}</span>
+            <span>{activeOrganization?.name ?? m.account.noWorkspace}</span>
             <Icon name="chevron" size={14} />
             <strong>{m.page[activePage]}</strong>
           </div>
@@ -311,6 +444,12 @@ function App() {
         </header>
         <main className="main-content">
           {logoutNotice && <div className="inline-feedback" role="alert">{logoutNotice}</div>}
+          {organizations.state.status === 'error' && (
+            <div className="inline-feedback" role="alert">
+              <span>{presentError(m, organizations.state.error)}</span>
+              <button type="button" className="button button-ghost" onClick={organizations.reload}>{m.api.reload}</button>
+            </div>
+          )}
           {pageContent}
         </main>
       </div>

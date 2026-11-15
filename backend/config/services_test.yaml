@@ -4,5 +4,7 @@
 # suite can exercise the real logout/end-session flow without network access or
 # credentials. Nothing here is loaded outside APP_ENV=test.
 services:
-    drenso_oidc.url_fetcher:
+    # The client is wired to the per-client fetcher id, not the abstract
+    # `drenso.oidc.url_fetcher` parent.
+    drenso.oidc.url_fetcher.default:
         class: App\Tests\Support\StubOidcUrlFetcher

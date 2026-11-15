@@ -21,6 +21,10 @@ final class InvoiceRepository extends ServiceEntityRepository
     {
         return $this->createQueryBuilder('invoice')
             ->innerJoin('invoice.organization', 'organization')
+            // The serializer reads the customer id; fetch it with the invoice
+            // instead of triggering a lazy load per read.
+            ->innerJoin('invoice.customer', 'customer')
+            ->addSelect('customer')
             ->innerJoin(Membership::class, 'membership', 'WITH', 'membership.organization = organization')
             ->andWhere('invoice.id = :invoiceId')
             ->andWhere('IDENTITY(invoice.organization) = :organizationId')
@@ -41,6 +45,10 @@ final class InvoiceRepository extends ServiceEntityRepository
     {
         $builder = $this->createQueryBuilder('invoice')
             ->innerJoin('invoice.organization', 'organization')
+            // Same reason as the single read: every listed invoice is serialized
+            // with its customer id.
+            ->innerJoin('invoice.customer', 'customer')
+            ->addSelect('customer')
             ->innerJoin(Membership::class, 'membership', 'WITH', 'membership.organization = organization')
             ->andWhere('IDENTITY(invoice.organization) = :organizationId')
             ->andWhere('IDENTITY(membership.principal) = :principalId')

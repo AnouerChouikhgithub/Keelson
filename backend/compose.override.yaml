@@ -1,4 +1,6 @@
 
+# UNUSED: see the note in backend/compose.yaml. The root docker-compose.yml is
+# the development stack; this override only publishes the recipe database.
 services:
 ###> doctrine/doctrine-bundle ###
   database:

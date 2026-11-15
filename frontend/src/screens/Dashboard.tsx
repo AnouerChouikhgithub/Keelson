@@ -13,14 +13,13 @@ import {
   revenueChangePercent,
   revenueTotal,
 } from '../mocks/dashboard'
-import type { OrganizationSummary } from '../mocks/organizations'
 
 function Sparkline({ values }: { values: number[] }) {
   const points = values.map((value, index) => `${(index / (values.length - 1)) * 100},${100 - value}`).join(' ')
   return <svg className="sparkline" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><polyline points={points} /></svg>
 }
 
-export function Dashboard({ activeOrganization }: { activeOrganization: OrganizationSummary }) {
+export function Dashboard({ activeOrganization }: { activeOrganization: { id: string; name: string } }) {
   const { m, locale, currency, percent, date, month, number } = useI18n()
 
   return (

@@ -12,7 +12,9 @@ use Doctrine\ORM\Mapping as ORM;
 #[ORM\Table(name: 'invoice_audit_events')]
 #[ORM\Index(name: 'idx_invoice_audit_organization_created', fields: ['organization', 'createdAt'])]
 #[ORM\Index(name: 'idx_invoice_audit_invoice_created', fields: ['invoiceId', 'createdAt'])]
-final class InvoiceAuditEvent
+// Not final: Doctrine must be able to generate a lazy-loading proxy for it in
+// the production container, which cannot subclass a final class.
+class InvoiceAuditEvent
 {
     #[ORM\Id]
     #[ORM\GeneratedValue(strategy: 'CUSTOM')]

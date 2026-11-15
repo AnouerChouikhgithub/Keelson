@@ -74,8 +74,8 @@ final class InvoiceApiTest extends KernelTestCase
     {
         $customerRepository = $this->entityManager->getRepository(Customer::class);
         self::assertInstanceOf(CustomerRepository::class, $customerRepository);
-        self::assertSame($this->customerA, $customerRepository->findForOrganization($this->id($this->organizationA), $this->id($this->customerA)));
-        self::assertNull($customerRepository->findForOrganization($this->id($this->organizationA), $this->id($this->customerB)));
+        self::assertSame($this->customerA, $customerRepository->findForOrganization($this->id($this->organizationA), $this->id($this->customerA), $this->id($this->principalA)));
+        self::assertNull($customerRepository->findForOrganization($this->id($this->organizationA), $this->id($this->customerB), $this->id($this->principalA)));
         self::assertSame([], $customerRepository->findForOrganizationList($this->id($this->organizationA), $this->id($this->principalB)));
 
         $invoice = $this->createInvoice($this->organizationA, $this->customerA, $this->principalA, '2026-000001');

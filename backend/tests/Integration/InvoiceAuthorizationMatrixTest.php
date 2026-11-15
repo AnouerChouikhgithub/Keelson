@@ -128,6 +128,21 @@ final class InvoiceAuthorizationMatrixTest extends WebTestCase
     public function testViewerIsReadOnly(): void
     {
         $this->assertRoleCan('Viewer', canWrite: false, canDelete: false);
+        $this->client->loginUser($this->principals['Viewer']);
+        $path = $this->invoicePath();
+
+        $this->client->request('GET', $path);
+        self::assertResponseIsSuccessful();
+        $this->client->request('PATCH', $path, server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ORIGIN' => 'http://localhost'], content: json_encode([
+            'lineItems' => [['description' => 'Forbidden', 'quantity' => '1.000', 'unitPrice' => '999.000']],
+        ], JSON_THROW_ON_ERROR));
+        self::assertResponseStatusCodeSame(404);
+        $this->client->request('POST', $path.'/send', server: ['HTTP_ORIGIN' => 'http://localhost']);
+        self::assertResponseStatusCodeSame(404);
+        $this->client->request('POST', $path.'/mark-paid', server: ['HTTP_ORIGIN' => 'http://localhost']);
+        self::assertResponseStatusCodeSame(404);
+        self::assertSame('draft', (string) $this->entityManager->getConnection()->fetchOne('SELECT status FROM invoices WHERE id = ?', [$this->id($this->draftInvoice)]));
+        self::assertSame('10.000', (string) $this->entityManager->getConnection()->fetchOne('SELECT subtotal FROM invoices WHERE id = ?', [$this->id($this->draftInvoice)]));
     }
 
     public function testSuspendedMembershipIsDenied(): void

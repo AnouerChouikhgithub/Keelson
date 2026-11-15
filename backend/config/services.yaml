@@ -8,6 +8,24 @@
 # https://symfony.com/doc/current/best_practices.html#use-parameters-for-application-configuration
 parameters:
     app.oidc.issuer: '%env(resolve:OIDC_ISSUER)%'
+    # Structured log threshold; LOG_LEVEL overrides it for an investigation.
+    app.log.minimum_level: 'warning'
+
+    # Inputs for App\Config\EnvironmentValidator. Only presence and shape are
+    # checked, and only names are reported, so reading this map never exposes a
+    # value. `default::` keeps the container bootable when a variable is absent;
+    # the validator decides whether that absence is fatal in this environment.
+    app.environment_requirements:
+        APP_SECRET: '%env(default::APP_SECRET)%'
+        DATABASE_URL: '%env(default::DATABASE_URL)%'
+        DEFAULT_URI: '%env(default::DEFAULT_URI)%'
+        OIDC_ISSUER: '%env(default::OIDC_ISSUER)%'
+        OIDC_WELL_KNOWN_URL: '%env(default::OIDC_WELL_KNOWN_URL)%'
+        OIDC_CLIENT_ID: '%env(default::OIDC_CLIENT_ID)%'
+        OIDC_CLIENT_SECRET: '%env(default::OIDC_CLIENT_SECRET)%'
+        TRUSTED_HOSTS: '%env(default::TRUSTED_HOSTS)%'
+        TRUSTED_PROXIES: '%env(default::TRUSTED_PROXIES)%'
+        TRUSTED_HEADERS: '%env(default::TRUSTED_HEADERS)%'
 
 services:
     # default configuration for services in *this* file
@@ -28,7 +46,31 @@ services:
     # alias, so the end-session redirector is wired to the default client here.
     App\Service\ProviderEndSessionRedirector:
         arguments:
-            $oidcClient: '@drenso_oidc.client.default'
+            $oidcClient: '@drenso.oidc.client.default'
+
+    # One JSON log line per event, with the request id and redacted context.
+    # It decorates the framework logger so framework and application records
+    # share the same stream instead of duplicating each other.
+    App\Logging\StructuredLogger:
+        decorates: logger
+        decoration_inner_name: 'app.logger.inner'
+        arguments:
+            $fallback: '@app.logger.inner'
+            $minimumLevel: '%env(default:app.log.minimum_level:LOG_LEVEL)%'
+
+    App\Config\EnvironmentValidator: ~
+
+    App\Config\ConfigurationCheckWarmer:
+        arguments:
+            $environment: '%kernel.environment%'
+            $debug: '%kernel.debug%'
+            $configuration: '%app.environment_requirements%'
+
+    App\Command\CheckConfigurationCommand:
+        arguments:
+            $environment: '%kernel.environment%'
+            $debug: '%kernel.debug%'
+            $configuration: '%app.environment_requirements%'
 
     App\Security\PrincipalVoter:
         tags: ['security.voter']
@@ -36,11 +78,12 @@ services:
     App\Security\InvoiceVoter:
         tags: ['security.voter']
 
-    # Synthetic dev/test fixtures: the loader needs the target it must refuse.
+    # Synthetic dev/test fixtures. The target guard reads the effective DBAL
+    # connection parameters (including Doctrine's test dbname suffix), so only
+    # the environment is injected here.
     App\DataFixtures\SyntheticFixtureLoader:
         arguments:
             $environment: '%kernel.environment%'
-            $databaseUrl: '%env(resolve:DATABASE_URL)%'
 
     # add more service definitions when explicit configuration is needed
     # please note that last definitions always *replace* previous ones

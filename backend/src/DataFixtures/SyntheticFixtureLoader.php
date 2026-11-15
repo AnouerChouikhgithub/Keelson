@@ -24,8 +24,8 @@ final class SyntheticFixtureLoader
         private readonly EntityManagerInterface $entityManager,
         private readonly InvoiceCalculator $calculator,
         private readonly SyntheticFixtureCatalog $catalog,
+        private readonly FixtureTargetGuard $targetGuard,
         private readonly string $environment,
-        private readonly string $databaseUrl,
     ) {
     }
 
@@ -155,27 +155,17 @@ final class SyntheticFixtureLoader
     }
 
     /**
-     * @return string a credential-free description of the target, e.g. "keelson_test_local_test@127.0.0.1"
+     * @return string a credential-free description of the database this loader will write to,
+     *                e.g. "keelson_test_test@127.0.0.1"
      */
     public function assertSafeTarget(): string
     {
-        if ('prod' === $this->environment) {
-            throw new \RuntimeException('Refusing to load synthetic fixtures in the "prod" environment.');
-        }
-
-        $parts = parse_url($this->databaseUrl);
-        $host = $parts['host'] ?? '';
-        $database = ltrim($parts['path'] ?? '', '/');
-        if ('postgresql' !== ($parts['scheme'] ?? '') && 'postgres' !== ($parts['scheme'] ?? '')) {
-            throw new \RuntimeException('Refusing to load synthetic fixtures: DATABASE_URL is not a PostgreSQL URL.');
-        }
-        if (!in_array($host, ['127.0.0.1', 'localhost', '::1', '[::1]'], true)) {
-            throw new \RuntimeException('Refusing to load synthetic fixtures: DATABASE_URL host is not loopback.');
-        }
-        if (1 !== preg_match('/(?:^|_)(test|dev|fixture)(?:_|$)/', $database)) {
-            throw new \RuntimeException(sprintf('Refusing to load synthetic fixtures into "%s": the database name must look local (contains test/dev/fixture).', $database));
-        }
-
-        return sprintf('%s@%s', $database, $host);
+        // The effective parameters include Doctrine's test-environment
+        // `dbname_suffix`; the raw DATABASE_URL does not, so it must not be the
+        // thing under inspection.
+        return $this->targetGuard->describe(
+            $this->entityManager->getConnection()->getParams(),
+            $this->environment,
+        );
     }
 }

@@ -4,8 +4,12 @@ declare(strict_types=1);
 
 namespace App\Tests\Integration;
 
+use App\DataFixtures\FixtureTargetGuard;
 use App\DataFixtures\SyntheticFixtureCatalog;
 use App\DataFixtures\SyntheticFixtureLoader;
+use Doctrine\Bundle\DoctrineBundle\ConnectionFactory;
+use Doctrine\DBAL\Configuration;
+use Doctrine\DBAL\Tools\DsnParser;
 use App\Service\InvoiceCalculator;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
@@ -96,34 +100,77 @@ final class SyntheticFixtureLoaderTest extends KernelTestCase
         ));
     }
 
+    public function testAcceptsTheEffectiveCiTestDatabaseDespiteAnUnsafeLookingUrl(): void
+    {
+        // CI sets DATABASE_URL to .../keelson and the test environment appends
+        // Doctrine's `dbname_suffix` (_test). The guard must judge the database
+        // PostgreSQL actually receives (keelson_test), not the raw URL name
+        // (keelson) that used to make seeding fail in GitHub Actions.
+        // DoctrineBundle, not the URL, is what applies the suffix, so the
+        // reproduction goes through the same factory the application uses.
+        $connectionParams = (new ConnectionFactory([], new DsnParser(['postgresql' => 'pdo_pgsql', 'postgres' => 'pdo_pgsql'])))
+            ->createConnection([
+                'url' => 'postgresql://keelson:keelson@127.0.0.1:5432/keelson?serverVersion=16&charset=utf8',
+                'dbname_suffix' => '_test',
+            ], new Configuration())
+            ->getParams();
+        self::assertSame('keelson_test', $connectionParams['dbname']);
+
+        self::assertSame(
+            'keelson_test@127.0.0.1',
+            (new FixtureTargetGuard())->describe($connectionParams, 'test'),
+        );
+    }
+
+    public function testGuardsAgainstTheRunningConnectionsEffectiveTarget(): void
+    {
+        $target = $this->loader->assertSafeTarget();
+        $database = $this->entityManager->getConnection()->getDatabase();
+
+        self::assertSame($database.'@127.0.0.1', $target, 'The guard must describe the database the loader will write to.');
+        self::assertMatchesRegularExpression('/(?:^|_)(test|dev|fixture)(?:_|$)/', $database);
+    }
+
     public function testRefusesUnsafeOrAmbiguousTargets(): void
     {
-        $catalog = new SyntheticFixtureCatalog();
-        $calculator = new InvoiceCalculator();
+        $guard = new FixtureTargetGuard();
+        $safe = ['driver' => 'pdo_pgsql', 'host' => '127.0.0.1', 'dbname' => 'keelson_test'];
 
         try {
-            (new SyntheticFixtureLoader($this->entityManager, $calculator, $catalog, 'prod', 'postgresql://app:app@127.0.0.1:5432/keelson_test'))->assertSafeTarget();
+            $guard->describe($safe, 'prod');
             self::fail('prod must be refused.');
         } catch (\RuntimeException $exception) {
             self::assertStringContainsString('prod', $exception->getMessage());
         }
 
-        foreach ([
-            'postgresql://app:app@db.example.com:5432/keelson_test',
-            'postgresql://app:app@127.0.0.1:5432/keelson',
-            'mysql://app:app@127.0.0.1:3306/keelson_test',
-        ] as $url) {
+        $unsafe = [
+            'remote host' => ['driver' => 'pdo_pgsql', 'host' => 'db.example.com', 'dbname' => 'keelson_test'],
+            'production database name' => ['driver' => 'pdo_pgsql', 'host' => '127.0.0.1', 'dbname' => 'keelson'],
+            'ambiguous name' => ['driver' => 'pdo_pgsql', 'host' => '127.0.0.1', 'dbname' => 'keelson_latest'],
+            'empty name' => ['driver' => 'pdo_pgsql', 'host' => '127.0.0.1', 'dbname' => ''],
+            'mysql driver' => ['driver' => 'pdo_mysql', 'host' => '127.0.0.1', 'dbname' => 'keelson_test'],
+            'missing driver' => ['host' => '127.0.0.1', 'dbname' => 'keelson_test'],
+            'empty host' => ['driver' => 'pdo_pgsql', 'host' => '', 'dbname' => 'keelson_test'],
+        ];
+        foreach ($unsafe as $label => $params) {
             try {
-                (new SyntheticFixtureLoader($this->entityManager, $calculator, $catalog, 'dev', $url))->assertSafeTarget();
-                self::fail(sprintf('Unsafe target accepted: %s', parse_url($url, PHP_URL_HOST).'/'.ltrim((string) parse_url($url, PHP_URL_PATH), '/')));
-            } catch (\RuntimeException) {
-                self::addToAssertionCount(1);
+                $guard->describe($params, 'dev');
+                self::fail(sprintf('Unsafe target accepted: %s', $label));
+            } catch (\RuntimeException $exception) {
+                self::assertStringNotContainsString('keelson:keelson', $exception->getMessage(), 'A refusal must not echo credentials.');
+                self::assertStringNotContainsString('password', strtolower($exception->getMessage()));
             }
         }
 
+        foreach (['127.0.0.1', 'localhost', '::1'] as $host) {
+            self::assertSame(
+                'keelson_test_local@'.$host,
+                $guard->describe(['driver' => 'pdo_pgsql', 'host' => $host, 'dbname' => 'keelson_test_local'], 'test'),
+            );
+        }
         self::assertSame(
-            'keelson_test_local@127.0.0.1',
-            (new SyntheticFixtureLoader($this->entityManager, $calculator, $catalog, 'test', 'postgresql://app:app@127.0.0.1:5432/keelson_test_local'))->assertSafeTarget(),
+            'fixture_data@localhost',
+            $guard->describe(['driver' => 'pdo_pgsql', 'host' => 'localhost', 'dbname' => 'fixture_data'], 'dev'),
         );
     }
 

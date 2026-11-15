@@ -4,8 +4,8 @@ Multi-tenant SaaS starter: organizations, roles, invitations, Stripe subscriptio
 
 ## Architecture (current branch)
 
-- `backend/` — Symfony 7.4 API (PHP >=8.2) on Doctrine ORM 3 / DBAL 4 / Migrations and PostgreSQL 16, with a Drenso OIDC session firewall. Implemented: local principal provisioning after ID-token verification, membership-based authorization voters, tenant-scoped organization/membership/invitation reads, and a tenant-scoped customer/invoice/audit API.
-- `frontend/` — React + Vite + TypeScript single-page dashboard shell. It renders typed mock data, does **not** call the API, and persists only the theme preference in `localStorage`; organization switching and invitations are in-memory state.
+- `backend/` — Symfony 7.4 API (PHP >=8.2) on Doctrine ORM 3 / DBAL 4 / Migrations and PostgreSQL 16, with a Drenso OIDC session firewall. Implemented: local principal provisioning after ID-token verification, membership-based authorization voters, tenant-scoped organization/membership/invitation **repository reads** (no HTTP endpoints), and a tenant-scoped customer/invoice/audit HTTP API. The only HTTP routes are `/login`, `/logout`, `/healthz`, `/api/session`, `/api/me/organizations` and `/api/organizations/{organizationId}/…` customers, invoices and audit events.
+- `frontend/` — React + Vite + TypeScript single-page dashboard shell. Session, organization/role, customers and invoices are **real API data** (`src/api/`); organization switching is a client-side selection the server re-authorizes on every request. Dashboard metrics, onboarding/invitations, team, billing, pricing and notifications are still labelled mock surfaces with no backend. Only preferences and notification read state persist in `localStorage`.
 - `docker-compose.yml` — dev-only PostgreSQL 16, Redis 7 and Mailpit. Neither Redis nor Mailpit is wired into the application: there is no cache-provider or mailer configuration.
 
 Tenant isolation is application-layer only: repositories and controllers require an active membership for the route organization, and a client-supplied organization ID is a selector, never authority. PostgreSQL row-level security and Stripe webhooks are intended but **not implemented** — do not assume either exists without inspecting schema, queries and code.
@@ -14,11 +14,12 @@ Tenant isolation is application-layer only: repositories and controllers require
 
 Main color: `#0F766E`. Use it as the single primary color across the whole app (Tailwind theme token `primary`). Keep the UI clean, modern and accessible (WCAG AA contrast).
 
-## Verified baseline (2026-11-13)
+## Verified baseline (2026-11-15)
 
-- Frontend: React 19.3.1, Vite 8.3.4, TypeScript 6.0.3, ESLint 10.13.0 with `typescript-eslint` 8.71.2. TypeScript is deliberately pinned below 6.1 because `typescript-eslint` 8.71.2 supports `>=4.8.4 <6.1.0`; do not move it back to 7.x until that peer range widens. `pnpm run build` and `pnpm run lint` pass. No frontend test script is defined.
+- Frontend: React 19.3.1, Vite 8.3.4, TypeScript 6.0.3, ESLint 10.13.0 with `typescript-eslint` 8.71.2, Vitest 5.1.0. TypeScript is deliberately pinned below 6.1 because `typescript-eslint` 8.71.2 supports `>=4.8.4 <6.1.0`; do not move it back to 7.x until that peer range widens. `pnpm run build`, `pnpm run lint` and `pnpm test` pass; there are 56 node-environment unit tests: session/logout parsers in `src/session/session.test.ts`, and the API layer (client, customers, invoices, organizations, error mapping) in `src/api/*.test.ts`. No component/DOM tests and no jsdom/RTL dependency (adding one needs approval).
 - Backend dependencies: Symfony 7.4, Doctrine ORM/DBAL/Migrations plus the Doctrine bundles, `drenso/symfony-oidc-bundle`, `symfony/security-bundle`, `symfony/security-csrf`, `symfony/translation-contracts`. API Platform, Stripe, Messenger and LexikJWT are **not** declared.
-- Tests: the full PHPUnit suite passes against a disposable PostgreSQL 16 container (45 tests, 187 assertions on 2026-11-13); `tests/Unit/Repository/TenantScopedRepositoryTest.php` and `tests/Integration/*` require that database and assert the PostgreSQL platform. Database-independent subset: `php bin/phpunit tests/Unit/Entity tests/Unit/Security tests/Unit/Service tests/Unit/Util` (29 tests).
+- Tests: the Sprint 3 full PHPUnit suite passes against the disposable `backend/bin/test-db.sh` PostgreSQL 16 container (**97 tests, 527 assertions** on 2026-11-15; the Sprint 2 baseline was 86 tests / 450 assertions); `tests/Unit/Repository/TenantScopedRepositoryTest.php` and `tests/Integration/*` require that database and assert the PostgreSQL platform. Preflight and security regression evidence: `docs/sprints/sprint-3-preflight.md`. Database-independent subset: `php bin/phpunit tests/Unit/Entity tests/Unit/Security tests/Unit/Service tests/Unit/Util tests/Unit/EventListener`.
+- Known limitation: `php bin/console doctrine:schema:validate --env=test` fails while introspecting the database with `An index with name "idx_6a2f2f95a5a280d" was already defined on table "invoices"`. DBAL 4.5 synthesizes that exact name for the `fk_invoices_customer` local columns and the migration declares the same name (`migrations/Version20261023170000.php`), so the hydration sees it twice. Mapping validation passes; this is an upstream naming collision, not a missing schema object. Do not use `schema:update`/`migrations:diff` against this database until it is resolved.
 - Environment: `ext-sodium`, declared by `lcobucci/jwt`, is enabled on this host since 2026-11-13 through the machine-local CLI ini (`…/php/cli/php-phase7.ini`, `extension=php_sodium.dll`, libsodium 1.0.22). `composer install` and `composer check-platform-reqs` both exit 0 with no flags. That ini lives outside the repository, so a fresh machine must enable the extension before `composer install`. Docker Desktop is available; use a temporary `postgres:16-alpine` container (no volume) for database-backed tests, never the Compose `db_data` volume.
 - Documentation: `how-to-run.md` is the run guide, `backend/README.md` covers OIDC/API/database safety, `frontend/README.md` covers the frontend scope, and `DEVELOPMENT_ROADMAP.md` holds per-phase status and evidence. `docs/ORCHESTRATION_READINESS.md` is a superseded 2026-10-20 snapshot kept for history — do not treat it as current.
 
@@ -26,17 +27,18 @@ Main color: `#0F766E`. Use it as the single primary color across the whole app (
 
 - Frontend: `cd frontend && pnpm install --frozen-lockfile`, then `pnpm dev --host 127.0.0.1` (plain `pnpm dev` binds only the IPv6 loopback; `pnpm run dev -- --host ...` does not forward the flag). Checks: `pnpm run build`, `pnpm run lint`.
 - Backend: `cd backend && composer install`. Keep local values in the ignored `backend/.env.local`; never commit secrets or reuse customer/production credentials.
-- Backend checks that need no database: `composer validate --no-check-publish`, `php bin/console lint:yaml config --env=test`, `php bin/console lint:container --env=test`, `php bin/console debug:router --env=test`, `php bin/phpunit tests/Unit/Entity tests/Unit/Security tests/Unit/Service tests/Unit/Util`.
+- Backend checks that need no database: `composer validate --no-check-publish`, `php bin/console lint:yaml config --env=test`, `php bin/console lint:container --env=test`, `php bin/console debug:router --env=test` (18 routes), `php bin/phpunit tests/Unit/Entity tests/Unit/Security tests/Unit/Service tests/Unit/Util tests/Unit/EventListener`.
+- Full suite: `bash bin/test-db.sh start && php bin/phpunit && bash bin/test-db.sh stop` (from `backend/`). Frontend: `pnpm install --frozen-lockfile`, `pnpm run build`, `pnpm run lint`, `pnpm test`.
 - Backend HTTP needs `OIDC_ISSUER`, `OIDC_WELL_KNOWN_URL`, `OIDC_CLIENT_ID` and `OIDC_CLIENT_SECRET`; there is no offline or password login, and console commands work without them. Serve with `php -S 127.0.0.1:8000 -t public public/index.php` (the front controller must be explicit, otherwise PHP's built-in server 404s on `/api/...`).
 - Migrations: inspect `DATABASE_URL` and `doctrine:migrations:status` first, then migrate only a confirmed local or disposable database. The Compose database uses the persistent `db_data` volume: never reset it, never run `down -v`, and never point tests at it.
 - Database-backed tests need a separate throwaway PostgreSQL 16 instance (the `test` environment appends `_test`, plus `TEST_TOKEN` when set, to the configured database name); follow `backend/README.md`. On Windows, bind `-p 127.0.0.1::5432` and read the assigned port back — fixed ports can fall in reserved ranges.
-- Synthetic demo data lives only in `backend/src/DataFixtures/` and is seeded explicitly with `php bin/console app:fixtures:load --env=test --force`. It is idempotent, never deletes, refuses `prod`/non-loopback/non-test databases, and creates no login credentials; the frontend never reads it.
+- Synthetic demo data lives only in `backend/src/DataFixtures/` and is seeded explicitly with `php bin/console app:fixtures:load --env=test --force`. It is idempotent, never deletes, refuses `prod`/non-PostgreSQL/non-loopback/ambiguous targets, and creates no login credentials; the frontend never reads it. `FixtureTargetGuard` validates the **effective** DBAL connection parameters (`Connection::getParams()`, including Doctrine's test `dbname_suffix`), not the raw `DATABASE_URL`; validating the URL was what made CI refuse its own isolated `keelson_test` database.
 - Mail catcher UI: http://localhost:8026
 
 ## Rules
 
 - TypeScript strict mode; no `any` unless justified in a comment.
-- Generate the frontend API client from the backend OpenAPI spec once one exists (openapi-typescript or Orval). Never hand-write API types. No spec exists yet, so the frontend stays mock-only.
+- The typed frontend API layer is `frontend/src/api/` (hand-written because no OpenAPI spec exists yet; `docs/api-contract.md` records the verified shapes). Generate it from an OpenAPI spec once one exists (openapi-typescript or Orval) and keep the contract document in step with the controllers. Never invent an endpoint or a CSRF header: the mutation guard accepts a same-origin `Origin` or an `X-CSRF-Token` for `invoice_api`, and nothing exposes that token today.
 - Small, focused commits (Conventional Commits). Add or update tests with every feature.
 - Never commit secrets; use `.env.local`. Machine-local snapshots (`backend/.env.*`, except the tracked `.env`, `.env.dev`, `.env.example` and `.env.test`) and generated tool output (`graphify-out/`) are git-ignored — keep them that way.
 - Prefer simple, readable code over clever code. Explain non-obvious decisions in short comments.
@@ -44,7 +46,7 @@ Main color: `#0F766E`. Use it as the single primary color across the whole app (
 
 ## UI spec
 
-The full UI specification (design system, screens, states, light/dark theming) is in `docs/ui-spec.md`. Treat it as the source of truth for every screen. Build screens in the batches requested, with typed mock data in `src/mocks/`, and keep all colors in the central theme file.
+The full UI specification (design system, screens, states, light/dark theming) is in `docs/ui-spec.md`. Treat it as the source of truth for every screen. Build screens in the batches requested, keep all colors in the central theme file, and keep `src/mocks/` only for surfaces with no backend — never mix mock records into an API-backed list.
 
 ## Docs and skills
 

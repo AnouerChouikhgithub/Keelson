@@ -1,4 +1,9 @@
 
+# UNUSED: this is the Symfony recipe's starter database and is superseded by the
+# root docker-compose.yml, which the documentation and CI use. Running
+# `docker compose up` from backend/ would create a second PostgreSQL on 5432 with
+# different credentials (`app` / `!ChangeMe!`). Kept only to avoid deleting a
+# tracked recipe file; see docs/ENVIRONMENT_CONFIGURATION.md before using it.
 services:
 ###> doctrine/doctrine-bundle ###
   database:

@@ -18,15 +18,20 @@ final class CustomerRepository extends ServiceEntityRepository
         parent::__construct($registry, Customer::class);
     }
 
-    public function findForOrganization(string $organizationId, string $customerId): ?Customer
+    public function findForOrganization(string $organizationId, string $customerId, string $principalId): ?Customer
     {
         return $this->createQueryBuilder('customer')
             ->innerJoin('customer.organization', 'organization')
+            ->innerJoin(Membership::class, 'membership', 'WITH', 'membership.organization = organization')
             ->andWhere('customer.id = :customerId')
             ->andWhere('IDENTITY(customer.organization) = :organizationId')
+            ->andWhere('IDENTITY(membership.principal) = :principalId')
+            ->andWhere('membership.status = :membershipStatus')
             ->andWhere('organization.status = :organizationStatus')
             ->setParameter('customerId', $customerId)
             ->setParameter('organizationId', $organizationId)
+            ->setParameter('principalId', $principalId)
+            ->setParameter('membershipStatus', 'active')
             ->setParameter('organizationStatus', 'active')
             ->getQuery()
             ->getOneOrNullResult();
@@ -63,15 +68,20 @@ final class CustomerRepository extends ServiceEntityRepository
      * customer first cannot race a concurrent invoice creation: the insert waits
      * until the delete commits, or the delete waits and then sees the invoice.
      */
-    public function findForOrganizationForUpdate(string $organizationId, string $customerId): ?Customer
+    public function findForOrganizationForUpdate(string $organizationId, string $customerId, string $principalId): ?Customer
     {
         $query = $this->createQueryBuilder('customer')
             ->innerJoin('customer.organization', 'organization')
+            ->innerJoin(Membership::class, 'membership', 'WITH', 'membership.organization = organization')
             ->andWhere('customer.id = :customerId')
             ->andWhere('IDENTITY(customer.organization) = :organizationId')
+            ->andWhere('IDENTITY(membership.principal) = :principalId')
+            ->andWhere('membership.status = :membershipStatus')
             ->andWhere('organization.status = :organizationStatus')
             ->setParameter('customerId', $customerId)
             ->setParameter('organizationId', $organizationId)
+            ->setParameter('principalId', $principalId)
+            ->setParameter('membershipStatus', 'active')
             ->setParameter('organizationStatus', 'active')
             ->getQuery();
         $query->setLockMode(LockMode::PESSIMISTIC_WRITE);

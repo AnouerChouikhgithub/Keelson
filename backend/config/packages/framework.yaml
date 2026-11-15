@@ -2,6 +2,15 @@
 framework:
     secret: '%env(APP_SECRET)%'
 
+    # Deployment-facing values, unset locally. TRUSTED_HOSTS is required in prod
+    # (see App\Config\EnvironmentValidator); comma-separated entries and regex
+    # patterns are accepted. Trusted proxies are opt-in: setting one without
+    # TRUSTED_HEADERS would silently ignore X-Forwarded-Proto, so the validator
+    # requires both together.
+    trusted_hosts: '%env(default::TRUSTED_HOSTS)%'
+    trusted_proxies: '%env(default::TRUSTED_PROXIES)%'
+    trusted_headers: '%env(default::TRUSTED_HEADERS)%'
+
     # Note that the session will be started ONLY if you read or write from it.
     session:
         cookie_httponly: true
