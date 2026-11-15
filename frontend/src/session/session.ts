@@ -19,9 +19,10 @@ export type ServerSession =
   | { status: 'authenticated'; user: SessionUser; logout: LogoutTarget }
   | { status: 'anonymous' }
 
-export type LogoutResult = 'confirmed' | 'failed'
-
 const sessionEndpoint = '/api/session'
+const signedOutMarker = 'keelson-session-ended'
+/** The only endpoint the sign-out form may post the CSRF token to. */
+const logoutPath = '/logout'
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
@@ -38,23 +39,29 @@ function parseUser(value: unknown): SessionUser | null {
   }
 }
 
-function parseLogout(value: unknown): LogoutTarget | null {
+/**
+ * Validates the session's sign-out target.
+ *
+ * The CSRF token must never leave the app: the target is the exact same-origin
+ * `/logout` path and nothing else. A leading-slash check is not enough, because
+ * `//evil.example` is a protocol-relative URL the browser resolves to another
+ * host, and `/\evil.example` can be normalized the same way.
+ */
+export function parseLogoutTarget(value: unknown): LogoutTarget | null {
   if (!isRecord(value)) return null
   const { url, csrfToken } = value
-  if (typeof url !== 'string' || typeof csrfToken !== 'string') return null
-  // Only ever post the token back to the same origin: a session response must
-  // never be able to redirect the sign-out request elsewhere.
-  if (!url.startsWith('/')) return null
+  if (typeof url !== 'string' || url !== logoutPath) return null
+  if (typeof csrfToken !== 'string' || csrfToken === '') return null
   return { url, csrfToken }
 }
 
-function parseSession(value: unknown): ServerSession | null {
+export function parseSessionPayload(value: unknown): ServerSession | null {
   if (!isRecord(value)) return null
   if (value.authenticated === false) return { status: 'anonymous' }
   if (value.authenticated !== true) return null
 
   const user = parseUser(value.user)
-  const logout = parseLogout(value.logout)
+  const logout = parseLogoutTarget(value.logout)
   // An authenticated session without a usable logout target is reported as
   // unusable rather than as signed in: showing "Log out" that cannot end the
   // session is the defect this client exists to avoid.
@@ -71,40 +78,71 @@ export async function readSession(): Promise<ServerSession | null> {
       cache: 'no-store',
     })
     if (!response.ok) return null
-    return parseSession(await response.json())
+    return parseSessionPayload(await response.json())
   } catch {
     return null
   }
 }
 
 /**
- * Ends the server session through the CSRF-protected logout route, then
- * re-reads the session. `confirmed` is only returned when the server reports
- * the caller is anonymous afterwards.
+ * Starts the sign-out as a full-page form POST.
+ *
+ * The CSRF-protected route must be reached as a top-level navigation: after
+ * clearing its session, Symfony answers with a redirect to the provider's
+ * `end_session_endpoint`, and only the browser following that redirect ends
+ * the provider's single sign-on session. A `fetch()` cannot do it — with
+ * `redirect: 'manual'` the browser never navigates, and following a
+ * cross-origin, credentialed redirect from fetch is blocked. So this submits
+ * a real form and lets the page leave; the provider returns to the app, whose
+ * session probe then reports the anonymous state.
  */
-export async function endSession(target: LogoutTarget): Promise<LogoutResult> {
-  try {
-    const response = await fetch(target.url, {
-      method: 'POST',
-      credentials: 'same-origin',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({ _csrf_token: target.csrfToken }),
-      redirect: 'manual',
-    })
-    // Symfony answers a successful logout with a redirect to the target path;
-    // a rejected CSRF token answers 403 and an anonymous caller is bounced to
-    // /login. `redirect: 'manual'` hides that status behind an opaque
-    // redirect, which is still proof the route accepted the POST.
-    const accepted = response.type === 'opaqueredirect'
-      || response.ok
-      || response.status === 302
-      || response.status === 303
-    if (!accepted) return 'failed'
-  } catch {
-    return 'failed'
-  }
+export function beginEndSession(target: LogoutTarget): void {
+  markSessionEnded()
 
-  const after = await readSession()
-  if (after === null) return 'failed'
-  return after.status === 'anonymous' ? 'confirmed' : 'failed'
+  const form = document.createElement('form')
+  form.method = 'post'
+  form.action = target.url
+  form.hidden = true
+
+  const csrfToken = document.createElement('input')
+  csrfToken.type = 'hidden'
+  csrfToken.name = '_csrf_token'
+  csrfToken.value = target.csrfToken
+
+  form.append(csrfToken)
+  document.body.append(form)
+  form.submit()
+}
+
+/**
+ * Remembers in this tab that the browser has just been sent through sign-out.
+ * A full-page navigation loses in-memory state, and after the provider returns
+ * the server only says "anonymous" — which a never-signed-in visitor also gets.
+ * The marker lets the shell show the signed-out screen without treating the
+ * anonymous state itself as proof of a sign-out.
+ */
+function markSessionEnded(): void {
+  try {
+    window.sessionStorage.setItem(signedOutMarker, '1')
+  } catch {
+    // Storage can be unavailable (private mode); the flow still works.
+  }
+}
+
+/** True while this tab is returning from a sign-out navigation. */
+export function readSessionEnded(): boolean {
+  try {
+    return window.sessionStorage.getItem(signedOutMarker) === '1'
+  } catch {
+    return false
+  }
+}
+
+/** Clears the marker once the server reports an authenticated session. */
+export function clearSessionEnded(): void {
+  try {
+    window.sessionStorage.removeItem(signedOutMarker)
+  } catch {
+    // Nothing to clear when storage is unavailable.
+  }
 }

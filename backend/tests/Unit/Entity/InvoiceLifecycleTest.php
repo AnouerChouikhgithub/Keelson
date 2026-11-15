@@ -22,13 +22,44 @@ final class InvoiceLifecycleTest extends TestCase
         self::assertFalse($invoice->send(new \DateTimeImmutable('2026-10-11T10:00:00+00:00')));
         $customer->update('Updated name', null, null, null);
         self::assertSame('Original name', $invoice->getCustomerSnapshot()['name']);
-        self::assertTrue($invoice->deriveOverdue(new \DateTimeImmutable('2026-10-02')));
+        self::assertTrue($invoice->markOverdue(new \DateTimeImmutable('2026-10-02')));
         self::assertSame('overdue', $invoice->getStatus());
         self::assertTrue($invoice->markPaid(new \DateTimeImmutable('2026-10-12T10:00:00+00:00')));
         self::assertFalse($invoice->markPaid(new \DateTimeImmutable('2026-10-13T10:00:00+00:00')));
         self::assertSame('paid', $invoice->getStatus());
         self::assertSame('2026-10-12T10:00:00+00:00', $invoice->getPaidAt()?->format(DATE_ATOM));
-        self::assertFalse($invoice->deriveOverdue(new \DateTimeImmutable('2026-12-01')));
+        self::assertFalse($invoice->markOverdue(new \DateTimeImmutable('2026-12-01')));
+    }
+
+    public function testOverdueStatusIsDerivedForReadersWithoutChangingStoredState(): void
+    {
+        $organization = new Organization('Example', 'example');
+        $invoice = $this->invoice($organization, $this->customer($organization), new \DateTimeImmutable('2026-10-31'));
+        $invoice->send(new \DateTimeImmutable('2026-10-01T10:00:00+00:00'));
+
+        // Before the due date the invoice is simply sent.
+        self::assertSame('sent', $invoice->effectiveStatus(new \DateTimeImmutable('2026-10-31')));
+        // After it, readers see overdue while the stored status stays sent.
+        self::assertSame('overdue', $invoice->effectiveStatus(new \DateTimeImmutable('2026-11-01')));
+        self::assertSame('sent', $invoice->getStatus());
+        // A paid invoice is never reported as overdue.
+        $invoice->markPaid(new \DateTimeImmutable('2026-11-02T09:00:00+00:00'));
+        self::assertSame('paid', $invoice->effectiveStatus(new \DateTimeImmutable('2026-12-01')));
+    }
+
+    public function testOverdueTransitionRequiresSentStatusAndAPastDueDate(): void
+    {
+        $organization = new Organization('Example', 'example');
+        $invoice = $this->invoice($organization, $this->customer($organization), new \DateTimeImmutable('2026-10-31'));
+
+        self::assertFalse($invoice->markOverdue(new \DateTimeImmutable('2026-11-01')), 'A draft invoice is never overdue.');
+        self::assertSame('draft', $invoice->getStatus());
+        $invoice->send(new \DateTimeImmutable('2026-10-01T10:00:00+00:00'));
+        self::assertFalse($invoice->markOverdue(new \DateTimeImmutable('2026-10-31')), 'The due date itself is not overdue.');
+        self::assertSame('sent', $invoice->getStatus());
+        self::assertTrue($invoice->markOverdue(new \DateTimeImmutable('2026-11-01')));
+        self::assertSame('overdue', $invoice->getStatus());
+        self::assertFalse($invoice->markOverdue(new \DateTimeImmutable('2026-11-02')), 'The transition is idempotent.');
     }
 
     public function testCannotEditSentInvoiceOrPayDraft(): void

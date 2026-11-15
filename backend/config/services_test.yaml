@@ -1,0 +1,8 @@
+# Test-environment overrides.
+#
+# The identity provider is replaced with an offline discovery document so the
+# suite can exercise the real logout/end-session flow without network access or
+# credentials. Nothing here is loaded outside APP_ENV=test.
+services:
+    drenso_oidc.url_fetcher:
+        class: App\Tests\Support\StubOidcUrlFetcher

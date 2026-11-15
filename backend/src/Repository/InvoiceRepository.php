@@ -95,9 +95,26 @@ final class InvoiceRepository extends ServiceEntityRepository
         return $query->getOneOrNullResult();
     }
 
+    /**
+     * Allocates the next invoice number for a tenant.
+     *
+     * Numbers are unique per organization through the database unique index, but
+     * that index alone turns concurrent creates into a hard failure: both would
+     * read the same maximum and only one insert could commit. Allocation is
+     * therefore serialized per organization and year with a transaction-scoped
+     * advisory lock, which PostgreSQL releases when the caller's transaction
+     * ends. The lookup uses the (organization_id, number) unique index.
+     */
     public function nextNumber(string $organizationId): string
     {
+        $connection = $this->getEntityManager()->getConnection();
+        if (!$connection->isTransactionActive()) {
+            throw new \LogicException('Invoice numbers must be allocated inside a transaction.');
+        }
         $year = (new \DateTimeImmutable())->format('Y');
+        $connection->executeStatement('SELECT pg_advisory_xact_lock(hashtext(:scope))', [
+            'scope' => sprintf('invoice-number:%s:%s', $organizationId, $year),
+        ]);
         $latestNumber = $this->createQueryBuilder('invoice')
             ->select('invoice.number')
             ->andWhere('IDENTITY(invoice.organization) = :organizationId')

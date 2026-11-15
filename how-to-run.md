@@ -30,7 +30,7 @@ Open `http://127.0.0.1:5173`. Verified on 2026-11-14: `npm start` served Vite 8.
 
 ### Frontend ↔ API requests in development
 
-The shell mirrors the real Symfony session for sign-out, so `vite.config.ts` proxies `/api`, `/login` and `/logout` to the backend. The default target is `http://127.0.0.1:8000`; override it when the API listens elsewhere:
+The shell mirrors the real Symfony session for sign-in and sign-out, so `vite.config.ts` proxies `/api`, `/login`, `/login_check` and `/logout` to the backend. `/login_check` is the OIDC callback the provider redirects to after sign-in; without that proxy entry Vite answers the callback with the SPA's HTML and the login never completes. The default target is `http://127.0.0.1:8000`; override it when the API listens elsewhere:
 
 ```powershell
 $env:KEELSON_BACKEND_ORIGIN = "http://127.0.0.1:8011"
@@ -39,7 +39,7 @@ npm start
 
 The proxy must be same-origin so the browser sends and receives the session cookie. `GET /api/session` returns the caller's own authentication state and, when signed in, the CSRF token required by `POST /logout`; with no session it returns `{"authenticated":false,"user":null,"logout":null}`. Verified 2026-11-14 through the Vite origin: HTTP 200, `cache-control: no-store, private`.
 
-Sign-out is not simulated. The **Log out** item in the account menu posts the CSRF token to `/logout` and only shows the signed-out screen after a follow-up `/api/session` read confirms the session ended; otherwise it reports that the server did not confirm. Without an OIDC session it reports that there is no active session. Real end-to-end sign-in/sign-out still requires a configured test Logto tenant (see `backend/README.md`).
+Sign-out is not simulated. The **Log out** item in the account menu submits a real form POST to `/logout` with the session's CSRF token, which makes the browser follow Symfony's redirect to the provider's `end_session_endpoint`; the provider then returns to the app, whose `/api/session` probe reports the anonymous state and whose shell shows the signed-out screen. A `fetch()` was deliberately not used: with `redirect: 'manual'` the browser never leaves the page, so the provider session survived. Without an OIDC session the UI reports that there is no active session. Real end-to-end sign-in/sign-out still requires a configured test Logto tenant (see `backend/README.md`), which is not present on this checkout.
 
 The frontend runs independently using typed mock data; it does not require the backend or database. It supports English, French and Arabic (with Arabic right-to-left), the existing light/dark/system appearance, a profile menu with My account/Notifications/Settings, an inbox with All/Unread filters and mark-one/mark-all read actions, labelled notification preferences, and a search dialog (`Ctrl+K`/`Meta+K`) over local mock pages, organizations, invoices, customers and notifications. JSON in `localStorage` is validated on read: invalid values fall back to defaults rather than being trusted. Language, theme, read state and preferences persist under `keelson-locale`, `keelson-theme`, `keelson-notifications-read` and `keelson-notification-prefs`; nothing is sent to a server. The browser tab uses the existing `public/Keelson.svg` logo.
 

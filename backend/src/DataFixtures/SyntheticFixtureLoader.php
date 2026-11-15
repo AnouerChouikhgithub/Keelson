@@ -135,7 +135,9 @@ final class SyntheticFixtureLoader
                     break;
                 case 'overdue':
                     $invoice->send();
-                    $invoice->deriveOverdue($today);
+                    if (!$invoice->markOverdue($today)) {
+                        throw new \InvalidArgumentException('An overdue fixture invoice needs a due date before today.');
+                    }
                     break;
                 case 'paid':
                     $invoice->send();

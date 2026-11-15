@@ -24,7 +24,7 @@ import { Placeholder } from './screens/Placeholder'
 import { SettingsScreen } from './screens/SettingsScreen'
 import { SignedOutScreen } from './screens/SignedOutScreen'
 import { buildSearchResults, searchShortcutLabel } from './search/search'
-import { endSession, readSession } from './session/session'
+import { beginEndSession, clearSessionEnded, readSession, readSessionEnded } from './session/session'
 import type { ServerSession } from './session/session'
 import './App.css'
 
@@ -108,7 +108,9 @@ function App() {
   // Server-owned authentication state. `null` means it could not be read, which
   // is never treated as signed in or signed out.
   const [session, setSession] = useState<ServerSession | null>(null)
-  const [signedOut, setSignedOut] = useState(false)
+  // Survives the full-page sign-out navigation, so the returning tab shows the
+  // signed-out screen instead of briefly re-rendering the shell.
+  const [signedOut, setSignedOut] = useState(readSessionEnded)
   const [logoutPending, setLogoutPending] = useState(false)
   const [logoutNotice, setLogoutNotice] = useState<string | null>(null)
   const activeOrganization = organizations.find((item) => item.id === activeOrganizationId) ?? mockOrganizations[0]
@@ -119,15 +121,24 @@ function App() {
 
   useEffect(() => {
     let cancelled = false
-    void readSession().then((state) => { if (!cancelled) setSession(state) })
+    void readSession().then((state) => {
+      if (cancelled) return
+      setSession(state)
+      // An authenticated session always overrides the tab's sign-out marker.
+      if (state?.status === 'authenticated') {
+        clearSessionEnded()
+        setSignedOut(false)
+      }
+    })
     return () => { cancelled = true }
   }, [])
 
   /**
-   * Sign-out goes through the server. The UI only shows the signed-out screen
-   * after {@link endSession} reports that the session was really ended.
+   * Sign-out goes through the server as a top-level form POST, so the browser
+   * follows the provider's end-session redirect. {@link beginEndSession}
+   * leaves the page; the signed-out screen is shown when the provider returns.
    */
-  async function handleLogout() {
+  function handleLogout() {
     if (logoutPending) return
     setLogoutNotice(null)
     if (session === null) {
@@ -141,19 +152,11 @@ function App() {
       return
     }
     setLogoutPending(true)
-    const result = await endSession(session.logout)
-    setLogoutPending(false)
-    if (result === 'confirmed') {
-      setSession({ status: 'anonymous' })
-      setSignedOut(true)
-      return
-    }
-    setLogoutNotice(m.session.logoutFailed)
+    beginEndSession(session.logout)
   }
 
-  // Handed to the menu and every sign-out card; the void cast keeps the
-  // floating promise out of the click handlers.
-  const requestLogout = () => { void handleLogout() }
+  // Handed to the menu and every sign-out card.
+  const requestLogout = handleLogout
 
   useEffect(() => {
     function handleShortcut(event: KeyboardEvent) {
