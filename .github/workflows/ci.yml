@@ -1,8 +1,8 @@
 name: CI
 
 # Verifies the checks documented in README.md and docs/ROADMAP.md.
-# No secrets are used: OIDC values below are dummies because the HTTP tests
-# authenticate with KernelBrowser::loginUser() and never contact a provider.
+# No secrets are used: the mail transport is null, so the authentication tests
+# never contact a mail server, and every credential below is a CI-only literal.
 on:
   push:
     branches: [main]
@@ -68,10 +68,10 @@ jobs:
       # so this URL targets the CI-only keelson_test database created below.
       DATABASE_URL: postgresql://keelson:keelson@127.0.0.1:5432/keelson?serverVersion=16&charset=utf8
       APP_SECRET: ci-only-not-a-secret
-      OIDC_ISSUER: https://issuer.example.test/oidc
-      OIDC_WELL_KNOWN_URL: https://issuer.example.test/oidc/.well-known/openid-configuration
-      OIDC_CLIENT_ID: test-client
-      OIDC_CLIENT_SECRET: test-secret
+      # Verification and reset emails are built and logged, never delivered.
+      MAILER_DSN: 'null://null'
+      FRONTEND_URL: http://localhost:5173
+      REQUIRE_VERIFIED_EMAIL: 'true'
     steps:
       - uses: actions/checkout@v4
       - uses: shivammathur/setup-php@v2

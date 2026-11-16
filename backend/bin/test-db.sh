@@ -105,11 +105,6 @@ write_env_file() {
         echo "DATABASE_URL=\"postgresql://${DB_USER}:${DB_PASSWORD}@127.0.0.1:${port}/${DB_NAME}?serverVersion=16&charset=utf8\""
     } >"${ENV_FILE}"
 
-    # Dummy OIDC values documented for the test firewall; tests sign in with loginUser().
-    ensure_line OIDC_ISSUER "https://issuer.example.test/oidc"
-    ensure_line OIDC_WELL_KNOWN_URL "https://issuer.example.test/oidc/.well-known/openid-configuration"
-    ensure_line OIDC_CLIENT_ID "test-client"
-    ensure_line OIDC_CLIENT_SECRET "test-secret"
     echo "Wrote ${ENV_FILE} for 127.0.0.1:${port}/${DB_NAME}."
 }
 

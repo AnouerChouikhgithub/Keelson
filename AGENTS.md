@@ -6,12 +6,13 @@ limits and an admin panel. Demo product on top: invoicing.
 ## Architecture (current branch)
 
 - `backend/` — Symfony 7.4 API (PHP >=8.2) on Doctrine ORM 3 / DBAL 4 / Migrations
-  and PostgreSQL 16, with a Drenso OIDC session firewall. Implemented: local
-  principal provisioning after ID-token verification, membership-based
-  authorization voters, tenant-scoped organization/membership/invitation
-  **repository reads** (no HTTP endpoints), and a tenant-scoped
-  customer/invoice/audit HTTP API. The only HTTP routes are `/login`, `/logout`,
-  `/healthz`, `/api/session`, `/api/me/organizations` and
+  and PostgreSQL 16, with a first-party email+password session (no external
+  identity provider). Implemented: registration with its first organization,
+  email verification, password reset, membership-based authorization voters,
+  tenant-scoped organization/membership/invitation **repository reads** (no HTTP
+  endpoints), and a tenant-scoped customer/invoice/audit HTTP API. The HTTP routes
+  are `/api/auth/{register,login,verify-email,logout,forgot-password,reset-password}`,
+  `/healthz`, `/readyz`, `/api/session`, `/api/me/organizations` and
   `/api/organizations/{organizationId}/…` customers, invoices and audit events.
 - `frontend/` — React + Vite + TypeScript single-page dashboard shell. Session,
   organization/role, customers and invoices are **real API data** (`src/api/`);
@@ -19,8 +20,9 @@ limits and an admin panel. Demo product on top: invoicing.
   every request. Dashboard metrics, onboarding/invitations, team, billing, pricing
   and notifications are still labelled mock surfaces with no backend. Only
   preferences and notification read state persist in `localStorage`.
-- `docker-compose.yml` — dev-only PostgreSQL 16 and Mailpit. Mailpit is not wired
-  into the application: there is no mailer configuration.
+- `docker-compose.yml` — dev-only PostgreSQL 16 and Mailpit. Mailpit is wired in
+  through `MAILER_DSN=smtp://127.0.0.1:1026`; its web UI on http://localhost:8026 is
+  where verification and password-reset links are read locally.
 
 Tenant isolation is application-layer only: repositories and controllers require an
 active membership for the route organization, and a client-supplied organization ID
@@ -46,15 +48,15 @@ installed. Keep the UI clean, modern and accessible (WCAG AA contrast).
   invoices, organizations, error mapping) in `src/api/*.test.ts`. No component/DOM
   tests and no jsdom/RTL dependency (adding one needs approval).
 - Backend dependencies: Symfony 7.4, Doctrine ORM/DBAL/Migrations plus the Doctrine
-  bundles, `drenso/symfony-oidc-bundle`, `symfony/security-bundle`,
-  `symfony/security-csrf`, `symfony/translation-contracts`. API Platform, Stripe,
-  Messenger and LexikJWT are **not** declared.
+  bundles, `symfony/security-bundle`, `symfony/security-csrf`, `symfony/validator`,
+  `symfony/rate-limiter`, `symfony/mailer`, `symfony/translation-contracts`. No
+  identity-provider bundle and no JWT library. API Platform, Stripe and Messenger
+  are **not** declared.
 - Tests: `php bin/phpunit` against the disposable `backend/bin/test-db.sh`
-  PostgreSQL 16 container gives **115 tests / 585 assertions with 4 failures**.
-  The four failures pre-date Sprint 1 and are unchanged by it: anonymous `/api/...`
-  requests answer `401` JSON from `ApiAuthenticationEntryPoint`, while
-  `InvoiceHttpApiTest`, `MeOrganizationsTest`, `SessionLogoutTest` and
-  `OidcSessionLogoutTest` still expect a redirect to `/login`.
+  PostgreSQL 16 container gives **157 tests / 721 assertions, exit 0**. Coverage
+  includes registration, verification, login (throttling, unverified-address
+  ordering), logout, password reset, CSRF, request-shape errors and the token
+  service, alongside the invoice API and concurrency suites.
   `tests/Unit/Repository/TenantScopedRepositoryTest.php` and `tests/Integration/*`
   require that database and assert the PostgreSQL platform. Static analysis:
   `./vendor/bin/phpstan analyse` (level 5, `phpstan-baseline.neon`) reports no
@@ -77,8 +79,8 @@ installed. Keep the UI clean, modern and accessible (WCAG AA contrast).
   Compose `db_data` volume.
 - Documentation: `README.md` is the single run guide and overview,
   `docs/ROADMAP.md` holds the nine sprints and their status,
-  `backend/README.md` covers OIDC/API/database safety and `frontend/README.md`
-  covers the frontend scope.
+  `backend/README.md` covers authentication/API/database safety and
+  `frontend/README.md` covers the frontend scope.
 
 ## Local setup
 
@@ -96,9 +98,8 @@ installed. Keep the UI clean, modern and accessible (WCAG AA contrast).
   `composer audit`, `./vendor/bin/phpstan analyse`.
 - Full suite: `bash bin/test-db.sh start && php bin/phpunit && bash bin/test-db.sh stop`
   (from `backend/`).
-- Backend HTTP needs `OIDC_ISSUER`, `OIDC_WELL_KNOWN_URL`, `OIDC_CLIENT_ID` and
-  `OIDC_CLIENT_SECRET`; there is no offline or password login, and console commands
-  work without them. Serve with
+- Backend HTTP sign-in needs `MAILER_DSN` (Mailpit locally), `FRONTEND_URL` and
+  `REQUIRE_VERIFIED_EMAIL`; console commands work without them. Serve with
   `php -S 127.0.0.1:8000 -t public public/index.php` (the front controller must be
   explicit, otherwise PHP's built-in server 404s on `/api/...`).
 - Migrations: inspect `DATABASE_URL` and `doctrine:migrations:status` first, then
@@ -113,8 +114,9 @@ installed. Keep the UI clean, modern and accessible (WCAG AA contrast).
 - Synthetic demo data lives only in `backend/src/DataFixtures/` and is seeded
   explicitly with `php bin/console app:fixtures:load --env=test --force`. It is
   idempotent, never deletes, refuses
-  `prod`/non-PostgreSQL/non-loopback/ambiguous targets, and creates no login
-  credentials; the frontend never reads it. `FixtureTargetGuard` validates the
+  `prod`/non-PostgreSQL/non-loopback/ambiguous targets; every fixture principal
+  gets the documented development password `Keelson-dev-2026` and a confirmed
+  address. The frontend never reads it. `FixtureTargetGuard` validates the
   **effective** DBAL connection parameters (`Connection::getParams()`, including
   Doctrine's test `dbname_suffix`), not the raw `DATABASE_URL`; validating the URL
   was what made CI refuse its own isolated `keelson_test` database.
@@ -127,8 +129,8 @@ installed. Keep the UI clean, modern and accessible (WCAG AA contrast).
   OpenAPI spec exists yet; `docs/api-contract.md` records the verified shapes).
   Generate it from an OpenAPI spec once one exists (openapi-typescript or Orval)
   and keep the contract document in step with the controllers. Never invent an
-  endpoint or a CSRF header: the mutation guard accepts a same-origin `Origin` or an
-  `X-CSRF-Token` for `invoice_api`, and nothing exposes that token today.
+  endpoint or a CSRF header: every unsafe request sends a same-origin `Origin` and
+  `X-CSRF-Token` taken from the `csrfToken` field of `GET /api/session`.
 - Small, focused commits (Conventional Commits). Add or update tests with every
   feature.
 - Never commit secrets; use `.env.local`. Machine-local snapshots
@@ -159,9 +161,9 @@ API-backed list.
 - Read `README.md`, `docs/ROADMAP.md` and `backend/README.md` before planning
   multi-file or delegated work.
 - Treat PostgreSQL RLS, Stripe billing/webhooks, usage enforcement, invitation
-  delivery, and real Logto sign-in/callback/logout as unimplemented or unverified
-  until current source, tests and provider runs prove them. Application-layer
-  scoping is not defense-in-depth on its own.
+  delivery and the SPA's sign-in screens (Sprint 3) as unimplemented or unverified
+  until current source and tests prove them. Application-layer scoping is not
+  defense-in-depth on its own.
 - Tenant, auth, billing, webhook/idempotency, database migration and API contract
   changes require one integration owner and serialize by default. Agree contracts
   before assigning frontend/backend tasks.

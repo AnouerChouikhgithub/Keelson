@@ -6,8 +6,8 @@ verified in this repository today; they are not readiness claims for production.
 | # | Sprint | Scope | Status |
 | --- | --- | --- | --- |
 | 1 | Cleanup | Delete dead files, mocks and duplicated types; tidy the CSS and the backend dead code; merge the docs into `README.md` and this roadmap; get `.gitignore` right. No behaviour change. | **Done** |
-| 2 | Native auth backend | Replace the Drenso OIDC session with first-party authentication in the Symfony API (credential storage, login/logout endpoints, session issue/expiry, rate limiting). | Not started |
-| 3 | Auth frontend + OIDC removal | Sign-in / sign-out / session-expiry screens against the native endpoints, and removal of the OIDC configuration, bundle and copy. | Not started |
+| 2 | Native auth backend | Replace the provider session with first-party authentication in the Symfony API: password storage, register/verify/login/logout/forgot/reset endpoints, CSRF token in the session payload, rate limiting and the provider migration. | Done |
+| 3 | Auth frontend | Sign-in, registration, email-verification and password-reset screens plus session-expiry handling against the native endpoints, and removal of the provider copy from the SPA. | Not started |
 | 4 | Fixtures with logins | Extend `backend/src/DataFixtures/` so the synthetic demo identities can actually sign in, keeping the target guard, idempotency and no-production refusals. | Not started |
 | 5 | Team, invitations, dashboard, notifications backend | Real endpoints for memberships and roles, invitation issue/accept/revoke, dashboard metrics read from invoices, and notifications with read state. Replaces the remaining `frontend/src/mocks/` surfaces. | Not started |
 | 6 | Isolation + security hardening | PostgreSQL row-level security (or an equivalent defence in depth), CSRF token exposure for API clients, authorization audit, and the regression tests that lock each rule in. Application-layer scoping alone is the current state. | Not started |

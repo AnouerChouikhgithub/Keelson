@@ -1,15 +1,16 @@
 # Keelson API contract (verified against the Symfony source)
 
-**Verified on 2026-11-15** by reading `backend/src/Controller/`, `backend/src/Repository/`,
-`backend/src/Service/` and `backend/src/Security/`, and by running the backend suite
-(`php bin/phpunit` → 97 tests / 527 assertions, exit 0 in the Sprint 3 run; Sprint 2's 86/450 result is historical) plus the frontend suite against the same
-shapes. This document describes **behaviour that exists today**, not a target design. Anything the
-frontend needs but the backend does not provide is listed in
-[Gaps](#gaps-and-how-each-was-classified).
+**Verified on 2026-11-16** by reading `backend/src/Controller/`, `backend/src/Repository/`,
+`backend/src/Service/`, `backend/src/Security/` and `config/packages/security.yaml`, by running the
+backend suite (`php bin/phpunit` → 157 tests / 721 assertions, exit 0) and by exercising every
+sign-in flow with `curl` against a local server with Mailpit. This document describes **behaviour
+that exists today**, not a target design. Anything the frontend needs but the backend does not
+provide is listed in [Gaps](#gaps-and-how-each-was-classified).
 
-Base URL: same origin as the SPA. In development the Vite server proxies `/api`, `/login`,
-`/login_check` and `/logout` to Symfony (`frontend/vite.config.ts`, target
-`KEELSON_BACKEND_ORIGIN`, default `http://127.0.0.1:8000`).
+Base URL: same origin as the SPA. In development the Vite server proxies `/api` to Symfony
+(`frontend/vite.config.ts`, target `KEELSON_BACKEND_ORIGIN`, default `http://127.0.0.1:8000`).
+Its `/login`, `/login_check` and `/logout` proxy entries are now inert: those routes no longer exist
+in the backend. The SPA still calls the old endpoints because it is updated in Sprint 3.
 
 All responses are JSON with `Cache-Control: no-store, private`, except `204 No Content` replies
 and HTML error pages produced by Symfony itself.
@@ -17,36 +18,36 @@ and HTML error pages produced by Symfony itself.
 Errors always use one shape:
 
 ```json
-{ "error": { "message": "Human-readable, safe to display." } }
+{ "error": { "code": "validation_failed", "message": "Human-readable, safe to display.", "fields": { "password": ["…"] } } }
 ```
+
+`code` is stable and machine-readable; `fields` appears only when a specific input is at fault.
 
 ## 1. Authentication
 
 | Property | Value |
 | --- | --- |
-| Mechanism | OIDC authorization-code + PKCE (Logto through `drenso/oauth2-oidc-bundle`), server-side PHP session |
+| Mechanism | First-party email + password (`json_login`), server-side PHP session |
 | Transport | `HttpOnly` Symfony session cookie; **no** bearer token, **no** API key |
+| Password storage | `password_hash` via Symfony's password hasher; plaintext never stored or logged |
 | Client requirement | `credentials: 'same-origin'` (the SPA is served from the API origin or through the dev proxy) |
-| Entry point | `GET /login` → `302` to the provider authorization endpoint |
-| Callback | `GET /login_check` (must be answered by Symfony, never by the SPA) |
-| Sign-out | `POST /logout` with a CSRF field, `ROLE_USER` |
+| Sign-in | `POST /api/auth/login` (JSON `{email, password}`) |
+| Sign-out | `POST /api/auth/logout` with `X-CSRF-Token` |
 
 `config/packages/security.yaml` access control, in order:
 
-1. `^/login$` — `PUBLIC_ACCESS`
+1. `^/api/auth/(register|verify-email|login|forgot-password|reset-password)$` — `PUBLIC_ACCESS`
 2. `^/api/session$` — `PUBLIC_ACCESS` (the shell must be able to learn it is signed out)
-3. `^/logout$` — `ROLE_USER`
-4. `^/healthz$` — `PUBLIC_ACCESS`
-5. `^/` — `ROLE_USER`
+3. `^/healthz$`, `^/readyz$` — `PUBLIC_ACCESS`
+4. `^/` — `ROLE_USER`
 
 Consequences the frontend must handle:
 
-- An anonymous `fetch('/api/…')` is **not** answered with `401`; the firewall redirects to `/login`,
-  which redirects to the provider, and `fetch` follows both hops to an **HTML 200** page.
-  `frontend/src/api/client.ts` maps an HTML success body on an API path to an
-  `ApiError(kind: 'http', status: 401)` so the UI shows a session-ended state instead of a parse
-  error. Tested in `client.test.ts` ("reads a followed sign-in page as an ended session").
+- An anonymous `fetch('/api/…')` is answered `401 {"error":{"code":"unauthenticated",…}}`.
+  There is no sign-in page to redirect to, so no HTML is ever returned for an API path.
 - `/api/session` is the only endpoint the shell may call before authentication.
+- Sign-in is JSON, not form-encoded: send `Content-Type: application/json` and
+  `{ "email": "…", "password": "…" }`.
 
 ### `GET /api/session`
 
@@ -56,22 +57,63 @@ Public, no database access. Used by `frontend/src/session/session.ts`.
 {
   "authenticated": true,
   "user": { "id": "9c5ca65a-…", "email": "owner@example.test", "displayName": "Owner Example" },
-  "logout": { "url": "/logout", "csrfToken": "…" }
+  "csrfToken": "…"
 }
 ```
 
-When signed out: `{"authenticated": false, "user": null, "logout": null}`.
+When signed out: `{"authenticated": false, "user": null, "csrfToken": null}`.
 
-`displayName` and `email` may be `null` depending on the ID-token claims. `logout` is `null` while
+`email` is always present and lower-cased; `displayName` may be `null`. `csrfToken` is `null` while
 anonymous because the endpoint deliberately avoids creating a session just to hand out a token.
 
-### `POST /logout`
+### `POST /api/auth/login`
 
-Form-encoded `_csrf_token` taken from the `logout.csrfToken` above. On success the session is
-invalidated and `App\EventListener\OidcEndSessionLogoutListener` redirects to the provider's
-`end_session_endpoint` (`id_token_hint`, `post_logout_redirect_uri`); if the provider cannot be
-reached it degrades to the local redirect (`302 /`) instead of failing. Anonymous or missing-token
-requests do not invalidate anything (covered by `SessionLogoutTest`, `OidcSessionLogoutTest`).
+JSON body `{"email": "…", "password": "…"}`. Success `200` returns **exactly** the session
+payload above, so the SPA can treat the login response as its session.
+
+| Failure | Status | `code` |
+| --- | --- | --- |
+| Wrong password, unknown address, malformed body | `401` | `invalid_credentials` |
+| Password correct but the address is unconfirmed | `403` | `email_not_verified` |
+| More than five attempts for one address in a minute | `429` + `Retry-After` | `too_many_login_attempts` |
+
+Wrong password and unknown address are deliberately identical. `email_not_verified` is only
+reachable after the password has been accepted, so it cannot be used to discover accounts.
+
+### `POST /api/auth/register`
+
+JSON body `{"email", "password", "organizationName", "displayName"?}`. Creates the principal, its
+first organization and an `Owner` membership in one transaction and mails a verification link to
+`FRONTEND_URL/verify-email?token=…`.
+
+- `201 {"status": "verification_sent"}` — always, including when the address already exists. In that
+  case nothing is written and nothing is sent, so the endpoint cannot be used to discover accounts.
+- `422 validation_failed` with `fields` — email format, password length (10…72), organization name
+  (2…120), display name (≤120).
+- `400 invalid_json` — the body is not a JSON object.
+
+### `POST /api/auth/verify-email`
+
+JSON body `{"token": "…"}`. `204` on success. Unknown, expired (24 h) and already-used tokens all
+return `400 invalid_token`.
+
+### `POST /api/auth/forgot-password`
+
+JSON body `{"email": "…"}`. Always `202`, and a reset link (valid 1 h) is mailed only when the
+account exists.
+
+### `POST /api/auth/reset-password`
+
+JSON body `{"token", "password"}`. `204` on success; the address is also marked verified, because
+receiving the link proves control of the mailbox. Changing the hash signs every other session out
+(Symfony's context listener compares the stored hash on the next request). Reused or expired tokens
+return `400 invalid_token`.
+
+### `POST /api/auth/logout`
+
+No body. Requires `X-CSRF-Token`; `204` and the session is invalidated. Anonymous calls answer `401`,
+a missing or wrong token answers `403 csrf_invalid` and leaves the session alone
+(`SessionLogoutTest`, `CsrfProtectionTest`).
 
 ## 2. Organizations
 
@@ -82,7 +124,7 @@ tenant-scoped routes below were unreachable from a real session. This read-only 
 (`backend/src/Controller/MeOrganizationsController.php`) rather than hard-coding tenant IDs in the
 frontend.
 
-- Auth: `ROLE_USER`. Anonymous → `302 /login` (asserted by `MeOrganizationsTest`).
+- Auth: `ROLE_USER`. Anonymous → `401 unauthenticated` (asserted by `MeOrganizationsTest`).
 - Request: no parameters. Any `organizationId` in the query string is ignored.
 - Response `200`:
 
@@ -126,15 +168,20 @@ the server remains authoritative. Role strings are compared case-sensitively as 
 
 ### Mutation guard (CSRF / origin)
 
-Every non-safe request must satisfy **one** of:
+Two rules, enforced by `App\EventListener\CsrfProtectionListener` for every `POST`/`PUT`/`PATCH`/
+`DELETE`:
 
-1. `X-CSRF-Token: <token for id "invoice_api">`, or
-2. `Origin` equal to `getSchemeAndHttpHost()`.
+1. **Origin.** When the request carries `Origin`, it must equal `getSchemeAndHttpHost()`.
+   Otherwise `403 csrf_invalid`. This applies to the authentication routes too and runs *before*
+   the firewall, so a cross-site attempt never reaches the password check.
+2. **CSRF token.** An authenticated unsafe request under `/api` must send
+   `X-CSRF-Token: <csrfToken from GET /api/session>`. The only exemptions are the unauthenticated
+   auth endpoints (`login`, `register`, `verify-email`, `forgot-password`, `reset-password`), because
+   their caller has no session to protect; they still obey the origin rule. Logout is **not**
+   exempt.
 
-Otherwise `403 {"error":{"message":"A valid same-origin request is required."}}`. The SPA sends no
-`X-CSRF-Token` (no token endpoint exposes it) and relies on the browser-supplied same-origin
-`Origin` header, which the Vite proxy preserves (`changeOrigin: false`). Do not invent a CSRF header
-or a token route.
+Failures are `403 {"error":{"code":"csrf_invalid","message":"A valid CSRF token is required for this request."}}`.
+The token is the `csrfToken` field of the session payload, minted for the id `api`.
 
 ## 4. Customers
 
@@ -321,12 +368,13 @@ retries a mutation automatically.
 
 | Status | Meaning here | Frontend behaviour |
 | --- | --- | --- |
-| `400` | malformed patch/status/cursor, invalid JSON body | localized generic invalid-input message |
-| `401` | never emitted by the API; produced by the client for a followed sign-in page | session-ended message |
-| `403` | origin/CSRF guard failed | permission-denied message |
+| `400` | malformed patch/status/cursor (`invalid_id`), invalid JSON body (`invalid_json`), unusable token (`invalid_token`) | localized generic invalid-input message |
+| `401` | not authenticated (`unauthenticated`) or failed sign-in (`invalid_credentials`) | session-ended or sign-in message |
+| `403` | origin/CSRF guard failed (`csrf_invalid`), or the address is unconfirmed (`email_not_verified`) | permission-denied or "confirm your email" message |
 | `404` | missing record **or** not a member / suspended tenant | "not found" message; the list is refreshed |
 | `409` | delete blocked by invoices, non-draft edit/delete, number collision | conflict explanation + refetch |
-| `422` | validation | the server's message, shown at form level |
+| `422` | validation (`validation_failed`, with `fields`) | the server's per-field messages, shown at form level |
+| `429` | too many sign-in attempts (`too_many_login_attempts`) | back-off message; respect `Retry-After` |
 | `500` | unexpected server/proxy error | generic message; internals never displayed |
 
 ## 7. Gaps and how each was classified
@@ -343,15 +391,15 @@ retries a mutation automatically.
 
 ## 8. How this document was verified
 
-- Routes: `php bin/console debug:router --env=test` (15 `/api/…` routes: session, memberships, 5 customer, 7 invoice, audit — all listed above).
-- Shapes and validation: the controllers, `InvoiceSerializer`, `InvoiceCalculator`, `InvoiceInput`,
-  `Customer`, `CustomerRepository`, `InvoiceRepository`, `InvoiceVoter`, `security.yaml`.
-- Behaviour: `php bin/phpunit` → **97 tests / 527 assertions**, exit 0 in the Sprint 3 run, against the helper's disposable PostgreSQL 16 container (never the Compose database). Sprint 2's earlier run was 86 tests / 450 assertions.
-- Frontend agreement: `pnpm test` → 56 tests asserting the exact paths, methods, bodies, credentials,
-  status handling and error mapping described here.
-
-Not verified: a real Logto sign-in/callback/sign-out round trip. This checkout has no
-`backend/.env.local` and no provider client credentials, so `/api/session` cannot even construct the
-OIDC client (it answers `500 Environment variable not found: "OIDC_CLIENT_ID"`). The authenticated
-flows above are verified by the backend functional tests with a synthetic security token, not against
-a live provider.
+- Routes: `php bin/console debug:router --env=test` (session, memberships, 5 customer, 7 invoice,
+  audit and 6 auth routes — all listed above).
+- Shapes and validation: the controllers, `InputHydrator`, `JsonBody`, `ApiErrorResponse`,
+  `InvoiceSerializer`, `InvoiceCalculator`, `InvoiceInput`, `Customer`, `CustomerRepository`,
+  `InvoiceRepository`, `InvoiceVoter`, `security.yaml`, `CsrfProtectionListener`.
+- Behaviour: `php bin/phpunit` → **157 tests / 721 assertions**, exit 0, against the helper's
+  disposable PostgreSQL 16 container (never the Compose database).
+- Manual round trip: register → Mailpit → verify → login → `GET /api/session` → invoice `POST`
+  without and with `X-CSRF-Token` → logout → forgot → reset, all with `curl` against
+  `php -S 127.0.0.1:8000 -t public public/index.php` and Mailpit on `http://localhost:8026`.
+- Frontend agreement: this document still describes what the SPA **must** do; the SPA itself is
+  updated in Sprint 3 and its current tests still target the removed provider endpoints.

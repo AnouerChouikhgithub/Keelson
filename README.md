@@ -7,11 +7,12 @@ businesses.
 Two applications:
 
 - `backend/` — Symfony 7.4 API (PHP >=8.2), Doctrine ORM 3 / DBAL 4 / Migrations,
-  PostgreSQL 16. Session-based authentication (an OIDC session today; see
-  [docs/ROADMAP.md](docs/ROADMAP.md) for the replacement sprints). Tenant-scoped
-  customer, invoice and invoice-audit HTTP API under
-  `/api/organizations/{organizationId}/…`, plus `/api/session`,
-  `/api/me/organizations`, `/login`, `/logout` and `/healthz`.
+  PostgreSQL 16. First-party email + password authentication with a server-side
+  session, mailed verification and reset links (see
+  [docs/ROADMAP.md](docs/ROADMAP.md)). Tenant-scoped customer, invoice and
+  invoice-audit HTTP API under `/api/organizations/{organizationId}/…`, plus
+  `/api/auth/{register,login,verify-email,logout,forgot-password,reset-password}`,
+  `/api/session`, `/api/me/organizations`, `/healthz` and `/readyz`.
 - `frontend/` — React 19 + Vite 8 + TypeScript dashboard shell. Session,
   organization/role, customers and invoices are real API data; dashboard metrics,
   onboarding/invitations, team, billing, pricing and notifications are labelled
@@ -37,7 +38,7 @@ docker compose up -d
 # 2. Backend dependencies and local configuration
 cd backend
 composer install
-cp .env.example .env.local     # then fill APP_SECRET, DATABASE_URL, OIDC_*
+cp .env.example .env.local     # then fill APP_SECRET and DATABASE_URL
 php bin/console doctrine:migrations:migrate
 symfony serve --no-tls --port=8000
 # or: php -S 127.0.0.1:8000 -t public public/index.php
@@ -49,18 +50,17 @@ pnpm start                     # Vite on http://127.0.0.1:5173
 ```
 
 `backend/.env.local` is git-ignored and the only place credentials belong. It
-needs `APP_SECRET`, `DATABASE_URL` (the Compose URL is
-`postgresql://app:app@127.0.0.1:5433/keelson?serverVersion=16&charset=utf8`) and,
-for any request through the firewall, `OIDC_ISSUER`, `OIDC_WELL_KNOWN_URL`,
-`OIDC_CLIENT_ID` and `OIDC_CLIENT_SECRET`. Console commands work without the OIDC
-values; every HTTP request fails with
-`Environment variable not found: "OIDC_CLIENT_ID"` until they are set. There is
-no offline or password login today.
+needs `APP_SECRET` and `DATABASE_URL` (the Compose URL is
+`postgresql://app:app@127.0.0.1:5433/keelson?serverVersion=16&charset=utf8`).
+Sign-in additionally reads `MAILER_DSN` (Mailpit at `smtp://127.0.0.1:1026`),
+`FRONTEND_URL` (where verification and reset links point) and
+`REQUIRE_VERIFIED_EMAIL`; without them console commands still work but new
+accounts cannot confirm their address. Read the verification mail at
+http://localhost:8026 after registering.
 
-`GET /healthz` is a public, database-free probe, so it answers before OIDC is
-configured. The Compose database uses the persistent `db_data` volume: never
-reset it, never run `docker compose down -v`, and never point migrations or tests
-at it.
+`GET /healthz` and `GET /readyz` are `PUBLIC_ACCESS` and need no session. The
+Compose database uses the persistent `db_data` volume: never reset it, never run
+`docker compose down -v`, and never point migrations or tests at it.
 
 ## Checks
 
@@ -106,23 +106,24 @@ Last run in this repository (2026-11-16, Sprint 1):
 | `composer install` | PASS |
 | `composer validate --no-check-publish` | PASS |
 | `php bin/console lint:container --env=test` | PASS |
-| `php bin/console debug:router --env=test` | PASS — 20 routes |
+| `php bin/console debug:router --env=test` | PASS — 23 routes |
 | `php bin/phpstan analyse` | PASS — no errors |
-| `php bin/phpunit` (disposable container) | **FAIL — 115 tests, 585 assertions, 4 failures** |
+| `php bin/phpunit` (disposable container) | PASS — 157 tests, 721 assertions |
 | `doctrine:schema:validate --env=test` | **FAIL** — see limitations |
 
-The four PHPUnit failures are older than Sprint 1 and unchanged by it: anonymous
-`/api/...` requests answer `401` JSON from `ApiAuthenticationEntryPoint`, while
-`InvoiceHttpApiTest`, `MeOrganizationsTest`, `SessionLogoutTest` and
-`OidcSessionLogoutTest` still expect a redirect to `/login`. Mapping validation
-(`doctrine:schema:validate --skip-sync`) passes and PHPStan reports no errors.
+The former anonymous-request failures are gone: an unauthenticated API call now
+answers `401` JSON from `ApiAuthenticationEntryPoint`, which is what those tests
+assert. Mapping validation (`doctrine:schema:validate --skip-sync`) passes and
+PHPStan reports no errors.
 
 ## Limitations
 
 - Tenant isolation is enforced in repositories and controllers, not by PostgreSQL
   RLS. There is no defence in depth behind the application layer.
-- Real provider sign-in/callback/sign-out has never been run: no test Logto client
-  is configured on this checkout. Only the `/login` redirect has been checked.
+- The SPA's sign-in, registration and password-reset screens are not built yet
+  (Sprint 3): the frontend still calls the removed provider endpoints, so browser
+  sign-in is broken until that sprint lands. The backend flows are verified by the
+  test suite and by a manual `curl` round trip.
 - Billing, subscriptions, usage enforcement and invitation delivery are not
   implemented. In the frontend, dashboard metrics, onboarding/invitations, team,
   billing, pricing and notifications are mock surfaces.
@@ -135,8 +136,9 @@ The four PHPUnit failures are older than Sprint 1 and unchanged by it: anonymous
 - No component/DOM frontend tests (`jsdom` + Testing Library would be a new
   dependency). No OpenAPI document; `frontend/src/api/` is hand-written and
   `docs/api-contract.md` records the verified shapes.
-- There is no CSRF token exposed to API clients: the mutation guard accepts a
-  same-origin `Origin` header for `invoice_api`.
+- CSRF tokens are exposed to the SPA through `GET /api/session` (`csrfToken`);
+  the current frontend does not send them yet, which Sprint 3 fixes together with
+  the sign-in screens.
 
 ## Documentation
 
@@ -145,8 +147,8 @@ The four PHPUnit failures are older than Sprint 1 and unchanged by it: anonymous
 - [docs/api-contract.md](docs/api-contract.md) — verified request/response shapes.
 - [docs/ui-spec.md](docs/ui-spec.md) — the screen specification; it does not prove
   backend behaviour.
-- [backend/README.md](backend/README.md) — OIDC, API surface, fixtures, isolated
-  test database.
+- [backend/README.md](backend/README.md) — authentication, API surface, fixtures,
+  isolated test database.
 - [frontend/README.md](frontend/README.md) — frontend scope, stack, API layer.
 
 ## Rules
