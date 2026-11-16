@@ -14,7 +14,7 @@ final class MembershipTest extends TestCase
     public function testRejectsUnknownRole(): void
     {
         $organization = new Organization('Example', 'example');
-        $principal = new Principal('https://issuer.example', 'subject-1');
+        $principal = new Principal('subject-1@example.test');
 
         $this->expectException(\InvalidArgumentException::class);
         new Membership($organization, $principal, 'SuperAdmin');

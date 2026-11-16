@@ -37,11 +37,9 @@ final class MeOrganizationsTest extends WebTestCase
         $this->entityManager = self::getContainer()->get('doctrine')->getManager();
         self::assertStringContainsString('PostgreSQL', $this->entityManager->getConnection()->getDatabasePlatform()::class);
         $this->suffix = bin2hex(random_bytes(6));
-        $issuer = $_SERVER['OIDC_ISSUER'] ?? $_ENV['OIDC_ISSUER'] ?? null;
-        self::assertNotNull($issuer, 'OIDC_ISSUER must be configured for the HTTP test user provider.');
 
-        $this->principal = new Principal($issuer, 'orgs-'.$this->suffix);
-        $this->other = new Principal($issuer, 'orgs-other-'.$this->suffix);
+        $this->principal = new Principal('orgs-'.$this->suffix.'@example.test');
+        $this->other = new Principal('orgs-other-'.$this->suffix.'@example.test');
         $this->ownedOrganization = new Organization('Owned '.$this->suffix, 'owned-'.$this->suffix);
         $this->memberOrganization = new Organization('Member '.$this->suffix, 'member-'.$this->suffix);
         $this->otherOrganization = new Organization('Foreign '.$this->suffix, 'foreign-'.$this->suffix);
@@ -139,10 +137,15 @@ final class MeOrganizationsTest extends WebTestCase
         self::assertSame([$this->id($this->ownedOrganization)], array_column($items, 'id'));
     }
 
-    public function testAnonymousCallerIsRedirectedToLogin(): void
+    public function testAnonymousCallerReceivesAJsonUnauthorized(): void
     {
         $this->client->request('GET', '/api/me/organizations');
-        self::assertResponseRedirects('/login');
+
+        // The API has no sign-in page to redirect to: an anonymous caller gets
+        // the same JSON envelope as every other failure.
+        self::assertResponseStatusCodeSame(401);
+        $payload = json_decode((string) $this->client->getResponse()->getContent(), true, 512, JSON_THROW_ON_ERROR);
+        self::assertSame('unauthenticated', $payload['error']['code'] ?? null);
     }
 
     public function testTheListCannotBeWidenedByARequestParameter(): void

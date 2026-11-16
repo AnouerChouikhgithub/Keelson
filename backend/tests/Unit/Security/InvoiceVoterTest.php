@@ -18,7 +18,7 @@ final class InvoiceVoterTest extends TestCase
     public function testMembersMayWriteViewersAreReadOnlyAndOnlyAdminsMayDeleteDrafts(): void
     {
         foreach (['Owner', 'Admin', 'Member', 'Viewer'] as $role) {
-            $principal = new Principal('https://issuer.example', 'user-'.$role);
+            $principal = new Principal('user-'.$role.'@example.test');
             (new \ReflectionProperty($principal, 'id'))->setValue($principal, 'principal-'.$role);
             $membership = new Membership(new Organization('Example', 'example'), $principal, $role);
             $repository = $this->createMock(MembershipRepository::class);
@@ -35,7 +35,7 @@ final class InvoiceVoterTest extends TestCase
 
     public function testMissingMembershipIsDenied(): void
     {
-        $principal = new Principal('https://issuer.example', 'user-1');
+        $principal = new Principal('user-1@example.test');
         (new \ReflectionProperty($principal, 'id'))->setValue($principal, 'principal-1');
         $repository = $this->createMock(MembershipRepository::class);
         $repository->expects(self::once())->method('findForOrganizationAndPrincipal')->willReturn(null);

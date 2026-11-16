@@ -27,9 +27,8 @@ final class TenantScopedRepositoryTest extends KernelTestCase
         self::assertStringContainsString('PostgreSQL', $this->entityManager->getConnection()->getDatabasePlatform()::class);
 
         $this->suffix = bin2hex(random_bytes(6));
-        $issuer = 'https://identity.example/tenant-tests/'.$this->suffix;
-        $this->principalA = new Principal($issuer, 'principal-a');
-        $this->principalB = new Principal($issuer, 'principal-b');
+        $this->principalA = new Principal('principal-a-'.$this->suffix.'@example.test');
+        $this->principalB = new Principal('principal-b-'.$this->suffix.'@example.test');
         $this->organizationA = new Organization('Tenant A '.$this->suffix, 'tenant-a-'.$this->suffix);
         $this->organizationB = new Organization('Tenant B '.$this->suffix, 'tenant-b-'.$this->suffix);
 

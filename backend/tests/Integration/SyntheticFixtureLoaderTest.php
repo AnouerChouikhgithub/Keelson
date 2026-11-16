@@ -10,7 +10,6 @@ use App\DataFixtures\SyntheticFixtureLoader;
 use Doctrine\Bundle\DoctrineBundle\ConnectionFactory;
 use Doctrine\DBAL\Configuration;
 use Doctrine\DBAL\Tools\DsnParser;
-use App\Service\InvoiceCalculator;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 
@@ -58,20 +57,26 @@ final class SyntheticFixtureLoaderTest extends KernelTestCase
         self::assertSame($first['created'], $second['skipped']);
 
         $connection = $this->entityManager->getConnection();
-        self::assertSame(4, (int) $connection->fetchOne("SELECT COUNT(*) FROM principals WHERE issuer = ?", [SyntheticFixtureCatalog::ISSUER]));
+        self::assertSame(4, (int) $connection->fetchOne('SELECT COUNT(*) FROM principals WHERE email IN ('.$this->fixtureEmails().')'));
         self::assertSame(2, (int) $connection->fetchOne("SELECT COUNT(*) FROM organizations WHERE subdomain LIKE 'fixture-%'"));
 
         $roles = $connection->fetchAllKeyValue(
-            "SELECT p.subject, m.role FROM memberships m
+            'SELECT p.email, m.role FROM memberships m
              JOIN principals p ON p.id = m.principal_id
              JOIN organizations o ON o.id = m.organization_id
-             ORDER BY p.subject, o.subdomain"
+             ORDER BY p.email, o.subdomain'
         );
-        self::assertSame('Owner', $roles['fixture-owner-a']);
-        self::assertSame('Member', $roles['fixture-member-a']);
-        self::assertSame('Viewer', $roles['fixture-viewer-b']);
+        self::assertSame('Owner', $roles['owner-a@example.test']);
+        self::assertSame('Member', $roles['member-a@example.test']);
+        self::assertSame('Viewer', $roles['viewer-b@example.test']);
         self::assertSame(2, (int) $connection->fetchOne(
-            "SELECT COUNT(*) FROM memberships m JOIN principals p ON p.id = m.principal_id WHERE p.subject = 'fixture-member-a'"
+            "SELECT COUNT(*) FROM memberships m JOIN principals p ON p.id = m.principal_id WHERE p.email = 'member-a@example.test'"
+        ));
+
+        // Seeded accounts must be usable the moment they exist: a documented
+        // password and a confirmed address, or sign-in would be impossible.
+        self::assertSame(0, (int) $connection->fetchOne(
+            'SELECT COUNT(*) FROM principals WHERE email IN ('.$this->fixtureEmails().') AND (password_hash IS NULL OR email_verified_at IS NULL)'
         ));
 
         self::assertSame(2, (int) $connection->fetchOne(
@@ -93,10 +98,6 @@ final class SyntheticFixtureLoaderTest extends KernelTestCase
         ));
         self::assertGreaterThan(0, (int) $connection->fetchOne(
             "SELECT COUNT(*) FROM invoices WHERE status = 'paid' AND paid_at IS NOT NULL"
-        ));
-        self::assertSame(0, (int) $connection->fetchOne(
-            "SELECT COUNT(*) FROM principals WHERE issuer = ? AND (email IS NULL OR email NOT LIKE '%@example.test')",
-            [SyntheticFixtureCatalog::ISSUER]
         ));
     }
 
@@ -174,6 +175,21 @@ final class SyntheticFixtureLoaderTest extends KernelTestCase
         );
     }
 
+    /**
+     * The catalog's own addresses.
+     *
+     * Cleanup and counts stay scoped to these: other tests create principals on
+     * the same reserved domain, and a cleanup that matched the whole domain
+     * would delete their rows (and fail on their foreign keys).
+     */
+    private function fixtureEmails(): string
+    {
+        return implode(',', array_map(
+            static fn (array $definition): string => "'".$definition['email']."'",
+            (new SyntheticFixtureCatalog())->definitions()['principals'],
+        ));
+    }
+
     private function removeFixtureRows(): void
     {
         $connection = $this->entityManager->getConnection();
@@ -181,6 +197,6 @@ final class SyntheticFixtureLoaderTest extends KernelTestCase
         $connection->executeStatement("DELETE FROM customers WHERE organization_id IN (SELECT id FROM organizations WHERE subdomain LIKE 'fixture-%')");
         $connection->executeStatement("DELETE FROM memberships WHERE organization_id IN (SELECT id FROM organizations WHERE subdomain LIKE 'fixture-%')");
         $connection->executeStatement("DELETE FROM organizations WHERE subdomain LIKE 'fixture-%'");
-        $connection->executeStatement('DELETE FROM principals WHERE issuer = ?', [SyntheticFixtureCatalog::ISSUER]);
+        $connection->executeStatement('DELETE FROM principals WHERE email IN ('.$this->fixtureEmails().')');
     }
 }

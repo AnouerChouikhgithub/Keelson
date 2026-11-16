@@ -27,9 +27,9 @@ final class EnvironmentValidatorTest extends TestCase
     public function testProductionReportsEveryMissingVariableByName(): void
     {
         $result = $this->validator->validate([], 'prod');
-
         $report = implode("\n", $result['errors']);
-        foreach (['APP_SECRET', 'DATABASE_URL', 'DEFAULT_URI', 'OIDC_ISSUER', 'OIDC_WELL_KNOWN_URL', 'OIDC_CLIENT_ID', 'OIDC_CLIENT_SECRET', 'TRUSTED_HOSTS'] as $name) {
+
+        foreach (['APP_SECRET', 'DATABASE_URL', 'DEFAULT_URI', 'FRONTEND_URL', 'MAILER_DSN', 'TRUSTED_HOSTS'] as $name) {
             self::assertStringContainsString($name, $report);
         }
     }
@@ -38,12 +38,12 @@ final class EnvironmentValidatorTest extends TestCase
     {
         $configuration = $this->productionConfiguration();
         $configuration['APP_SECRET'] = str_repeat('s', 31);
-        $configuration['OIDC_CLIENT_SECRET'] = 'a-real-looking-secret-value';
+        $configuration['MAILER_DSN'] = 'smtp://a-real-looking-password@smtp.example.test:25';
 
         $result = $this->validator->validate($configuration, 'prod');
         $report = implode("\n", array_merge($result['errors'], $result['warnings']));
 
-        self::assertStringNotContainsString('a-real-looking-secret-value', $report);
+        self::assertStringNotContainsString('a-real-looking-password', $report);
         self::assertStringNotContainsString(str_repeat('s', 31), $report);
     }
 
@@ -52,6 +52,7 @@ final class EnvironmentValidatorTest extends TestCase
         $configuration = $this->productionConfiguration();
         $configuration['DATABASE_URL'] = 'postgresql://app:app@127.0.0.1:5433/keelson?serverVersion=16';
         $configuration['DEFAULT_URI'] = 'http://127.0.0.1:8000';
+        $configuration['FRONTEND_URL'] = 'http://127.0.0.1:5173';
 
         $report = implode("\n", $this->validator->validate($configuration, 'prod')['errors']);
 
@@ -66,7 +67,27 @@ final class EnvironmentValidatorTest extends TestCase
         self::assertStringContainsString('APP_DEBUG', implode("\n", $result['errors']));
     }
 
-    public function testMissingOidcIsOnlyAWarningOutsideProduction(): void
+    public function testTheNullMailTransportCannotDeliverLinksInProduction(): void
+    {
+        $configuration = $this->productionConfiguration();
+        $configuration['MAILER_DSN'] = 'null://null';
+
+        $report = implode("\n", $this->validator->validate($configuration, 'prod')['errors']);
+
+        self::assertStringContainsString('MAILER_DSN', $report);
+    }
+
+    public function testAMalformedFrontendUrlIsAlwaysAnError(): void
+    {
+        $configuration = $this->productionConfiguration();
+        $configuration['FRONTEND_URL'] = 'localhost:5173';
+
+        $report = implode("\n", $this->validator->validate($configuration, 'prod')['errors']);
+
+        self::assertStringContainsString('FRONTEND_URL', $report);
+    }
+
+    public function testMissingMailAndFrontendConfigurationIsOnlyAWarningOutsideProduction(): void
     {
         $result = $this->validator->validate([
             'APP_SECRET' => 'dev-secret',
@@ -75,7 +96,9 @@ final class EnvironmentValidatorTest extends TestCase
         ], 'dev');
 
         self::assertSame([], $result['errors']);
-        self::assertStringContainsString('OIDC_CLIENT_ID', implode("\n", $result['warnings']));
+        $warnings = implode("\n", $result['warnings']);
+        self::assertStringContainsString('FRONTEND_URL', $warnings);
+        self::assertStringContainsString('MAILER_DSN', $warnings);
     }
 
     public function testTrustedHeadersAreRequiredWithTrustedProxies(): void
@@ -96,10 +119,8 @@ final class EnvironmentValidatorTest extends TestCase
             'APP_SECRET' => str_repeat('a', 32),
             'DATABASE_URL' => 'postgresql://keelson:password@db.internal:5432/keelson?serverVersion=16',
             'DEFAULT_URI' => 'https://keelson.example.com',
-            'OIDC_ISSUER' => 'https://tenant.logto.app/oidc',
-            'OIDC_WELL_KNOWN_URL' => 'https://tenant.logto.app/oidc/.well-known/openid-configuration',
-            'OIDC_CLIENT_ID' => 'client-id',
-            'OIDC_CLIENT_SECRET' => 'client-secret',
+            'FRONTEND_URL' => 'https://app.keelson.example.com',
+            'MAILER_DSN' => 'smtp://mail.internal:587',
             'TRUSTED_HOSTS' => 'keelson.example.com',
         ];
     }
