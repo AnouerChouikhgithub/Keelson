@@ -1,22 +1,17 @@
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
 
-// The SPA mirrors the Symfony session, so session/login/logout calls must reach
-// the API from the same origin in development; otherwise the browser would not
-// send or receive the session cookie. `/login_check` is the OIDC callback: the
-// provider redirects the browser there after sign-in, and it must reach Symfony
-// rather than being answered with the SPA's HTML.
+// Every backend call the SPA makes lives under `/api`, and the browser must reach
+// it from the SPA's own origin so the session cookie is sent and stored. Nothing
+// else is proxied: the public screens are client-side routes, so `/sign-in` and
+// friends are served by the SPA itself.
 const backendOrigin = process.env.KEELSON_BACKEND_ORIGIN ?? 'http://127.0.0.1:8000'
-const proxy = { target: backendOrigin, changeOrigin: false }
 
 export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
-      '/api': proxy,
-      '/login': proxy,
-      '/login_check': proxy,
-      '/logout': proxy,
+      '/api': { target: backendOrigin, changeOrigin: false },
     },
   },
 })

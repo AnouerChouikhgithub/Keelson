@@ -2,6 +2,7 @@ export type IconName =
   | 'grid' | 'file' | 'users' | 'card' | 'settings' | 'help' | 'chevron' | 'plus' | 'search' | 'bell'
   | 'arrow' | 'calendar' | 'more' | 'trend' | 'clock' | 'sparkle' | 'sun' | 'moon' | 'monitor'
   | 'menu' | 'building' | 'mail' | 'check' | 'close' | 'link' | 'shield' | 'globe' | 'logout'
+  | 'eye' | 'eyeOff'
 
 const iconPaths: Record<IconName, string[]> = {
   grid: ['M3.5 3.5h7v7h-7zM13.5 3.5h7v7h-7zM3.5 13.5h7v7h-7zM13.5 13.5h7v7h-7z'],
@@ -27,6 +28,8 @@ const iconPaths: Record<IconName, string[]> = {
   shield: ['M12 22s8-4 8-11V5l-8-3-8 3v6c0 7 8 11 8 11z', 'm9 12 2 2 4-4'],
   logout: ['M15 3h3.5A2.5 2.5 0 0 1 21 5.5v13a2.5 2.5 0 0 1-2.5 2.5H15', 'M10 16.5 14.5 12 10 7.5', 'M14.5 12H3'],
   globe: ['M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z', 'M3.6 9h16.8M3.6 15h16.8', 'M12 3c2.4 2.4 3.6 5.4 3.6 9s-1.2 6.6-3.6 9c-2.4-2.4-3.6-5.4-3.6-9s1.2-6.6 3.6-9z'],
+  eye: ['M2.5 12S6 5.8 12 5.8 21.5 12 21.5 12 18 18.2 12 18.2 2.5 12 2.5 12z', 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z'],
+  eyeOff: ['M4 4l16 16', 'M9.9 5.1A9.7 9.7 0 0 1 12 4.9c6 0 9.5 6.2 9.5 6.2a17 17 0 0 1-3 3.7', 'M6.4 6.8A17.4 17.4 0 0 0 2.5 11.1s3.5 6.2 9.5 6.2a9 9 0 0 0 3.3-.6', 'M10 10a3 3 0 0 0 4.2 4.2'],
 }
 
 export function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
