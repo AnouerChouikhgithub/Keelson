@@ -24,7 +24,6 @@ import { PricingScreen } from './screens/PricingScreen'
 import { TeamScreen } from './screens/TeamScreen'
 import { NotificationsScreen } from './screens/NotificationsScreen'
 import { Onboarding } from './screens/Onboarding'
-import { Placeholder } from './screens/Placeholder'
 import { SettingsScreen } from './screens/SettingsScreen'
 import { SignedOutScreen } from './screens/SignedOutScreen'
 import { buildSearchResults, searchShortcutLabel } from './search/search'
@@ -357,8 +356,6 @@ function App() {
     case 'settings':
       pageContent = <SettingsScreen onLogout={handleLogout} logoutPending={logoutPending} />
       break
-    default:
-      pageContent = <Placeholder page={activePage} />
   }
 
   return (
