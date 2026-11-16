@@ -17,6 +17,11 @@ parameters:
     # unverified account cannot sign in.
     app.auth.require_verified_email: '%env(bool:REQUIRE_VERIFIED_EMAIL)%'
 
+    # The shared password every synthetic demo account is seeded with. It is a
+    # documented, dev-only value: production cannot reach the loader (the target
+    # guard refuses it) and the plaintext is never stored or printed as a hash.
+    app.fixture.password.fallback: !php/const App\DataFixtures\SyntheticFixtureCatalog::FALLBACK_PASSWORD
+
     # Inputs for App\Config\EnvironmentValidator. Only presence and shape are
     # checked, and only names are reported, so reading this map never exposes a
     # value. `default::` keeps the container bootable when a variable is absent;
@@ -85,6 +90,13 @@ services:
     # connection parameters (including Doctrine's test dbname suffix), so only
     # the environment is injected here.
     App\DataFixtures\SyntheticFixtureLoader:
+        arguments:
+            $environment: '%kernel.environment%'
+            $password: '%env(default:app.fixture.password.fallback:FIXTURE_PASSWORD)%'
+
+    # The command prints the demo password column from the loader's result and
+    # only when the environment is not production.
+    App\Command\LoadSyntheticFixturesCommand:
         arguments:
             $environment: '%kernel.environment%'
 

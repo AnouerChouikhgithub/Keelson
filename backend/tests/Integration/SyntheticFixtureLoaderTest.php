@@ -7,14 +7,25 @@ namespace App\Tests\Integration;
 use App\DataFixtures\FixtureTargetGuard;
 use App\DataFixtures\SyntheticFixtureCatalog;
 use App\DataFixtures\SyntheticFixtureLoader;
+use App\Entity\Principal;
+use App\Tests\Support\RemovesSyntheticFixtures;
 use Doctrine\Bundle\DoctrineBundle\ConnectionFactory;
 use Doctrine\DBAL\Configuration;
 use Doctrine\DBAL\Tools\DsnParser;
 use Doctrine\ORM\EntityManagerInterface;
+use Symfony\Bundle\FrameworkBundle\Console\Application;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
+use Symfony\Component\Console\Tester\CommandTester;
+use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
 
+/**
+ * The synthetic fixture loader: idempotency, role and tenant invariants, the
+ * seeded audit trail, usable sign-in credentials, and every safety refusal.
+ */
 final class SyntheticFixtureLoaderTest extends KernelTestCase
 {
+    use RemovesSyntheticFixtures;
+
     private EntityManagerInterface $entityManager;
     private SyntheticFixtureLoader $loader;
 
@@ -41,11 +52,11 @@ final class SyntheticFixtureLoaderTest extends KernelTestCase
     public function testSeedingIsIdempotentAndKeepsRoleAndTenantInvariants(): void
     {
         $first = $this->loader->load();
-        self::assertSame(4, $first['created']['principals']);
+        self::assertSame(5, $first['created']['principals']);
         self::assertSame(2, $first['created']['organizations']);
         self::assertSame(5, $first['created']['memberships']);
-        self::assertSame(4, $first['created']['customers']);
-        self::assertSame(6, $first['created']['invoices']);
+        self::assertSame(12, $first['created']['customers']);
+        self::assertSame(30, $first['created']['invoices']);
         foreach ($first['skipped'] as $skipped) {
             self::assertSame(0, $skipped);
         }
@@ -57,32 +68,34 @@ final class SyntheticFixtureLoaderTest extends KernelTestCase
         self::assertSame($first['created'], $second['skipped']);
 
         $connection = $this->entityManager->getConnection();
-        self::assertSame(4, (int) $connection->fetchOne('SELECT COUNT(*) FROM principals WHERE email IN ('.$this->fixtureEmails().')'));
+        self::assertSame(5, (int) $connection->fetchOne('SELECT COUNT(*) FROM principals WHERE email IN ('.$this->fixtureEmails().')'));
         self::assertSame(2, (int) $connection->fetchOne("SELECT COUNT(*) FROM organizations WHERE subdomain LIKE 'fixture-%'"));
 
         $roles = $connection->fetchAllKeyValue(
-            'SELECT p.email, m.role FROM memberships m
+            "SELECT p.email, m.role FROM memberships m
              JOIN principals p ON p.id = m.principal_id
              JOIN organizations o ON o.id = m.organization_id
-             ORDER BY p.email, o.subdomain'
+             WHERE o.subdomain LIKE 'fixture-%'
+             ORDER BY p.email, o.subdomain"
         );
-        self::assertSame('Owner', $roles['owner-a@example.test']);
-        self::assertSame('Member', $roles['member-a@example.test']);
-        self::assertSame('Viewer', $roles['viewer-b@example.test']);
+        self::assertSame([
+            'admin@example.test' => 'Admin',
+            'member@example.test' => 'Member',
+            'owner@example.test' => 'Owner',
+            'viewer@example.test' => 'Viewer',
+        ], $roles);
         self::assertSame(2, (int) $connection->fetchOne(
-            "SELECT COUNT(*) FROM memberships m JOIN principals p ON p.id = m.principal_id WHERE p.email = 'member-a@example.test'"
+            "SELECT COUNT(*) FROM memberships m JOIN principals p ON p.id = m.principal_id WHERE p.email = 'member@example.test'"
         ));
-
-        // Seeded accounts must be usable the moment they exist: a documented
-        // password and a confirmed address, or sign-in would be impossible.
+        // The unverified account exists but belongs to no organization.
         self::assertSame(0, (int) $connection->fetchOne(
-            'SELECT COUNT(*) FROM principals WHERE email IN ('.$this->fixtureEmails().') AND (password_hash IS NULL OR email_verified_at IS NULL)'
+            "SELECT COUNT(*) FROM memberships m JOIN principals p ON p.id = m.principal_id WHERE p.email = 'unverified@example.test'"
         ));
 
-        self::assertSame(2, (int) $connection->fetchOne(
+        self::assertSame(7, (int) $connection->fetchOne(
             "SELECT COUNT(*) FROM customers c JOIN organizations o ON o.id = c.organization_id WHERE o.subdomain = 'fixture-northwind'"
         ));
-        self::assertSame(2, (int) $connection->fetchOne(
+        self::assertSame(5, (int) $connection->fetchOne(
             "SELECT COUNT(*) FROM customers c JOIN organizations o ON o.id = c.organization_id WHERE o.subdomain = 'fixture-contoso'"
         ));
 
@@ -90,14 +103,73 @@ final class SyntheticFixtureLoaderTest extends KernelTestCase
             "SELECT DISTINCT i.status FROM invoices i JOIN organizations o ON o.id = i.organization_id WHERE o.subdomain LIKE 'fixture-%' ORDER BY i.status"
         );
         self::assertSame(['draft', 'overdue', 'paid', 'sent'], $statuses);
-        self::assertSame(4, (int) $connection->fetchOne(
+        self::assertSame(18, (int) $connection->fetchOne(
             "SELECT COUNT(*) FROM invoices i JOIN organizations o ON o.id = i.organization_id WHERE o.subdomain = 'fixture-northwind'"
         ));
-        self::assertSame(2, (int) $connection->fetchOne(
+        self::assertSame(12, (int) $connection->fetchOne(
             "SELECT COUNT(*) FROM invoices i JOIN organizations o ON o.id = i.organization_id WHERE o.subdomain = 'fixture-contoso'"
         ));
+        self::assertGreaterThan(0, (int) $connection->fetchOne("SELECT COUNT(*) FROM invoices WHERE status = 'paid' AND paid_at IS NOT NULL"));
+        // Overdue and upcoming states must exist whatever day the database is read:
+        // overdue invoices are past their due date, the sent ones are still ahead.
         self::assertGreaterThan(0, (int) $connection->fetchOne(
-            "SELECT COUNT(*) FROM invoices WHERE status = 'paid' AND paid_at IS NOT NULL"
+            "SELECT COUNT(*) FROM invoices WHERE status = 'overdue' AND due_date < CURRENT_DATE"
+        ));
+        self::assertGreaterThan(0, (int) $connection->fetchOne(
+            "SELECT COUNT(*) FROM invoices WHERE status = 'sent' AND due_date >= CURRENT_DATE"
+        ));
+        // Numbers follow the API's per-organization yearly format (other suites
+        // create their own invoices, so the check stays inside the fixtures).
+        self::assertSame(0, (int) $connection->fetchOne(
+            "SELECT COUNT(*) FROM invoices i JOIN organizations o ON o.id = i.organization_id
+             WHERE o.subdomain LIKE 'fixture-%' AND i.number !~ '^[0-9]{4}-[0-9]{6}$'"
+        ));
+    }
+
+    public function testSeededAccountsAreSignableAndTheTrailIsAttributable(): void
+    {
+        $stats = $this->loader->load();
+        $connection = $this->entityManager->getConnection();
+
+        $verified = $connection->fetchAllKeyValue(
+            'SELECT email, email_verified_at FROM principals WHERE email IN ('.$this->fixtureEmails().')'
+        );
+        self::assertCount(5, $verified);
+        self::assertNull($verified['unverified@example.test']);
+        foreach (['owner@example.test', 'admin@example.test', 'member@example.test', 'viewer@example.test'] as $email) {
+            self::assertNotNull($verified[$email], sprintf('%s must be created with a confirmed address.', $email));
+        }
+
+        // Every account has a hash of the documented password, including the
+        // unverified one: otherwise the 403 path could never be reached.
+        $hasher = self::getContainer()->get(UserPasswordHasherInterface::class);
+        self::assertInstanceOf(UserPasswordHasherInterface::class, $hasher);
+        $owner = $this->entityManager->getRepository(Principal::class)->findOneBy(['email' => 'owner@example.test']);
+        self::assertInstanceOf(Principal::class, $owner);
+        foreach ([$stats['password'], SyntheticFixtureCatalog::FALLBACK_PASSWORD] as $password) {
+            self::assertTrue($hasher->isPasswordValid($owner, $password));
+        }
+        self::assertFalse($hasher->isPasswordValid($owner, 'Keelson-dev-2026'));
+
+        // The result carries the plaintext demo password for the account table and
+        // never a hash.
+        self::assertStringNotContainsString('$2y$', json_encode($stats, JSON_THROW_ON_ERROR));
+        self::assertStringNotContainsString('$argon', json_encode($stats, JSON_THROW_ON_ERROR));
+
+        // 30 invoices were created, 26 of them sent (8 sent + 5 overdue + 13 paid)
+        // and 13 paid, each event recorded through the service the API uses.
+        self::assertSame(30, (int) $connection->fetchOne(
+            "SELECT COUNT(*) FROM invoice_audit_events WHERE action = 'invoice.created'"
+        ));
+        self::assertSame(26, (int) $connection->fetchOne(
+            "SELECT COUNT(*) FROM invoice_audit_events WHERE action = 'invoice.sent'"
+        ));
+        self::assertSame(13, (int) $connection->fetchOne(
+            "SELECT COUNT(*) FROM invoice_audit_events WHERE action = 'invoice.paid'"
+        ));
+        self::assertSame(0, (int) $connection->fetchOne(
+            'SELECT COUNT(*) FROM invoice_audit_events WHERE action <> :created AND invoice_id IS NULL',
+            ['created' => 'invoice.created'],
         ));
     }
 
@@ -132,16 +204,34 @@ final class SyntheticFixtureLoaderTest extends KernelTestCase
         self::assertMatchesRegularExpression('/(?:^|_)(test|dev|fixture)(?:_|$)/', $database);
     }
 
+    public function testAcceptsKeelsonDevAndRefusesTheProductionName(): void
+    {
+        $guard = new FixtureTargetGuard();
+        $development = ['driver' => 'pdo_pgsql', 'host' => '127.0.0.1', 'dbname' => 'keelson_dev'];
+
+        self::assertSame('keelson_dev@127.0.0.1', $guard->describe($development, 'dev'));
+
+        try {
+            $guard->describe(['driver' => 'pdo_pgsql', 'host' => '127.0.0.1', 'dbname' => 'keelson'], 'dev');
+            self::fail('The production database name must be refused.');
+        } catch (\RuntimeException $exception) {
+            self::assertStringContainsString('keelson', $exception->getMessage());
+            self::assertStringContainsString('test/dev/fixture', $exception->getMessage());
+        }
+    }
+
     public function testRefusesUnsafeOrAmbiguousTargets(): void
     {
         $guard = new FixtureTargetGuard();
         $safe = ['driver' => 'pdo_pgsql', 'host' => '127.0.0.1', 'dbname' => 'keelson_test'];
 
-        try {
-            $guard->describe($safe, 'prod');
-            self::fail('prod must be refused.');
-        } catch (\RuntimeException $exception) {
-            self::assertStringContainsString('prod', $exception->getMessage());
+        foreach (['prod', 'production', 'prod-eu'] as $environment) {
+            try {
+                $guard->describe($safe, $environment);
+                self::fail(sprintf('Environment %s must be refused.', $environment));
+            } catch (\RuntimeException $exception) {
+                self::assertStringContainsString('prod', $exception->getMessage());
+            }
         }
 
         $unsafe = [
@@ -175,28 +265,48 @@ final class SyntheticFixtureLoaderTest extends KernelTestCase
         );
     }
 
-    /**
-     * The catalog's own addresses.
-     *
-     * Cleanup and counts stay scoped to these: other tests create principals on
-     * the same reserved domain, and a cleanup that matched the whole domain
-     * would delete their rows (and fail on their foreign keys).
-     */
-    private function fixtureEmails(): string
+    public function testTheDatabaseTargetCommandPrintsOnlyDatabaseAndHost(): void
     {
-        return implode(',', array_map(
-            static fn (array $definition): string => "'".$definition['email']."'",
-            (new SyntheticFixtureCatalog())->definitions()['principals'],
+        $application = new Application(self::$kernel);
+        $tester = new CommandTester($application->find('app:db:target'));
+        self::assertSame(0, $tester->execute([]));
+
+        $expected = $this->entityManager->getConnection()->getDatabase().'@127.0.0.1';
+        self::assertSame($expected, trim($tester->getDisplay()));
+        self::assertStringNotContainsString('keelson:keelson', $tester->getDisplay());
+    }
+
+    public function testAPasswordShorterThanRegistrationAllowsIsRejectedBeforeAnythingIsWritten(): void
+    {
+        $loader = new SyntheticFixtureLoader(
+            $this->entityManager,
+            self::getContainer()->get(\App\Service\InvoiceCalculator::class),
+            new SyntheticFixtureCatalog(),
+            new FixtureTargetGuard(),
+            self::getContainer()->get(UserPasswordHasherInterface::class),
+            self::getContainer()->get(\App\Service\InvoiceAuditLogger::class),
+            'test',
+            'short',
+        );
+
+        try {
+            $loader->load();
+            self::fail('A password below the registration minimum must be refused.');
+        } catch (\RuntimeException $exception) {
+            self::assertStringContainsString('at least 10 characters', $exception->getMessage());
+        }
+        self::assertSame(0, (int) $this->entityManager->getConnection()->fetchOne(
+            'SELECT COUNT(*) FROM principals WHERE email IN ('.$this->fixtureEmails().')'
         ));
     }
 
     private function removeFixtureRows(): void
     {
-        $connection = $this->entityManager->getConnection();
-        $connection->executeStatement("DELETE FROM invoices WHERE organization_id IN (SELECT id FROM organizations WHERE subdomain LIKE 'fixture-%')");
-        $connection->executeStatement("DELETE FROM customers WHERE organization_id IN (SELECT id FROM organizations WHERE subdomain LIKE 'fixture-%')");
-        $connection->executeStatement("DELETE FROM memberships WHERE organization_id IN (SELECT id FROM organizations WHERE subdomain LIKE 'fixture-%')");
-        $connection->executeStatement("DELETE FROM organizations WHERE subdomain LIKE 'fixture-%'");
-        $connection->executeStatement('DELETE FROM principals WHERE email IN ('.$this->fixtureEmails().')');
+        $this->removeSyntheticFixtureRows($this->entityManager);
+    }
+
+    private function fixtureEmails(): string
+    {
+        return $this->quotedFixtureEmails();
     }
 }

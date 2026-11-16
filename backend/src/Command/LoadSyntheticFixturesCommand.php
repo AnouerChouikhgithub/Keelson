@@ -14,12 +14,14 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 
 #[AsCommand(
     name: 'app:fixtures:load',
-    description: 'Load idempotent synthetic demo principals, organizations, memberships, customers and invoices into a local test/dev database.',
+    description: 'Load idempotent synthetic demo accounts, organizations, memberships, customers and invoices into a local test/dev database.',
 )]
 final class LoadSyntheticFixturesCommand extends Command
 {
-    public function __construct(private readonly SyntheticFixtureLoader $loader)
-    {
+    public function __construct(
+        private readonly SyntheticFixtureLoader $loader,
+        private readonly string $environment,
+    ) {
         parent::__construct();
     }
 
@@ -55,14 +57,64 @@ final class LoadSyntheticFixturesCommand extends Command
             }
         }
 
-        $stats = $this->loader->load();
+        try {
+            $stats = $this->loader->load();
+        } catch (\RuntimeException $exception) {
+            // Configuration problems (a too-short FIXTURE_PASSWORD, an unsafe
+            // target) are reported, not thrown as a stack trace.
+            $io->error($exception->getMessage());
+
+            return Command::FAILURE;
+        }
         $rows = [];
         foreach ($stats['created'] as $type => $created) {
             $rows[] = [$type, (string) $created, (string) $stats['skipped'][$type]];
         }
         $io->table(['Record', 'Created', 'Already present'], $rows);
+
+        $this->renderAccounts($io, $stats);
         $io->success(sprintf('Synthetic fixtures loaded into %s.', $stats['target']));
 
         return Command::SUCCESS;
+    }
+
+    /**
+     * Prints the accounts a developer can sign in with.
+     *
+     * The plaintext demo password is shown because these are synthetic
+     * development accounts and it is documented in the README; the stored hash
+     * is never printed. Production is refused by the target guard before this
+     * point, and the column is dropped there anyway as a second safety net.
+     *
+     * @param array{password: string, accounts: list<array{email: string, displayName: string, roles: list<string>, organizations: list<string>, verified: bool}>} $stats
+     */
+    private function renderAccounts(SymfonyStyle $io, array $stats): void
+    {
+        if ([] === $stats['accounts']) {
+            return;
+        }
+        $showPassword = !str_starts_with($this->environment, 'prod');
+        $header = ['Email', 'Role(s)', 'Organization(s)'];
+        if ($showPassword) {
+            $header[] = 'Password';
+        }
+
+        $rows = [];
+        foreach ($stats['accounts'] as $account) {
+            $row = [
+                $account['email'],
+                [] === $account['roles'] ? '— (no membership)' : implode(', ', $account['roles']),
+                [] === $account['organizations'] ? '—' : implode(', ', $account['organizations']),
+            ];
+            if ($showPassword) {
+                $row[] = $account['verified'] ? $stats['password'] : $stats['password'].' (sign-in refused: address not verified)';
+            }
+            $rows[] = $row;
+        }
+
+        $io->table($header, $rows);
+        if ($showPassword) {
+            $io->text(sprintf('Every account shares the password above (FIXTURE_PASSWORD, default "%s"). Reseed with backend/bin/dev-reset.sh.', $stats['password']));
+        }
     }
 }
