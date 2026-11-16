@@ -2,7 +2,7 @@
 
 **Verified on 2026-11-16** by reading `backend/src/Controller/`, `backend/src/Repository/`,
 `backend/src/Service/`, `backend/src/Security/` and `config/packages/security.yaml`, by running the
-backend suite (`php bin/phpunit` → 157 tests / 721 assertions, exit 0) and by exercising every
+backend suite (`php bin/phpunit` → 199 tests / 1139 assertions, exit 0) and by exercising every
 sign-in flow with `curl` against a local server with Mailpit. This document describes **behaviour
 that exists today**, not a target design. Anything the frontend needs but the backend does not
 provide is listed in [Gaps](#gaps-and-how-each-was-classified).
@@ -413,10 +413,163 @@ retries a mutation automatically.
 - Shapes and validation: the controllers, `InputHydrator`, `JsonBody`, `ApiErrorResponse`,
   `InvoiceSerializer`, `InvoiceCalculator`, `InvoiceInput`, `Customer`, `CustomerRepository`,
   `InvoiceRepository`, `InvoiceVoter`, `security.yaml`, `CsrfProtectionListener`.
-- Behaviour: `php bin/phpunit` → **157 tests / 721 assertions**, exit 0, against the helper's
+- Behaviour: `php bin/phpunit` → **199 tests / 1139 assertions**, exit 0, against the helper's
   disposable PostgreSQL 16 container (never the Compose database).
 - Manual round trip: register → Mailpit → verify → login → `GET /api/session` → invoice `POST`
   without and with `X-CSRF-Token` → logout → forgot → reset, all with `curl` against
   `php -S 127.0.0.1:8000 -t public public/index.php` and Mailpit on `http://localhost:8026`.
 - Frontend agreement: this document still describes what the SPA **must** do; the SPA itself is
   updated in Sprint 3 and its current tests still target the removed provider endpoints.
+
+## 9. Sprint 5: organizations, team, invitations
+
+Every tenant route below authorizes through `OrganizationVoter` (active membership on an active
+organization). A denial is `404 not_found`, like the invoice API: a caller must not be able to tell
+a foreign tenant from a missing one. Only an Owner may rename, readdress or delete the tenant.
+
+### Organizations
+
+| Method | Path | Who | Success |
+| --- | --- | --- | --- |
+| `POST` | `/api/organizations` | any signed-in principal | `201` `{organization:{id,name,subdomain,status,role:"Owner",createdAt}}` |
+| `PATCH` | `/api/organizations/{id}` | Owner | `200` same shape |
+| `DELETE` | `/api/organizations/{id}` | Owner | `200`, organization `status:"deleted"` |
+| `GET` | `/api/organizations/subdomain-availability?value=` | any signed-in principal | **always** `200` `{available:boolean}` |
+
+- `POST` body `{name, subdomain}`. `name` 2–120 characters; `subdomain` 3–63 characters matching
+  `^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$`, stored lower-cased. Reserved hostnames (`www`, `api`,
+  `admin`, `app`, `auth`, `mail`, `dashboard`, `docs`, `status`, `support`, `billing`, …) are
+  `422 validation_failed` with a `subdomain` field; a taken subdomain is
+  `409 {"code":"subdomain_taken"}`. The creator's membership is created as `Owner` in the same
+  transaction.
+- `PATCH` body `{name?, subdomain?}`; neither field present is `422`. A duplicate subdomain is
+  `409 subdomain_taken`.
+- `DELETE` body `{confirmName}` must equal the organization name exactly; otherwise
+  `422 validation_failed` with a `confirmName` field. Deletion is **soft**: the row keeps
+  `status:"deleted"`, memberships, invoices and audit events stay, and every read path filters the
+  tenant out (further requests answer `404`). The subdomain stays taken.
+- `subdomain-availability` is rate limited per principal (60/minute, `429 too_many_requests`). It is
+  a hint for the create form: an invalid or reserved value simply answers `false`.
+
+### Members
+
+| Method | Path | Who | Success |
+| --- | --- | --- | --- |
+| `GET` | `/api/organizations/{id}/members` | any active member | `200 {items:[{id,principalId,email,name,role,joinedAt}],nextCursor:null}` |
+| `PATCH` | `…/members/{membershipId}` | Owner, or Admin for Member/Viewer targets | `200 {member:{…}}` |
+| `DELETE` | `…/members/{membershipId}` | Owner/Admin, or the member themself (leave) | `204` |
+
+Rules (each is a test in `TeamInvitationTest`):
+
+- An Owner may change or remove anyone.
+- An Admin may only change/remove a **Member** or **Viewer**, and may never grant `Admin` or
+  `Owner`. Anything else is `404`.
+- A Member or a Viewer cannot manage anybody (`404`); they may still remove their own membership.
+- The last Owner cannot be demoted or removed: `409 {"code":"last_owner"}`.
+- Removal deletes the membership row, so the address can be invited again.
+
+### Invitations
+
+| Method | Path | Who | Success |
+| --- | --- | --- | --- |
+| `POST` | `/api/organizations/{id}/invitations` | Owner/Admin (Admin: Member/Viewer only) | `201 {invitation:{id,email,role,status,expired,expiresAt,createdAt}}` |
+| `GET` | `…/invitations` | Owner/Admin | `200 {items:[…]}` |
+| `POST` | `…/invitations/{invitationId}/resend` | Owner/Admin (same ceiling) | `200`, new token, `expiresAt` reset to +7 days |
+| `DELETE` | `…/invitations/{invitationId}` | Owner/Admin (same ceiling) | `200`, `status:"revoked"` |
+| `GET` | `/api/invitations/{token}` | **public** | `200 {organizationName,role,email,expired,accepted}` |
+| `POST` | `/api/auth/accept-invitation` | public (or the invited account's session) | `201` when an account was created, else `200` |
+
+- The plaintext token is never returned by an API: it is stored as a SHA-256 digest and appears only
+  in the email (`FRONTEND_URL/accept-invitation?token=…`, built by `MailFactory::invitation()`).
+- Duplicate pending invitation for the same address: `409 conflict`. Address already a member:
+  `409 {"code":"already_member"}`. An Admin inviting as `Admin` is `404`.
+- `resend` replaces the stored digest (the previous link stops working) and restarts the 7-day
+  window; it is rate limited per invitation (5/minute → `429`). Only a pending invitation can be
+  resent or revoked: `409 {"code":"invitation_not_pending"}`.
+- The public preview returns nothing about account existence and nothing about the invitation id.
+  An unknown token is `404`; an expired or used one still resolves so the page can explain itself.
+- `accept-invitation` body `{token, password?, displayName?}`:
+  - address has **no** account: `password` (10–72 characters) is required and the new principal is
+    marked verified, because receiving the link proves mailbox control (`422` on `password` when
+    missing);
+  - address **has** an account: the caller must be signed in as it, otherwise
+    `401 {"code":"sign_in_required"}` — a signed-in person cannot attach someone else's address;
+  - accepting creates the membership, marks the invitation accepted, and writes `member_joined`
+    notifications for the tenant's Owners and Admins (the new member excluded) plus
+    `invitation_accepted` for the inviter;
+  - an unusable token is `400 {"code":"invalid_token"}`.
+
+## 10. Dashboard, notifications, profile
+
+### `GET /api/organizations/{id}/dashboard`
+
+Any active member. `200`:
+
+```json
+{
+  "outstandingMillimes": 843000,
+  "overdueMillimes": 312000,
+  "overdueCount": 3,
+  "paidThisMonthMillimes": 0,
+  "customerCount": 12,
+  "statusCounts": { "draft": 2, "sent": 5, "overdue": 3, "paid": 8 },
+  "revenueByMonth": [{ "month": "2025-12", "paidMillimes": 0 }, "… 12 entries, oldest first …"],
+  "recentInvoices": ["… five newest, the invoice shape from section 4 …"]
+}
+```
+
+Money is integer millimes. `overdue` is derived from the due date exactly like the invoice read
+path, so the dashboard and the list agree. The aggregates are four SQL statements (one filtered scan
+for the counts and sums, one monthly grouping, one customer count, one ordered query for the recent
+invoices): `DashboardApiTest::testTheDashboardCostsTheSameForManyInvoicesAsForFew` asserts the query
+count is unchanged between a tenant with 3 invoices and one with 33.
+
+### Notifications
+
+| Method | Path | Success |
+| --- | --- | --- |
+| `GET` | `/api/notifications?limit&cursor&unread=1` | `200 {items:[{id,type,data,organizationId,read,createdAt,readAt}],nextCursor}` |
+| `POST` | `/api/notifications/{id}/read` | `200 {notification:{…}}` |
+| `POST` | `/api/notifications/read-all` | `200 {updated:n}` |
+
+Own notifications only: another person's id is `404`. `limit` defaults to 25 (max 100); `cursor` is
+opaque; a malformed cursor is `400 {"code":"invalid_cursor"}`. Marking a read notification again is a
+no-op. Types: `invoice_overdue`, `invoice_paid`, `invitation_accepted`, `member_joined`. Automatic
+notifications come from the `mark-paid` transition (recipients: Owners and Admins, actor excluded)
+and from `app:invoices:mark-overdue`; they are deduplicated per recipient, type and invoice.
+
+### Profile
+
+| Method | Path | Body | Success |
+| --- | --- | --- | --- |
+| `PATCH` | `/api/me` | `{displayName}` | `200 {user:{id,email,displayName}}` |
+| `POST` | `/api/me/password` | `{currentPassword,newPassword}` | `204` |
+
+A wrong current password is `422 validation_failed` with a `currentPassword` field. On success the
+stored hash changes, the **current** session is kept (its token is rewritten with the new hash) and
+every other session is signed out by Symfony's hash comparison on its next request.
+
+## 11. Lists: search and cursor pagination
+
+`GET …/customers`, `…/invoices` and `…/invoice-audit-events` accept:
+
+| Parameter | Meaning |
+| --- | --- |
+| `q` | case-insensitive “contains”: customer name or email; invoice number or customer name; audit action |
+| `limit` | page size, default **25**, maximum 100 |
+| `cursor` | opaque keyset cursor returned as `nextCursor`; malformed → `400 invalid_cursor` |
+
+Responses keep their existing fields and add `nextCursor` (string or `null`). The cursor is the
+base64url of `{id, createdAt}` and pages resume strictly after that row, so inserts during paging
+cannot shift the window. Customers are now ordered by `created_at DESC, id DESC` (previously by
+`id ASC`); invoices and audit events keep newest-first. Supporting indexes:
+`(organization_id, created_at DESC, id DESC)` on all three tables, plus
+`invoices (organization_id, due_date)` and `(organization_id, paid_at)` for the dashboard, and a
+partial unique index on pending invitations per `(organization_id, lower(email))`.
+
+## 12. Scheduled work
+
+`php bin/console app:invoices:mark-overdue` processes each organization separately, in batches of
+200 invoices with one short transaction per batch. It is idempotent (each batch re-selects only
+`sent` invoices past their due date), creates the audit event and the `invoice_overdue`
+notifications, and can be run at any frequency. Schedule it once a day; see the README.

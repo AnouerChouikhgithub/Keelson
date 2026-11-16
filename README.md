@@ -208,3 +208,35 @@ Read [AGENTS.md](AGENTS.md) before changes. Keep tenant, auth, billing, migratio
 and API-contract changes behind one owner; ask before adding dependencies or
 changing architecture; never commit secrets; record exact commands and results
 and never report an unrun or failed check as passing.
+
+## Scheduled tasks
+
+`app:invoices:mark-overdue` is the only scheduled job so far. It records sent invoices whose due
+date has passed as `overdue` (audit event + notifications for the organization's Owners and Admins),
+one organization at a time, in batches of 200 with a short transaction per batch, and it is safe to
+run as often as you like — a second run in the same minute finds nothing to do.
+
+Run it once a day, in the environment you are serving:
+
+Linux (cron, 02:15 daily):
+
+```cron
+15 2 * * * cd /srv/keelson/backend && php bin/console app:invoices:mark-overdue --env=prod >> var/log/mark-overdue.log 2>&1
+```
+
+Windows (Task Scheduler, 02:15 daily, run as the account that owns the checkout):
+
+```powershell
+schtasks /Create /SC DAILY /ST 02:15 /TN "Keelson mark overdue" /TR "php C:\path\to\keelson\backend\bin\console app:invoices:mark-overdue --env=dev" /F
+```
+
+Or from PowerShell with a scheduled task object if you need a working directory:
+
+```powershell
+$a = New-ScheduledTaskAction -Execute "php" -Argument "bin\console app:invoices:mark-overdue --env=dev" -WorkingDirectory "C:\path\to\keelson\backend"
+$t = New-ScheduledTaskTrigger -Daily -At 2:15am
+Register-ScheduledTask -TaskName "Keelson mark overdue" -Action $a -Trigger $t -Description "Marks past-due invoices overdue"
+```
+
+The command prints the number of transitions; `--env=prod` needs `APP_SECRET`, `DATABASE_URL` and the
+other production variables, exactly like the web process.
