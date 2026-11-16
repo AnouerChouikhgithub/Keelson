@@ -1,0 +1,1993 @@
+openapi: 3.1.0
+info:
+  title: Keelson API
+  version: 1.0.0
+  summary: Multi-tenant SaaS starter — organizations, memberships, invitations and invoicing.
+  description: |
+    Session-cookie API for the Keelson SPA. There is no bearer token and no API key: every
+    authenticated request rides on the Symfony session cookie the browser already holds.
+
+    **Every unsafe request (POST/PATCH/PUT/DELETE) must also send `X-CSRF-Token`**, taken from
+    the `csrfToken` field of `GET /api/session` (or of a successful `POST /api/auth/login`), and a
+    same-origin `Origin` header. A missing or wrong token is `403 csrf_invalid`; the SPA re-reads
+    the session once and replays the request once.
+
+    Tenant scope is a path parameter that is *re-authorized on every request* through the
+    membership voters. A foreign, suspended or unknown organization, customer, invoice or membership
+    answers **404**, never 403: a caller must not be able to distinguish someone else's tenant from a
+    missing one. `403` is reserved for the origin/CSRF guard and for `email_not_verified`.
+
+    Errors always use `{"error":{"code","message","fields?"}}`; `code` is stable and
+    machine-readable, `fields` appears only when a specific input is at fault.
+
+    Money is integer millimes in the dashboard and 3-decimal decimal strings on invoices
+    (currency `TND` only). `overdue` is derived from `dueDate` on read; no read ever writes state.
+servers:
+  - url: /
+    description: Same origin as the SPA (the dev Vite server proxies /api to Symfony).
+tags:
+  - name: Auth
+  - name: Session
+  - name: Profile
+  - name: Organizations
+  - name: Members
+  - name: Invitations
+  - name: Customers
+  - name: Invoices
+  - name: Dashboard
+  - name: Notifications
+  - name: Health
+security:
+  - cookieSession: []
+paths:
+  /api/auth/register:
+    post:
+      tags: [Auth]
+      summary: Create a principal, its first organization and an Owner membership.
+      description: |
+        Always answers `201 verification_sent`, including for an address that already exists: in that
+        case nothing is written and nothing is mailed, so the endpoint cannot be used to discover
+        accounts. A verification link (24 h) is mailed to `FRONTEND_URL/verify-email?token=…`.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: The verification email was sent (or silently skipped).
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status:
+                    type: string
+                    const: verification_sent
+        '400':
+          $ref: '#/components/responses/InvalidJson'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /api/auth/login:
+    post:
+      tags: [Auth]
+      summary: Start a session.
+      description: |
+        Wrong password and unknown address are deliberately identical. `email_not_verified` is only
+        reachable after the password has been accepted, so it cannot be used to probe accounts.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Signed in. The body is exactly the `GET /api/session` payload.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+        '401':
+          description: Wrong password, unknown address or malformed body.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: invalid_credentials
+                  message: Invalid credentials.
+        '403':
+          description: Password accepted but the address is unconfirmed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: email_not_verified
+                  message: Your email address is not verified.
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /api/auth/verify-email:
+    post:
+      tags: [Auth]
+      summary: Confirm an address from a verification link.
+      description: Unknown, expired (24 h) and already-used tokens are all `400 invalid_token`.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TokenRequest'
+      responses:
+        '204':
+          description: The address is now verified.
+        '400':
+          description: The token is unknown, expired or already used.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: invalid_token
+                  message: The link is invalid or has expired.
+  /api/auth/resend-verification:
+    post:
+      tags: [Auth]
+      summary: Re-send the verification link.
+      description: |
+        Always `202`, with a fresh link mailed only for an address that is still pending. The new
+        token retires the previous one. Throttled in its own buckets (5 per address, 100 per client
+        address per minute) so flooding this endpoint cannot lock an account out of signing in.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmailRequest'
+      responses:
+        '202':
+          description: Accepted; nothing about the account is revealed.
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          description: Too many resend attempts (`too_many_resend_attempts`).
+          $ref: '#/components/responses/RateLimited'
+  /api/auth/forgot-password:
+    post:
+      tags: [Auth]
+      summary: Request a password-reset link (valid 1 h).
+      description: Always `202`; a link is mailed only when the account exists.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmailRequest'
+      responses:
+        '202':
+          description: Accepted; nothing about the account is revealed.
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /api/auth/reset-password:
+    post:
+      tags: [Auth]
+      summary: Replace a password from a reset link.
+      description: |
+        The address is also marked verified, because receiving the link proves mailbox control.
+        Changing the hash signs every *other* session out on its next request.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, password]
+              properties:
+                token:
+                  type: string
+                password:
+                  type: string
+                  minLength: 10
+                  maxLength: 72
+      responses:
+        '204':
+          description: The password was replaced.
+        '400':
+          description: Reused or expired token (`invalid_token`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /api/auth/accept-invitation:
+    post:
+      tags: [Invitations]
+      summary: Accept an invitation, creating the account when the address has none.
+      description: |
+        With no account for the invited address, `password` (10–72) is required and the new principal
+        is created verified. With an existing account the caller must already be signed in as that
+        address, otherwise `401 sign_in_required`.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token:
+                  type: string
+                password:
+                  type: string
+                  minLength: 10
+                  maxLength: 72
+                displayName:
+                  type: string
+                  maxLength: 120
+      responses:
+        '200':
+          description: The membership was added to the existing account.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AcceptInvitationResult'
+        '201':
+          description: An account was created and the membership added.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AcceptInvitationResult'
+        '400':
+          description: Unknown, expired or revoked token (`invalid_token`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: The address already has an account and the caller is not signed in as it.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: sign_in_required
+                  message: Sign in to accept this invitation.
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /api/auth/logout:
+    post:
+      tags: [Auth]
+      summary: End the session.
+      description: Requires `X-CSRF-Token`; logout is not exempt from the CSRF guard.
+      responses:
+        '204':
+          description: The session is invalidated.
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/CsrfRejected'
+  /api/session:
+    get:
+      tags: [Session]
+      summary: Read the session the browser currently holds.
+      description: |
+        Public, and the only endpoint the shell may call before authentication. `csrfToken` is null
+        while anonymous because the endpoint deliberately avoids creating a session just to mint one.
+      security: []
+      responses:
+        '200':
+          description: The current session.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+  /api/me:
+    patch:
+      tags: [Profile]
+      summary: Update the caller's display name.
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                displayName:
+                  type: [string, 'null']
+                  maxLength: 120
+      responses:
+        '200':
+          description: The updated principal.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [user]
+                properties:
+                  user:
+                    $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/CsrfRejected'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /api/me/password:
+    post:
+      tags: [Profile]
+      summary: Change the caller's password.
+      description: |
+        The current session survives (its token is rewritten with the new hash); every other session
+        is signed out by Symfony's hash comparison on its next request.
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [currentPassword, newPassword]
+              properties:
+                currentPassword:
+                  type: string
+                newPassword:
+                  type: string
+                  minLength: 10
+                  maxLength: 72
+      responses:
+        '204':
+          description: The password was changed.
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/CsrfRejected'
+        '422':
+          description: A wrong current password is a `validation_failed` on `currentPassword`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/me/organizations:
+    get:
+      tags: [Organizations]
+      summary: List the caller's active memberships.
+      description: |
+        Membership-scoped and read-only. `role` is informational for rendering; every tenant request
+        is authorized separately, so a tampered value cannot grant anything.
+      responses:
+        '200':
+          description: The caller's active memberships on active organizations.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/OrganizationMembership'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+  /api/organizations:
+    post:
+      tags: [Organizations]
+      summary: Create an organization (the caller becomes its Owner).
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateOrganizationRequest'
+      responses:
+        '201':
+          description: The organization, with the creator's Owner membership.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [organization]
+                properties:
+                  organization:
+                    $ref: '#/components/schemas/Organization'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/CsrfRejected'
+        '409':
+          description: The subdomain is taken (`subdomain_taken`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /api/organizations/subdomain-availability:
+    get:
+      tags: [Organizations]
+      summary: Hint whether a subdomain can be used.
+      description: Always `200`; an invalid or reserved value simply answers `false`. Rate limited per principal (60/minute).
+      parameters:
+        - name: value
+          in: query
+          required: true
+          schema:
+            type: string
+            maxLength: 63
+      responses:
+        '200':
+          description: Availability hint.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [available]
+                properties:
+                  available:
+                    type: boolean
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /api/organizations/{organizationId}:
+    parameters:
+      - $ref: '#/components/parameters/OrganizationId'
+    patch:
+      tags: [Organizations]
+      summary: Rename or readdress the tenant (Owner only).
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              minProperties: 1
+              properties:
+                name:
+                  type: string
+                  minLength: 2
+                  maxLength: 120
+                subdomain:
+                  type: string
+                  minLength: 3
+                  maxLength: 63
+                  pattern: '^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$'
+      responses:
+        '200':
+          description: The updated organization.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [organization]
+                properties:
+                  organization:
+                    $ref: '#/components/schemas/Organization'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/CsrfRejected'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: The subdomain is taken (`subdomain_taken`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+    delete:
+      tags: [Organizations]
+      summary: Soft-delete the tenant (Owner only, name confirmation).
+      description: |
+        The row keeps `status: deleted`, memberships, invoices and audit events stay, every read path
+        filters the tenant out, and the subdomain stays taken.
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [confirmName]
+              properties:
+                confirmName:
+                  type: string
+                  description: Must equal the organization name exactly.
+      responses:
+        '200':
+          description: The organization is deleted.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [organization]
+                properties:
+                  organization:
+                    $ref: '#/components/schemas/Organization'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/CsrfRejected'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /api/organizations/{organizationId}/members:
+    parameters:
+      - $ref: '#/components/parameters/OrganizationId'
+    get:
+      tags: [Members]
+      summary: List the roster (any active member).
+      responses:
+        '200':
+          description: The roster of the tenant.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Member'
+                  nextCursor:
+                    type: [string, 'null']
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/organizations/{organizationId}/members/{membershipId}:
+    parameters:
+      - $ref: '#/components/parameters/OrganizationId'
+      - $ref: '#/components/parameters/MembershipId'
+    patch:
+      tags: [Members]
+      summary: Change a member's role (Owner; Admin for Member/Viewer targets only).
+      description: An Admin may never grant `Admin` or `Owner`; anything outside the ceiling is 404.
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role]
+              properties:
+                role:
+                  $ref: '#/components/schemas/Role'
+      responses:
+        '200':
+          description: The updated membership.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [member]
+                properties:
+                  member:
+                    $ref: '#/components/schemas/Member'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/CsrfRejected'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: The last Owner cannot be demoted (`last_owner`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    delete:
+      tags: [Members]
+      summary: Remove a member, or leave the tenant.
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      responses:
+        '204':
+          description: The membership row is gone; the address can be invited again.
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/CsrfRejected'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: The last Owner cannot be removed (`last_owner`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/organizations/{organizationId}/invitations:
+    parameters:
+      - $ref: '#/components/parameters/OrganizationId'
+    get:
+      tags: [Invitations]
+      summary: List the tenant's invitations (Owner/Admin).
+      responses:
+        '200':
+          description: Invitations, newest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Invitation'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      tags: [Invitations]
+      summary: Invite an address (Owner/Admin; Admin may invite Member/Viewer only).
+      description: |
+        The plaintext token never leaves the mail: it is stored as a SHA-256 digest and appears only
+        in `FRONTEND_URL/accept-invitation?token=…` (valid 7 days).
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, role]
+              properties:
+                email:
+                  type: string
+                  format: email
+                role:
+                  type: string
+                  enum: [Admin, Member, Viewer]
+      responses:
+        '201':
+          description: The invitation was created and mailed.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [invitation]
+                properties:
+                  invitation:
+                    $ref: '#/components/schemas/Invitation'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/CsrfRejected'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: A pending invitation exists (`conflict`) or the address is already a member (`already_member`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /api/organizations/{organizationId}/invitations/{invitationId}:
+    parameters:
+      - $ref: '#/components/parameters/OrganizationId'
+      - $ref: '#/components/parameters/InvitationId'
+    delete:
+      tags: [Invitations]
+      summary: Revoke a pending invitation.
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      responses:
+        '200':
+          description: The invitation is revoked.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [invitation]
+                properties:
+                  invitation:
+                    $ref: '#/components/schemas/Invitation'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/CsrfRejected'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Only a pending invitation can be revoked (`invitation_not_pending`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/organizations/{organizationId}/invitations/{invitationId}/resend:
+    parameters:
+      - $ref: '#/components/parameters/OrganizationId'
+      - $ref: '#/components/parameters/InvitationId'
+    post:
+      tags: [Invitations]
+      summary: Re-send a pending invitation with a fresh token.
+      description: The previous link stops working and the 7-day window restarts. Rate limited per invitation (5/minute).
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      responses:
+        '200':
+          description: The invitation was re-sent.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [invitation]
+                properties:
+                  invitation:
+                    $ref: '#/components/schemas/Invitation'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/CsrfRejected'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Only a pending invitation can be resent (`invitation_not_pending`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /api/invitations/{token}:
+    parameters:
+      - name: token
+        in: path
+        required: true
+        description: The plaintext token from the invitation email.
+        schema:
+          type: string
+    get:
+      tags: [Invitations]
+      summary: Public invitation preview for the accept screen.
+      description: |
+        Reveals nothing about account existence and nothing about the invitation id. An unknown token
+        is 404; an expired or already-accepted one still resolves so the page can explain itself.
+      security: []
+      responses:
+        '200':
+          description: The invitation preview.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvitationPreview'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/organizations/{organizationId}/customers:
+    parameters:
+      - $ref: '#/components/parameters/OrganizationId'
+    get:
+      tags: [Customers]
+      summary: List customers (keyset paginated, case-insensitive `q`).
+      description: List rows deliberately omit `billingAddress`; read one customer for the address.
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Search'
+      responses:
+        '200':
+          description: One page of customers, newest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, nextCursor]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CustomerSummary'
+                  nextCursor:
+                    type: [string, 'null']
+        '400':
+          $ref: '#/components/responses/InvalidCursor'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      tags: [Customers]
+      summary: Create a customer.
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomerInput'
+      responses:
+        '201':
+          description: The created customer, including its address.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [customer]
+                properties:
+                  customer:
+                    $ref: '#/components/schemas/Customer'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/CsrfRejected'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /api/organizations/{organizationId}/customers/{customerId}:
+    parameters:
+      - $ref: '#/components/parameters/OrganizationId'
+      - $ref: '#/components/parameters/CustomerId'
+    get:
+      tags: [Customers]
+      summary: Read one customer, including its billing address.
+      responses:
+        '200':
+          description: The customer.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [customer]
+                properties:
+                  customer:
+                    $ref: '#/components/schemas/Customer'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags: [Customers]
+      summary: Patch the mutable subset of a customer.
+      description: Unknown or empty patches are `400`; the client sends only changed fields.
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomerPatch'
+      responses:
+        '200':
+          description: The updated customer.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [customer]
+                properties:
+                  customer:
+                    $ref: '#/components/schemas/Customer'
+        '400':
+          description: The patch contained no mutable field, or an unsupported one.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/CsrfRejected'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+    delete:
+      tags: [Customers]
+      summary: Delete a customer (Owner/Admin; blocked while invoices reference it).
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      responses:
+        '204':
+          description: Deleted.
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/CsrfRejected'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Invoices reference the customer.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  message: Customer is referenced by invoices.
+  /api/organizations/{organizationId}/invoices:
+    parameters:
+      - $ref: '#/components/parameters/OrganizationId'
+    get:
+      tags: [Invoices]
+      summary: List invoices (status filter, `q` search, keyset pagination).
+      parameters:
+        - $ref: '#/components/parameters/InvoiceStatusFilter'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Search'
+      responses:
+        '200':
+          description: One page of invoices, newest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, nextCursor]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Invoice'
+                  nextCursor:
+                    type: [string, 'null']
+        '400':
+          description: An invalid status filter or cursor.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      tags: [Invoices]
+      summary: Create a draft invoice.
+      description: Totals are computed by the server; anything the client sends for a total is ignored.
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InvoiceDraftInput'
+      responses:
+        '201':
+          description: The draft invoice.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [invoice]
+                properties:
+                  invoice:
+                    $ref: '#/components/schemas/Invoice'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/CsrfRejected'
+        '404':
+          description: The customer id is not in this organization.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Invoice number allocation conflicted; retry the request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /api/organizations/{organizationId}/invoices/{invoiceId}:
+    parameters:
+      - $ref: '#/components/parameters/OrganizationId'
+      - $ref: '#/components/parameters/InvoiceId'
+    get:
+      tags: [Invoices]
+      summary: Read one invoice.
+      responses:
+        '200':
+          description: The invoice, with its stored customer snapshot.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [invoice]
+                properties:
+                  invoice:
+                    $ref: '#/components/schemas/Invoice'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags: [Invoices]
+      summary: Edit a draft invoice.
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InvoiceDraftInput'
+      responses:
+        '200':
+          description: The updated draft.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [invoice]
+                properties:
+                  invoice:
+                    $ref: '#/components/schemas/Invoice'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/CsrfRejected'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Only draft invoices may be edited.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+    delete:
+      tags: [Invoices]
+      summary: Delete a draft invoice (Owner/Admin).
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      responses:
+        '204':
+          description: Deleted.
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/CsrfRejected'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Only draft invoices may be deleted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/organizations/{organizationId}/invoices/{invoiceId}/send:
+    parameters:
+      - $ref: '#/components/parameters/OrganizationId'
+      - $ref: '#/components/parameters/InvoiceId'
+    post:
+      tags: [Invoices]
+      summary: Send a draft (idempotent no-op on a non-draft).
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      responses:
+        '200':
+          description: The invoice after the transition.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [invoice]
+                properties:
+                  invoice:
+                    $ref: '#/components/schemas/Invoice'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/CsrfRejected'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/organizations/{organizationId}/invoices/{invoiceId}/mark-paid:
+    parameters:
+      - $ref: '#/components/parameters/OrganizationId'
+      - $ref: '#/components/parameters/InvoiceId'
+    post:
+      tags: [Invoices]
+      summary: Mark a sent invoice paid (idempotent when already paid).
+      description: Writes the audit event and notifies the tenant's Owners and Admins (actor excluded).
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      responses:
+        '200':
+          description: The invoice after the transition.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [invoice]
+                properties:
+                  invoice:
+                    $ref: '#/components/schemas/Invoice'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/CsrfRejected'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: A draft cannot be marked paid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/organizations/{organizationId}/invoice-audit-events:
+    parameters:
+      - $ref: '#/components/parameters/OrganizationId'
+    get:
+      tags: [Invoices]
+      summary: List the tenant's invoice audit events.
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Search'
+      responses:
+        '200':
+          description: One page of audit events, newest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, nextCursor]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AuditEvent'
+                  nextCursor:
+                    type: [string, 'null']
+        '400':
+          $ref: '#/components/responses/InvalidCursor'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/organizations/{organizationId}/dashboard:
+    parameters:
+      - $ref: '#/components/parameters/OrganizationId'
+    get:
+      tags: [Dashboard]
+      summary: Aggregated workspace metrics.
+      description: Four SQL statements regardless of invoice count; `overdue` is derived like the list.
+      responses:
+        '200':
+          description: The dashboard payload.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Dashboard'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/notifications:
+    get:
+      tags: [Notifications]
+      summary: List the caller's notifications.
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 25
+        - name: unread
+          in: query
+          description: When set to `1`, only unread notifications are returned.
+          schema:
+            type: string
+            enum: ['1']
+      responses:
+        '200':
+          description: One page of the caller's notifications, newest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, nextCursor]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Notification'
+                  nextCursor:
+                    type: [string, 'null']
+        '400':
+          $ref: '#/components/responses/InvalidCursor'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+  /api/notifications/{notificationId}/read:
+    parameters:
+      - $ref: '#/components/parameters/NotificationId'
+    post:
+      tags: [Notifications]
+      summary: Mark one notification read (idempotent).
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      responses:
+        '200':
+          description: The notification.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [notification]
+                properties:
+                  notification:
+                    $ref: '#/components/schemas/Notification'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/CsrfRejected'
+        '404':
+          description: Unknown id, or another principal's notification.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/notifications/read-all:
+    post:
+      tags: [Notifications]
+      summary: Mark every unread notification read.
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      responses:
+        '200':
+          description: How many notifications were updated.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [updated]
+                properties:
+                  updated:
+                    type: integer
+                    minimum: 0
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/CsrfRejected'
+  /healthz:
+    get:
+      tags: [Health]
+      summary: Liveness probe (checks nothing).
+      description: Reports only that the application boots; it performs no database call.
+      security: []
+      responses:
+        '200':
+          description: The process is up.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, service]
+                properties:
+                  status:
+                    type: string
+                    const: ok
+                  service:
+                    type: string
+                    const: keelson-api
+  /readyz:
+    get:
+      tags: [Health]
+      summary: Readiness probe (single cheap `SELECT 1`).
+      description: |
+        `503` when PostgreSQL is unusable. The driver message is never returned or logged, so the
+        probe is safe to expose to a load balancer.
+      security: []
+      responses:
+        '200':
+          description: The process and its database are usable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Readiness'
+        '503':
+          description: PostgreSQL is unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Readiness'
+components:
+  securitySchemes:
+    cookieSession:
+      type: apiKey
+      in: cookie
+      name: PHPSESSID
+      description: |
+        Symfony's server-side session, stored in PostgreSQL and sent as an HttpOnly, SameSite=Lax
+        cookie. Mutating requests additionally need the `X-CSRF-Token` header.
+  parameters:
+    CsrfToken:
+      name: X-CSRF-Token
+      in: header
+      required: true
+      description: The `csrfToken` from `GET /api/session`, minted for the id `api`.
+      schema:
+        type: string
+    OrganizationId:
+      name: organizationId
+      in: path
+      required: true
+      description: The tenant selector. It is re-authorized on every request and never grants access.
+      schema:
+        type: string
+        format: uuid
+    CustomerId:
+      name: customerId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    InvoiceId:
+      name: invoiceId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    MembershipId:
+      name: membershipId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    InvitationId:
+      name: invitationId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    NotificationId:
+      name: notificationId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    Cursor:
+      name: cursor
+      in: query
+      description: Opaque keyset cursor, returned as `nextCursor` by the previous page.
+      schema:
+        type: string
+    Limit:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 25
+    Search:
+      name: q
+      in: query
+      description: Case-insensitive "contains" over the list's searchable columns.
+      schema:
+        type: string
+        maxLength: 120
+    InvoiceStatusFilter:
+      name: status
+      in: query
+      description: |
+        `all` (default), `draft`, `sent`, `paid` or `overdue`. `sent` excludes overdue invoices;
+        `overdue` includes stored `overdue` rows and `sent` rows past their due date.
+      schema:
+        type: string
+        enum: [all, draft, sent, paid, overdue]
+        default: all
+  responses:
+    Unauthenticated:
+      description: No session, or the session is no longer valid.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: unauthenticated
+              message: Authentication is required.
+    CsrfRejected:
+      description: The origin or CSRF token was refused; the session is untouched.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: csrf_invalid
+              message: A valid CSRF token is required for this request.
+    NotFound:
+      description: |
+        Missing record, or a tenant the caller is not an active member of. Deliberately
+        indistinguishable, so a foreign tenant cannot be detected.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              message: Resource not found.
+    ValidationFailed:
+      description: At least one input was rejected; `fields` names each one.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: validation_failed
+              message: Validation failed.
+              fields:
+                email:
+                  - This value is not a valid email address.
+    InvalidJson:
+      description: The body is not a JSON object.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: invalid_json
+              message: The request body must be a JSON object.
+    InvalidCursor:
+      description: The cursor is malformed.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: invalid_cursor
+              message: The cursor is invalid.
+    RateLimited:
+      description: Too many attempts; `Retry-After` says how long to wait.
+      headers:
+        Retry-After:
+          description: Seconds until the next attempt may succeed.
+          schema:
+            type: integer
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [message]
+          properties:
+            code:
+              type: string
+              description: Stable machine-readable code; the UI localizes from it.
+            message:
+              type: string
+              description: Safe to display; never contains a stack trace or credentials.
+            fields:
+              type: object
+              additionalProperties:
+                type: array
+                items:
+                  type: string
+    RegisterRequest:
+      type: object
+      required: [email, password, organizationName]
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 320
+        password:
+          type: string
+          minLength: 10
+          maxLength: 72
+        organizationName:
+          type: string
+          minLength: 2
+          maxLength: 120
+        displayName:
+          type: [string, 'null']
+          maxLength: 120
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+    EmailRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+    TokenRequest:
+      type: object
+      required: [token]
+      properties:
+        token:
+          type: string
+    Session:
+      type: object
+      required: [authenticated]
+      properties:
+        authenticated:
+          type: boolean
+        user:
+          oneOf:
+            - $ref: '#/components/schemas/User'
+            - type: 'null'
+        csrfToken:
+          type: [string, 'null']
+          description: Null while anonymous; the token the mutation guard expects.
+    User:
+      type: object
+      required: [id]
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: [string, 'null']
+        displayName:
+          type: [string, 'null']
+    Role:
+      type: string
+      enum: [Owner, Admin, Member, Viewer]
+    OrganizationMembership:
+      type: object
+      required: [id, name, subdomain, role]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        subdomain:
+          type: string
+        role:
+          $ref: '#/components/schemas/Role'
+    Organization:
+      type: object
+      required: [id, name, subdomain, status, role, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        subdomain:
+          type: string
+        status:
+          type: string
+          enum: [active, suspended, deleted]
+        role:
+          $ref: '#/components/schemas/Role'
+        createdAt:
+          type: string
+          format: date-time
+    CreateOrganizationRequest:
+      type: object
+      required: [name, subdomain]
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 120
+        subdomain:
+          type: string
+          minLength: 3
+          maxLength: 63
+          pattern: '^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$'
+    Member:
+      type: object
+      required: [id, principalId, email, role, joinedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        principalId:
+          type: string
+          format: uuid
+        email:
+          type: string
+        name:
+          type: [string, 'null']
+        role:
+          $ref: '#/components/schemas/Role'
+        joinedAt:
+          type: string
+          format: date-time
+    Invitation:
+      type: object
+      required: [id, email, role, status, expired, expiresAt, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+        role:
+          $ref: '#/components/schemas/Role'
+        status:
+          type: string
+          enum: [pending, accepted, revoked]
+        expired:
+          type: boolean
+        expiresAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+    InvitationPreview:
+      type: object
+      required: [organizationName, role, email, expired, accepted]
+      properties:
+        organizationName:
+          type: string
+        role:
+          $ref: '#/components/schemas/Role'
+        email:
+          type: string
+        expired:
+          type: boolean
+        accepted:
+          type: boolean
+    AcceptInvitationResult:
+      type: object
+      required: [organizationId]
+      properties:
+        organizationId:
+          type: string
+          format: uuid
+    BillingAddress:
+      type: object
+      required: [street, city, postalCode, countryCode]
+      additionalProperties: false
+      properties:
+        street:
+          type: string
+          minLength: 1
+          maxLength: 160
+        city:
+          type: string
+          minLength: 1
+          maxLength: 160
+        postalCode:
+          type: string
+          minLength: 1
+          maxLength: 160
+        countryCode:
+          type: string
+          minLength: 1
+          maxLength: 160
+          description: Upper-cased by the entity.
+    CustomerSummary:
+      type: object
+      required: [id, name]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        email:
+          type: [string, 'null']
+        phone:
+          type: [string, 'null']
+    Customer:
+      allOf:
+        - $ref: '#/components/schemas/CustomerSummary'
+        - type: object
+          properties:
+            billingAddress:
+              oneOf:
+                - $ref: '#/components/schemas/BillingAddress'
+                - type: 'null'
+    CustomerInput:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 160
+        email:
+          type: [string, 'null']
+          format: email
+        phone:
+          type: [string, 'null']
+          maxLength: 40
+        billingAddress:
+          oneOf:
+            - $ref: '#/components/schemas/BillingAddress'
+            - type: 'null'
+    CustomerPatch:
+      type: object
+      description: Only the mutable subset; unknown keys are rejected rather than ignored.
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 160
+        email:
+          type: [string, 'null']
+        phone:
+          type: [string, 'null']
+        billingAddress:
+          oneOf:
+            - $ref: '#/components/schemas/BillingAddress'
+            - type: 'null'
+    InvoiceLineItem:
+      type: object
+      required: [description, quantity, unitPrice, lineTotal]
+      properties:
+        description:
+          type: string
+          maxLength: 240
+        quantity:
+          type: string
+          description: Decimal string with at most 3 places.
+        unitPrice:
+          type: string
+          description: Decimal string with at most 3 places.
+        lineTotal:
+          type: string
+          description: Computed by the server.
+    Invoice:
+      type: object
+      required:
+        - id
+        - number
+        - customerId
+        - customer
+        - status
+        - issueDate
+        - dueDate
+        - currency
+        - lineItems
+        - subtotal
+        - taxAmount
+        - total
+      properties:
+        id:
+          type: string
+          format: uuid
+        number:
+          type: string
+          description: Per-tenant, per-year sequence, for example `2026-000001`.
+        customerId:
+          type: string
+          format: uuid
+        customer:
+          $ref: '#/components/schemas/Customer'
+        status:
+          type: string
+          enum: [draft, sent, paid, overdue]
+          description: '`overdue` is derived from `dueDate` on read; no read writes state.'
+        issueDate:
+          type: string
+          format: date
+        dueDate:
+          type: string
+          format: date
+        currency:
+          type: string
+          const: TND
+        lineItems:
+          type: array
+          items:
+            $ref: '#/components/schemas/InvoiceLineItem'
+        taxRate:
+          type: [string, 'null']
+          description: Up to 4 decimal places.
+        discountAmount:
+          type: [string, 'null']
+          description: 3 decimal places.
+        subtotal:
+          type: string
+        taxAmount:
+          type: string
+        total:
+          type: string
+        sentAt:
+          type: [string, 'null']
+          format: date-time
+        paidAt:
+          type: [string, 'null']
+          format: date-time
+    InvoiceDraftInput:
+      type: object
+      required: [customerId, issueDate, dueDate, currency, lineItems]
+      properties:
+        customerId:
+          type: string
+          format: uuid
+        issueDate:
+          type: string
+          format: date
+        dueDate:
+          type: string
+          format: date
+        currency:
+          type: string
+          const: TND
+        lineItems:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            type: object
+            required: [description, quantity, unitPrice]
+            properties:
+              description:
+                type: string
+                minLength: 1
+                maxLength: 240
+              quantity:
+                type: string
+                description: Positive decimal, at most 3 places.
+              unitPrice:
+                type: string
+                description: Non-negative decimal, at most 3 places.
+        taxRate:
+          type: [string, 'null']
+          description: Non-negative decimal, at most 4 places.
+        discountAmount:
+          type: [string, 'null']
+          description: Non-negative decimal, at most 3 places.
+    AuditEvent:
+      type: object
+      required: [id, action, actorPrincipalId, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        action:
+          type: string
+          description: Stable snake_case action name, for example `invoice.sent`.
+        actorPrincipalId:
+          type: string
+          format: uuid
+        metadata:
+          type: object
+          additionalProperties:
+            type: [string, 'null']
+        createdAt:
+          type: string
+          format: date-time
+    Dashboard:
+      type: object
+      required:
+        - outstandingMillimes
+        - overdueMillimes
+        - overdueCount
+        - paidThisMonthMillimes
+        - customerCount
+        - statusCounts
+        - revenueByMonth
+        - recentInvoices
+      properties:
+        outstandingMillimes:
+          type: integer
+        overdueMillimes:
+          type: integer
+        overdueCount:
+          type: integer
+        paidThisMonthMillimes:
+          type: integer
+        customerCount:
+          type: integer
+        statusCounts:
+          type: object
+          required: [draft, sent, overdue, paid]
+          properties:
+            draft:
+              type: integer
+            sent:
+              type: integer
+            overdue:
+              type: integer
+            paid:
+              type: integer
+        revenueByMonth:
+          type: array
+          description: Twelve entries, oldest first.
+          items:
+            type: object
+            required: [month, paidMillimes]
+            properties:
+              month:
+                type: string
+                description: '`YYYY-MM`.'
+              paidMillimes:
+                type: integer
+        recentInvoices:
+          type: array
+          items:
+            $ref: '#/components/schemas/Invoice'
+    Notification:
+      type: object
+      required: [id, type, data, organizationId, read, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        type:
+          type: string
+          enum: [invoice_overdue, invoice_paid, invitation_accepted, member_joined]
+        data:
+          type: object
+          additionalProperties: true
+        organizationId:
+          type: [string, 'null']
+          format: uuid
+        read:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        readAt:
+          type: [string, 'null']
+          format: date-time
+    Readiness:
+      type: object
+      required: [status, checks]
+      properties:
+        status:
+          type: string
+          enum: [ready, unavailable]
+        checks:
+          type: object
+          required: [database]
+          properties:
+            database:
+              type: string
+              enum: [ok, unavailable]
