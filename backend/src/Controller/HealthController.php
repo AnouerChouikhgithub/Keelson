@@ -13,7 +13,7 @@ use Symfony\Component\Routing\Attribute\Route;
  * Intentionally reports only that the application boots: it performs no
  * database or provider call, so a probe cannot leak tenant data or turn a
  * dependency outage into an authentication attempt. Readiness is verified by
- * the operator against PostgreSQL/Compose (see how-to-run.md).
+ * the operator against PostgreSQL/Compose (see README.md).
  */
 final class HealthController
 {

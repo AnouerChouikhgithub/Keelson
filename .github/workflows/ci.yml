@@ -1,6 +1,6 @@
 name: CI
 
-# Verifies the checks documented in DEVELOPMENT_ROADMAP.md / how-to-run.md.
+# Verifies the checks documented in README.md and docs/ROADMAP.md.
 # No secrets are used: OIDC values below are dummies because the HTTP tests
 # authenticate with KernelBrowser::loginUser() and never contact a provider.
 on:

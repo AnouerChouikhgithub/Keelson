@@ -1,16 +1,5 @@
 # UI specification (source of truth for all screens)
 
-INSTRUCTIONS FOR THE CODING AGENT
-- Implement the screens below as real, working code in `frontend/`. Wording such as "generate" or "visual reference" means: build them in the codebase.
-- Work in the batches the developer asks for. Never skip, merge or summarize screens inside a requested batch.
-- Every screen must support light AND dark mode through the central theme tokens. No hard-coded colors in components.
-- Use typed mock data in `src/mocks/` for now. No backend calls until the developer says so.
-- Reuse components. If a pattern appears twice, extract a component.
-- Before the first batch, build the foundation: theme tokens, theme provider with Light / Dark / System, base components, navigation skeleton with a placeholder for every screen.
-- Ask before adding a dependency that is not already listed in AGENTS.md. If a listed library is incompatible with the installed framework version, tell the developer and propose the closest alternative.
-
----
-
 ## Part 1: Shared design foundation
 
 You are a senior product designer and front-end engineer. Design a professional, polished, production-grade UI. It must look like a funded startup's app, not a template.
@@ -27,10 +16,10 @@ DESIGN SYSTEM
 - Font: Inter (system font fallback). Scale: display 28/34 semibold, title 20/28 semibold, body 16/24 regular, caption 13/18 medium. Tabular numbers for prices, times and metrics.
 - 4pt spacing grid. Corner radius: 12 cards and inputs, 16 sheets and modals, full for chips and avatars.
 - Minimum touch target 44pt (primary buttons 52pt tall). Respect safe areas.
-- Icons: one consistent single-stroke set (Lucide), 1.75px stroke. No emoji as icons.
+- Icons: one consistent single-stroke set, 1.75px stroke, drawn as inline SVG. No emoji as icons.
 - Components to build once and reuse: buttons (primary, secondary, ghost, destructive, with loading state), text inputs (label above, helper text, error state, disabled), cards, list rows, chips and badges, avatars, segmented control, switch, bottom sheet or modal, toast, skeleton loaders.
 - Every list and data screen needs designed states: loading (skeletons), empty (simple line icon + one-line explanation + primary CTA), error (message + Retry), and success feedback.
-- Motion: 150-250ms ease-out transitions, subtle press feedback, haptics on key actions (mobile). Respect reduced-motion settings.
+- Motion: 150-250ms ease-out transitions, subtle press feedback. Respect reduced-motion settings.
 - Accessibility: WCAG AA contrast (4.5:1 text) in BOTH modes, visible focus states, labels for every control, dynamic text sizing must not break layouts.
 
 CONTENT
@@ -51,7 +40,7 @@ PROJECT: Keelson. A multi-tenant SaaS starter with a real demo product on top: i
 
 PRIMARY COLOR: light #0F766E (white text on it), dark #2DD4BF (near-black text on it). Logo idea: a bold letter K built from a vertical beam and two angled strokes, like a ship's keel. Monochrome, sharp edges.
 
-STACK: React, Vite, TypeScript, Tailwind CSS, shadcn/ui, lucide-react, Recharts. Responsive: desktop-first, fully usable on mobile web.
+STACK: React, Vite, TypeScript, plain CSS with theme tokens. Responsive: desktop-first, fully usable on mobile web.
 
 SCREENS (each in light AND dark, with table density, hover, loading skeleton and empty states):
 1. Sign in / Sign up / Forgot password.
