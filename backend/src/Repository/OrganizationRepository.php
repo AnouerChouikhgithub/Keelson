@@ -16,11 +16,6 @@ final class OrganizationRepository extends ServiceEntityRepository
         parent::__construct($registry, Organization::class);
     }
 
-    public function findBySubdomain(string $normalizedSubdomain): ?Organization
-    {
-        return $this->findOneBy(['subdomain' => $normalizedSubdomain]);
-    }
-
     public function findActiveForPrincipalInOrganization(string $organizationId, string $principalId): ?Organization
     {
         return $this->createQueryBuilder('organization')
@@ -35,21 +30,5 @@ final class OrganizationRepository extends ServiceEntityRepository
             ->setParameter('organizationStatus', 'active')
             ->getQuery()
             ->getOneOrNullResult();
-    }
-
-    /** @return list<Organization> */
-    public function findForPrincipal(string $principalId): array
-    {
-        return $this->createQueryBuilder('organization')
-            ->innerJoin(Membership::class, 'membership', 'WITH', 'membership.organization = organization')
-            ->andWhere('IDENTITY(membership.principal) = :principalId')
-            ->andWhere('membership.status = :status')
-            ->andWhere('organization.status = :organizationStatus')
-            ->setParameter('principalId', $principalId)
-            ->setParameter('status', 'active')
-            ->setParameter('organizationStatus', 'active')
-            ->orderBy('organization.createdAt', 'ASC')
-            ->getQuery()
-            ->getResult();
     }
 }
