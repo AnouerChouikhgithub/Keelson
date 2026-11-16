@@ -20,7 +20,9 @@ use App\Service\InvoiceAuditLogger;
 use App\Service\InvoiceCalculator;
 use App\Service\InvoiceInput;
 use App\Service\InvoiceSerializer;
+use App\Service\NotificationService;
 use App\Service\TransactionBoundary;
+use App\Util\Cursor;
 use App\Util\Uuid;
 use Doctrine\DBAL\Exception\ForeignKeyConstraintViolationException;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
@@ -53,6 +55,7 @@ final class InvoiceApiController extends AbstractController
         private readonly InvoiceInput $invoiceInput,
         private readonly InvoiceSerializer $serializer,
         private readonly TransactionBoundary $transactions,
+        private readonly NotificationService $notifications,
     ) {
     }
 
@@ -65,10 +68,17 @@ final class InvoiceApiController extends AbstractController
         }
         $principal = $this->principal();
         $limit = $this->limit($request);
-        $rows = $this->customers->findForOrganizationList($organizationId, $principal->getId(), $request->query->get('cursor'), $limit);
+        $rows = $this->customers->findForOrganizationList(
+            $organizationId,
+            $principal->getId(),
+            $request->query->get('q'),
+            Cursor::decode($request->query->get('cursor')),
+            $limit,
+        );
         $hasMore = count($rows) > $limit;
-        $nextCursor = $hasMore ? $rows[$limit - 1]->getId() : null;
         $rows = array_slice($rows, 0, $limit);
+        $lastCustomer = $hasMore ? $rows[array_key_last($rows)] : null;
+        $nextCursor = null !== $lastCustomer ? Cursor::encode($lastCustomer->getCreatedAt(), $lastCustomer->getId()) : null;
 
         return $this->json(['items' => array_map(fn (Customer $customer) => $this->serializer->customer($customer, false), $rows), 'nextCursor' => $nextCursor]);
     }
@@ -211,17 +221,15 @@ final class InvoiceApiController extends AbstractController
             throw ApiException::badRequest('Invoice status filter is invalid.');
         }
         $limit = $this->limit($request);
-        $cursor = $this->invoiceCursor($request->query->get('cursor'));
-        if ($request->query->has('cursor') && null === $cursor) {
-            throw ApiException::invalidId();
-        }
+        $cursor = Cursor::decode($request->query->get('cursor'));
         // Read-only: overdue is derived in the query filter and in the
         // serializer. A GET must not write status or audit rows, because that
         // could overwrite a concurrent payment.
-        $rows = $this->invoices->findForOrganizationList($organizationId, $principal->getId(), $status, $limit, $cursor);
+        $rows = $this->invoices->findForOrganizationList($organizationId, $principal->getId(), $status, $limit, $cursor, $request->query->get('q'));
         $hasMore = count($rows) > $limit;
-        $nextCursor = $hasMore ? $this->encodeInvoiceCursor($rows[$limit - 1]) : null;
         $rows = array_slice($rows, 0, $limit);
+        $lastInvoice = $hasMore ? $rows[array_key_last($rows)] : null;
+        $nextCursor = null !== $lastInvoice ? Cursor::encode($lastInvoice->getCreatedAt(), $lastInvoice->getId()) : null;
 
         return $this->json(['items' => array_map($this->serializer->invoice(...), $rows), 'nextCursor' => $nextCursor]);
     }
@@ -398,13 +406,27 @@ final class InvoiceApiController extends AbstractController
             throw ApiException::invalidId();
         }
         $principal = $this->principal();
-        $events = $this->auditEvents->findForOrganization($organizationId, $principal->getId(), $invoiceId, $this->limit($request));
+        $limit = $this->limit($request);
+        $events = $this->auditEvents->findForOrganization(
+            $organizationId,
+            $principal->getId(),
+            $invoiceId,
+            $limit,
+            Cursor::decode($request->query->get('cursor')),
+            $request->query->get('q'),
+        );
+        $hasMore = count($events) > $limit;
+        $events = array_slice($events, 0, $limit);
+        $lastEvent = $hasMore ? $events[array_key_last($events)] : null;
 
-        return $this->json(['items' => array_map(static fn (InvoiceAuditEvent $event) => [
-            'id' => $event->getId(), 'invoiceId' => $event->getInvoiceId(), 'customerId' => $event->getCustomerId(),
-            'action' => $event->getAction(), 'actorPrincipalId' => $event->getActorPrincipalId(),
-            'metadata' => $event->getMetadata(), 'createdAt' => $event->getCreatedAt()->format(DATE_ATOM),
-        ], $events)]);
+        return $this->json([
+            'items' => array_map(static fn (InvoiceAuditEvent $event) => [
+                'id' => $event->getId(), 'invoiceId' => $event->getInvoiceId(), 'customerId' => $event->getCustomerId(),
+                'action' => $event->getAction(), 'actorPrincipalId' => $event->getActorPrincipalId(),
+                'metadata' => $event->getMetadata(), 'createdAt' => $event->getCreatedAt()->format(DATE_ATOM),
+            ], $events),
+            'nextCursor' => null !== $lastEvent ? Cursor::encode($lastEvent->getCreatedAt(), $lastEvent->getId()) : null,
+        ]);
     }
 
     private function transitionInvoice(string $organizationId, string $invoiceId, string $transition): JsonResponse
@@ -429,6 +451,11 @@ final class InvoiceApiController extends AbstractController
                 $changed = 'send' === $transition ? $invoice->send() : $invoice->markPaid();
                 if ($changed) {
                     $this->audit($invoice->getOrganization(), $principal, 'paid' === $transition ? 'invoice.paid' : 'invoice.sent', $invoiceId);
+                    if ('paid' === $transition) {
+                        // The accountant who recorded the payment does not need to be
+                        // told about it; the rest of the administration does.
+                        $this->notifications->invoicePaid($invoice, $principal);
+                    }
                     $this->entityManager->flush();
                 }
 
@@ -518,39 +545,13 @@ final class InvoiceApiController extends AbstractController
         return $this->customerPayload($request);
     }
 
-    private function invoiceCursor(?string $encoded): ?array
-    {
-        if (null === $encoded || '' === $encoded) {
-            return null;
-        }
-        $decoded = base64_decode(strtr($encoded, '-_', '+/'), true);
-        if (false === $decoded) {
-            return null;
-        }
-        try {
-            $cursor = json_decode($decoded, true, 512, JSON_THROW_ON_ERROR);
-        } catch (\JsonException) {
-            return null;
-        }
-        if (!is_array($cursor) || !is_string($cursor['id'] ?? null) || !Uuid::isValid($cursor['id']) || !is_string($cursor['createdAt'] ?? null)) {
-            return null;
-        }
-        try {
-            $createdAt = new \DateTimeImmutable($cursor['createdAt']);
-        } catch (\Exception) {
-            return null;
-        }
-
-        return ['id' => $cursor['id'], 'createdAt' => $createdAt];
-    }
-
-    private function encodeInvoiceCursor(Invoice $invoice): string
-    {
-        return rtrim(strtr(base64_encode(json_encode(['id' => $invoice->getId(), 'createdAt' => $invoice->getCreatedAt()->format(DATE_ATOM)], JSON_THROW_ON_ERROR)), '+/', '-_'), '=');
-    }
-
     private function limit(Request $request): int
     {
-        return max(1, min(100, (int) $request->query->get('limit', 50)));
+        $raw = $request->query->get('limit');
+        if (null === $raw || '' === $raw) {
+            return 25;
+        }
+
+        return max(1, min(100, (int) $raw));
     }
 }

@@ -74,6 +74,11 @@ class Customer
         return $this->organization;
     }
 
+    public function getCreatedAt(): \DateTimeImmutable
+    {
+        return $this->createdAt;
+    }
+
     public function getName(): string
     {
         return $this->name;

@@ -41,7 +41,7 @@ final class InvoiceRepository extends ServiceEntityRepository
     }
 
     /** @return list<Invoice> */
-    public function findForOrganizationList(string $organizationId, string $principalId, ?string $status = null, int $limit = 50, ?array $cursor = null): array
+    public function findForOrganizationList(string $organizationId, string $principalId, ?string $status = null, int $limit = 25, ?array $cursor = null, ?string $q = null): array
     {
         $builder = $this->createQueryBuilder('invoice')
             ->innerJoin('invoice.organization', 'organization')
@@ -66,6 +66,11 @@ final class InvoiceRepository extends ServiceEntityRepository
                 ->setParameter('cursorCreatedAt', $cursor['createdAt'])
                 ->setParameter('cursorId', $cursor['id']);
         }
+        if (null !== $q && '' !== trim($q)) {
+            // An invoice is found by its number or by who it is for.
+            $builder->andWhere('(LOWER(invoice.number) LIKE :q OR LOWER(customer.name) LIKE :q)')
+                ->setParameter('q', '%'.mb_strtolower(addcslashes(trim($q), '%_\\')).'%');
+        }
         if ('overdue' === $status) {
             $builder->andWhere('(invoice.status = :invoiceStatus OR (invoice.status = :sentStatus AND invoice.dueDate < :today))')
                 ->setParameter('invoiceStatus', 'overdue')
@@ -80,6 +85,28 @@ final class InvoiceRepository extends ServiceEntityRepository
         }
 
         return $builder->getQuery()->getResult();
+    }
+
+    /**
+     * The newest invoices of a tenant, customer loaded with them.
+     *
+     * The dashboard lists five of these; fetch-joining the customer keeps that
+     * list at one query instead of one per row.
+     *
+     * @return list<Invoice>
+     */
+    public function findRecentForOrganization(string $organizationId, int $limit = 5): array
+    {
+        return $this->createQueryBuilder('invoice')
+            ->innerJoin('invoice.customer', 'customer')
+            ->addSelect('customer')
+            ->andWhere('IDENTITY(invoice.organization) = :organizationId')
+            ->setParameter('organizationId', $organizationId)
+            ->orderBy('invoice.createdAt', 'DESC')
+            ->addOrderBy('invoice.id', 'DESC')
+            ->setMaxResults(max(1, min($limit, 50)))
+            ->getQuery()
+            ->getResult();
     }
 
     public function findForOrganizationForUpdate(string $organizationId, string $invoiceId, string $principalId): ?Invoice

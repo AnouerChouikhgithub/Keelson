@@ -37,8 +37,18 @@ final class CustomerRepository extends ServiceEntityRepository
             ->getOneOrNullResult();
     }
 
-    /** @return list<Customer> */
-    public function findForOrganizationList(string $organizationId, string $principalId, ?string $cursor = null, int $limit = 50): array
+    /**
+     * One keyset page of a tenant's customers, newest first.
+     *
+     * The cursor is the (created_at, id) of the last row sent, not an offset: a
+     * customer created while the client pages through cannot shift the window.
+     * `q` matches name or email case-insensitively.
+     *
+     * @param array{id: string, createdAt: \DateTimeImmutable}|null $cursor
+     *
+     * @return list<Customer>
+     */
+    public function findForOrganizationList(string $organizationId, string $principalId, ?string $q = null, ?array $cursor = null, int $limit = 25): array
     {
         $builder = $this->createQueryBuilder('customer')
             ->innerJoin('customer.organization', 'organization')
@@ -51,10 +61,19 @@ final class CustomerRepository extends ServiceEntityRepository
             ->setParameter('principalId', $principalId)
             ->setParameter('membershipStatus', 'active')
             ->setParameter('organizationStatus', 'active')
-            ->orderBy('customer.id', 'ASC')
+            ->orderBy('customer.createdAt', 'DESC')
+            ->addOrderBy('customer.id', 'DESC')
             ->setMaxResults(max(1, min($limit, 100)) + 1);
         if (null !== $cursor) {
-            $builder->andWhere('customer.id > :cursor')->setParameter('cursor', $cursor);
+            $builder->andWhere('(customer.createdAt < :cursorCreatedAt OR (customer.createdAt = :cursorCreatedAt AND customer.id < :cursorId))')
+                ->setParameter('cursorCreatedAt', $cursor['createdAt'])
+                ->setParameter('cursorId', $cursor['id']);
+        }
+        if (null !== $q && '' !== trim($q)) {
+            // DQL has no ILIKE; lower-casing both sides gives the same
+            // case-insensitive "contains" on PostgreSQL.
+            $builder->andWhere('(LOWER(customer.name) LIKE :q OR LOWER(customer.email) LIKE :q)')
+                ->setParameter('q', '%'.mb_strtolower(addcslashes(trim($q), '%_\\')).'%');
         }
 
         return $builder->getQuery()->getResult();
