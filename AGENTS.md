@@ -112,11 +112,13 @@ installed. Keep the UI clean, modern and accessible (WCAG AA contrast).
   `-p 127.0.0.1::5432` and read the assigned port back — fixed ports can fall in
   reserved ranges.
 - Synthetic demo data lives only in `backend/src/DataFixtures/` and is seeded
-  explicitly with `php bin/console app:fixtures:load --env=test --force`. It is
+  explicitly with `php bin/console app:fixtures:load --env=dev --force` (or
+  `bash backend/bin/dev-reset.sh` for a full rebuild of `keelson_dev`). It is
   idempotent, never deletes, refuses
-  `prod`/non-PostgreSQL/non-loopback/ambiguous targets; every fixture principal
-  gets the documented development password `Keelson-dev-2026` and a confirmed
-  address. The frontend never reads it. `FixtureTargetGuard` validates the
+  `prod`/non-PostgreSQL/non-loopback/ambiguous targets; every fixture account is
+  created with the documented demo password (`FIXTURE_PASSWORD`, default
+  `Keelson-Demo-2026!`), hashed at load time, and only `unverified@example.test`
+  keeps an unconfirmed address. The frontend never reads it. `FixtureTargetGuard` validates the
   **effective** DBAL connection parameters (`Connection::getParams()`, including
   Doctrine's test `dbname_suffix`), not the raw `DATABASE_URL`; validating the URL
   was what made CI refuse its own isolated `keelson_test` database.

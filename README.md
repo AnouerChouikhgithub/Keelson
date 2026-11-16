@@ -56,8 +56,8 @@ link it contains and sign in. Nothing is pre-seeded, and the language selector o
 the auth screens switches the whole flow between English, French and Arabic.
 
 `backend/.env.local` is git-ignored and the only place credentials belong. It
-needs `APP_SECRET` and `DATABASE_URL` (the Compose URL is
-`postgresql://app:app@127.0.0.1:5433/keelson?serverVersion=16&charset=utf8`).
+needs `APP_SECRET` and `DATABASE_URL` (the committed development URL is
+`postgresql://app:app@127.0.0.1:5433/keelson_dev?serverVersion=16&charset=utf8`).
 Sign-in additionally reads `MAILER_DSN` (Mailpit at `smtp://127.0.0.1:1026`),
 `FRONTEND_URL` (where verification and reset links point) and
 `REQUIRE_VERIFIED_EMAIL`; without them console commands still work but new
@@ -67,6 +67,50 @@ http://localhost:8026 after registering.
 `GET /healthz` and `GET /readyz` are `PUBLIC_ACCESS` and need no session. The
 Compose database uses the persistent `db_data` volume: never reset it, never run
 `docker compose down -v`, and never point migrations or tests at it.
+
+## Demo accounts
+
+`backend/bin/dev-reset.sh` (or `backend\bin\dev-reset.ps1` on Windows) rebuilds
+`keelson_dev` — drop, create, migrate, seed — and prints the accounts it created.
+The seed is idempotent: running it twice creates nothing new and changes nothing.
+
+| Email | Role(s) | Organization(s) |
+| --- | --- | --- |
+| `owner@example.test` | Owner | Northwind Demo Co. (fixture) |
+| `admin@example.test` | Admin | Northwind Demo Co. (fixture) |
+| `member@example.test` | Member | Northwind Demo Co. **and** Contoso Demo Co. (fixture) |
+| `viewer@example.test` | Viewer | Contoso Demo Co. (fixture) |
+| `unverified@example.test` | — (no membership) | — — sign-in answers `403 email_not_verified` |
+
+Every account shares the password **`Keelson-Demo-2026!`**. Set `FIXTURE_PASSWORD`
+(at least 10 characters) before seeding to use another one; the loader hashes it at
+load time and never stores or prints a hash. The command's table shows the password
+column only outside production, which the target guard refuses anyway.
+
+```sh
+bash backend/bin/dev-reset.sh                          # reset keelson_dev and seed
+cd backend && php bin/console app:fixtures:load --force --env=dev   # seed only
+```
+
+These accounts exist **only in a local development or test database**: the loader
+refuses `APP_ENV=prod`, non-PostgreSQL drivers, non-loopback hosts and any database
+name without a `test`/`dev`/`fixture` segment. The seeded data is 2 organizations,
+12 customers and 30 invoices (draft, sent, overdue and paid, with dates relative to
+today) plus the invoice audit events the API would have written.
+
+### An existing Docker volume
+
+`POSTGRES_DB` only applies when the `db_data` volume is first initialised. A volume
+created before this sprint still contains a database named `keelson`; create the
+development one once and re-seed:
+
+```sh
+cd backend && php bin/console doctrine:database:create --env=dev
+bash bin/dev-reset.sh          # now drops/creates/migrates/seeds keelson_dev
+```
+
+Never run that against a database named `keelson`, and never against the volume you
+care about.
 
 ## Checks
 
@@ -114,7 +158,7 @@ Last run in this repository (2026-11-16, Sprint 1):
 | `php bin/console lint:container --env=test` | PASS |
 | `php bin/console debug:router --env=test` | PASS — 24 routes |
 | `php bin/phpstan analyse` | PASS — no errors |
-| `php bin/phpunit` (disposable container) | PASS — 161 tests, 754 assertions |
+| `php bin/phpunit` (disposable container) | PASS — 170 tests, 932 assertions |
 | `doctrine:schema:validate --env=test` | **FAIL** — see limitations |
 
 The former anonymous-request failures are gone: an unauthenticated API call now

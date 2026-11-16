@@ -103,7 +103,7 @@ matrix, logout, and the fixture loader). Those assert a PostgreSQL platform,
 insert rows and delete them in teardown, so they must never run against a shared,
 production or customer database.
 
-Last full run (2026-11-16): **157 tests / 721 assertions, exit 0**. The suite now
+Last full run (2026-11-16): **170 tests / 932 assertions, exit 0**. The suite now
 covers registration, email verification, login (including throttling and the
 unverified-address order), logout, password reset, CSRF, request-shape errors and
 the token service, in addition to the invoice API and concurrency suites.
@@ -121,24 +121,38 @@ run `doctrine:schema:update` or `migrations:diff` until the index is renamed.
 on boot, migration or test:
 
 ```sh
-php bin/console app:fixtures:load --env=test --force
+php bin/console app:fixtures:load --env=dev --force     # or --env=test
+bash bin/dev-reset.sh                                  # drop/create/migrate/seed keelson_dev
 ```
 
-- Data is entirely synthetic: `example.test` emails, four principals, two
-  organizations, all four roles, four customers and six invoices covering draft,
-  sent, overdue and paid.
+- Data is entirely synthetic: `example.test` emails, five accounts, two
+  organizations, all four roles, 12 customers and 30 invoices covering draft, sent,
+  overdue and paid with varied line items, tax and discount.
+- **The accounts can sign in.** The loader hashes the shared password with the
+  application's own hasher at seed time, marks every address verified except
+  `unverified@example.test` (which exists to reproduce `403 email_not_verified`),
+  and the command prints the account table with the password column outside
+  production. The password comes from `FIXTURE_PASSWORD` and defaults to
+  `SyntheticFixtureCatalog::FALLBACK_PASSWORD`; a value below the 10-character
+  registration minimum is rejected before anything is written. No hash is ever
+  printed, stored in a fixture file or committed.
+- Invoice numbers follow the API's per-organization yearly format (`YYYY-NNNNNN`),
+  issue/due dates are offsets from today so overdue and upcoming states always
+  exist, and every invoice gets `invoice.created`, `invoice.sent` and `invoice.paid`
+  events through `App\Service\InvoiceAuditLogger` — the same service the API uses,
+  so the seeded trail is shaped like a real one and is attributable to a member of
+  the invoice's own organization.
 - It matches by natural key and never creates duplicates; it deletes, truncates and
-  updates nothing.
+  updates nothing. Loading twice reports `created = 0` on the second run.
 - `FixtureTargetGuard` validates the **effective DBAL parameters**
   (`Connection::getParams()`, where Doctrine has already applied the test
   `dbname_suffix`), not the raw `DATABASE_URL`. It refuses `APP_ENV=prod`,
   non-PostgreSQL drivers, non-loopback hosts, empty names and names without a
-  `test`/`dev`/`fixture` segment, and its messages never include credentials.
-- Every fixture principal is created with the documented development password
-  `Keelson-dev-2026` (`SyntheticFixtureCatalog::DEV_PASSWORD`) and a confirmed
-  address, so the seeded account is usable locally. Sprint 4 finalises the fixture
-  flow; the target guard keeps this off any real database. The frontend never reads
-  fixture records directly.
+  `test`/`dev`/`fixture` segment, and its messages never include credentials. The
+  development database is `keelson_dev`; the bare name `keelson` is refused.
+- `php bin/console app:db:target` prints the effective `database@host` (no
+  credentials) — the reset scripts use it to refuse before they drop anything. The
+  frontend never reads fixture records directly.
 
 ### Isolated test database
 
@@ -198,8 +212,9 @@ All of them are JSON under `/api/auth` and none of them needs a session.
   Tokens and passwords are never logged.
 
 To try it locally, run Mailpit (`docker compose up -d`) and the API, register, then
-open http://localhost:8026 and follow the link. Seeded fixtures already have a
-confirmed address and the password `Keelson-dev-2026`.
+open http://localhost:8026 and follow the link. The seeded accounts skip that step:
+four of them have a confirmed address and the shared password `Keelson-Demo-2026!`
+(`FIXTURE_PASSWORD`), while `unverified@example.test` shows the refusal path.
 
 ## Not implemented
 
