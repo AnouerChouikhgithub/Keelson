@@ -95,7 +95,6 @@ export function SignUpScreen() {
             inputMode="email"
             aria-invalid={fields?.email === undefined ? undefined : true}
             aria-describedby={fields?.email === undefined ? undefined : 'sign-up-email-error'}
-            disabled={pending}
             required
           />
           {fields?.email !== undefined && <p className="field-error" id="sign-up-email-error">{fields.email}</p>}
@@ -109,7 +108,6 @@ export function SignUpScreen() {
           inputRef={registerField('password')}
           error={fields?.password}
           hint={m.auth.passwordRule}
-          disabled={pending}
         />
 
         <div className="field">
@@ -123,7 +121,6 @@ export function SignUpScreen() {
             autoComplete="name"
             aria-invalid={fields?.displayName === undefined ? undefined : true}
             aria-describedby={fields?.displayName === undefined ? undefined : 'sign-up-name-error'}
-            disabled={pending}
             required
           />
           {fields?.displayName !== undefined && <p className="field-error" id="sign-up-name-error">{fields.displayName}</p>}
@@ -140,7 +137,6 @@ export function SignUpScreen() {
             autoComplete="organization"
             aria-invalid={fields?.organizationName === undefined ? undefined : true}
             aria-describedby={fields?.organizationName === undefined ? undefined : 'sign-up-organization-error'}
-            disabled={pending}
             required
           />
           {fields?.organizationName !== undefined && <p className="field-error" id="sign-up-organization-error">{fields.organizationName}</p>}
