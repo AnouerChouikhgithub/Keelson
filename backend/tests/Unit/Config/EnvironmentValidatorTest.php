@@ -60,6 +60,26 @@ final class EnvironmentValidatorTest extends TestCase
         self::assertStringContainsString('https', $report);
     }
 
+    #[\PHPUnit\Framework\Attributes\DataProvider('knownDevelopmentSecrets')]
+    public function testKnownDevelopmentSecretsAreRefusedInProduction(string $secret): void
+    {
+        $configuration = $this->productionConfiguration();
+        $configuration['APP_SECRET'] = $secret;
+
+        $report = implode("\n", $this->validator->validate($configuration, 'prod')['errors']);
+
+        self::assertStringContainsString('APP_SECRET', $report);
+    }
+
+    /** @return iterable<string, array{string}> */
+    public static function knownDevelopmentSecrets(): iterable
+    {
+        yield 'the word secret' => ['secret'];
+        yield 'a development default' => ['keelson-dev-secret'];
+        yield 'a framework recipe value' => ['this-is-not-a-secret'];
+        yield 'thirty-two zeroes' => [str_repeat('0', 32)];
+    }
+
     public function testDebugMustBeDisabledInProduction(): void
     {
         $result = $this->validator->validate($this->productionConfiguration(), 'prod', true);
@@ -90,7 +110,7 @@ final class EnvironmentValidatorTest extends TestCase
     public function testMissingMailAndFrontendConfigurationIsOnlyAWarningOutsideProduction(): void
     {
         $result = $this->validator->validate([
-            'APP_SECRET' => 'dev-secret',
+            'APP_SECRET' => 'local-only-value-1234',
             'DATABASE_URL' => 'postgresql://app:app@127.0.0.1:5433/keelson?serverVersion=16',
             'DEFAULT_URI' => 'http://127.0.0.1:8000',
         ], 'dev');

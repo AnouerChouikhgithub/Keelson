@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
+use App\Entity\SecurityEvent;
 use App\Exception\ApiException;
 use App\Http\InputHydrator;
 use App\Http\JsonBody;
 use App\Input\ChangePasswordInput;
 use App\Input\UpdateProfileInput;
+use App\Service\SecurityEventRecorder;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -35,6 +37,7 @@ final class ProfileController extends AbstractController
         private readonly InputHydrator $hydrator,
         private readonly UserPasswordHasherInterface $passwordHasher,
         private readonly TokenStorageInterface $tokenStorage,
+        private readonly SecurityEventRecorder $events,
     ) {
     }
 
@@ -64,6 +67,7 @@ final class ProfileController extends AbstractController
 
         $principal->setPasswordHash($this->passwordHasher->hashPassword($principal, $input->newPassword));
         $this->entityManager->flush();
+        $this->events->record(SecurityEvent::PASSWORD_CHANGED, $principal);
 
         // Keep this session, invalidate the others (their serialized token still
         // carries the previous hash).

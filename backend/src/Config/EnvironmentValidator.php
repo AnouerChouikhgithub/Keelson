@@ -23,6 +23,26 @@ final class EnvironmentValidator
         'example.test',
         'ci-only',
         'your-',
+        'keelson-dev',
+        'dev-secret',
+        'test-secret',
+        'not-a-secret',
+    ];
+
+    /**
+     * Exact values that are published in this repository or in a framework
+     * recipe. A production secret must never be one of them, even when it is long
+     * enough and contains no placeholder substring.
+     */
+    private const KNOWN_DEV_SECRETS = [
+        'secret',
+        'app-secret',
+        'symfony',
+        'keelson',
+        'change-me',
+        'password',
+        'this-is-not-a-secret',
+        '00000000000000000000000000000000',
     ];
 
     /**
@@ -43,6 +63,8 @@ final class EnvironmentValidator
             $errors[] = 'APP_SECRET is not set.';
         } elseif ($this->isPlaceholder($secret)) {
             $errors[] = 'APP_SECRET still contains a placeholder value.';
+        } elseif ($production && \in_array(strtolower($secret), self::KNOWN_DEV_SECRETS, true)) {
+            $errors[] = 'APP_SECRET is a known development value.';
         } elseif ($production && strlen($secret) < 32) {
             $errors[] = 'APP_SECRET must be at least 32 characters long in production.';
         }

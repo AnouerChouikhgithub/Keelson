@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Security;
 
 use App\Entity\Principal;
+use App\Entity\SecurityEvent;
+use App\Service\SecurityEventRecorder;
 use App\Service\SessionPayloadFactory;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -25,6 +27,7 @@ final class JsonLoginSuccessHandler implements AuthenticationSuccessHandlerInter
         private readonly SessionPayloadFactory $payloads,
         private readonly EntityManagerInterface $entityManager,
         private readonly AuthAttemptLimiter $attempts,
+        private readonly SecurityEventRecorder $events,
     ) {
     }
 
@@ -34,6 +37,7 @@ final class JsonLoginSuccessHandler implements AuthenticationSuccessHandlerInter
         if ($user instanceof Principal) {
             $user->recordLogin();
             $this->entityManager->flush();
+            $this->events->record(SecurityEvent::LOGIN_SUCCESS, $user);
             // Knowing the right password clears this address' failed attempts so
             // a legitimate user who mistyped is not locked out afterwards.
             $this->attempts->resetFor($user);

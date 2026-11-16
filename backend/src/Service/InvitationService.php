@@ -8,6 +8,7 @@ use App\Entity\Invitation;
 use App\Entity\Membership;
 use App\Entity\Organization;
 use App\Entity\Principal;
+use App\Entity\SecurityEvent;
 use App\Exception\ApiException;
 use App\Repository\InvitationRepository;
 use App\Repository\MembershipRepository;
@@ -37,6 +38,7 @@ final class InvitationService
         private readonly UserPasswordHasherInterface $passwordHasher,
         private readonly MailerInterface $mailer,
         private readonly MailFactory $mails,
+        private readonly SecurityEventRecorder $events,
     ) {
     }
 
@@ -132,6 +134,11 @@ final class InvitationService
             $this->notifications->memberJoined($organization, $principal, true);
             $this->notifications->invitationAccepted($organization, $principal, $invitation->getInvitedBy());
             $this->entityManager->flush();
+            $this->events->record(SecurityEvent::INVITATION_ACCEPTED, $principal, [
+                'organizationId' => $organization->getId(),
+                'role' => $invitation->getRole(),
+                'accountCreated' => $created,
+            ]);
 
             return ['organization' => $organization, 'membership' => $membership, 'principal' => $principal, 'created' => $created];
         });
