@@ -7,10 +7,9 @@ sign-in flow with `curl` against a local server with Mailpit. This document desc
 that exists today**, not a target design. Anything the frontend needs but the backend does not
 provide is listed in [Gaps](#gaps-and-how-each-was-classified).
 
-Base URL: same origin as the SPA. In development the Vite server proxies `/api` to Symfony
-(`frontend/vite.config.ts`, target `KEELSON_BACKEND_ORIGIN`, default `http://127.0.0.1:8000`).
-Its `/login`, `/login_check` and `/logout` proxy entries are now inert: those routes no longer exist
-in the backend. The SPA still calls the old endpoints because it is updated in Sprint 3.
+Base URL: same origin as the SPA. In development the Vite server proxies only `/api` to Symfony
+(`frontend/vite.config.ts`, target `KEELSON_BACKEND_ORIGIN`, default `http://127.0.0.1:8000`); every
+other path is a client-side route served by the SPA.
 
 All responses are JSON with `Cache-Control: no-store, private`, except `204 No Content` replies
 and HTML error pages produced by Symfony itself.
@@ -36,7 +35,8 @@ Errors always use one shape:
 
 `config/packages/security.yaml` access control, in order:
 
-1. `^/api/auth/(register|verify-email|login|forgot-password|reset-password)$` — `PUBLIC_ACCESS`
+1. `^/api/auth/(register|verify-email|login|forgot-password|reset-password|resend-verification)$` —
+   `PUBLIC_ACCESS`
 2. `^/api/session$` — `PUBLIC_ACCESS` (the shell must be able to learn it is signed out)
 3. `^/healthz$`, `^/readyz$` — `PUBLIC_ACCESS`
 4. `^/` — `ROLE_USER`
@@ -108,6 +108,23 @@ JSON body `{"token", "password"}`. `204` on success; the address is also marked 
 receiving the link proves control of the mailbox. Changing the hash signs every other session out
 (Symfony's context listener compares the stored hash on the next request). Reused or expired tokens
 return `400 invalid_token`.
+
+### `POST /api/auth/resend-verification`
+
+JSON body `{"email": "…"}`. Added in Sprint 3 so the sign-in screen can offer a
+"Resend the email" action when the password was right but the address is unconfirmed.
+
+- Auth: public, so the visitor does not need a session they cannot get yet.
+- Always `202` with an empty body — for an unknown address, for an address that is
+already confirmed, and for one that is waiting. A fresh link is mailed only in the
+last case, so the endpoint neither reveals nor probes accounts.
+- Issuing the new token retires the previous unused verification link.
+- Throttled like sign-in, in its own buckets: 5 requests per address and 100 per
+  client address per minute, then `429 too_many_resend_attempts` with `Retry-After`.
+  Separate buckets mean flooding this endpoint cannot lock the account out of
+  signing in once it is confirmed.
+- `422 validation_failed` when the body is not a valid address (a malformed address
+  is a client mistake, not an account probe).
 
 ### `POST /api/auth/logout`
 

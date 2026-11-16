@@ -47,15 +47,15 @@ pnpm test                        # vitest run, Node environment
 ```
 
 `pnpm start` is a script alias for `vite --host 127.0.0.1`; plain `pnpm dev` binds
-only the IPv6 loopback. A running backend is needed for anything past the
-signed-out screen — see [`../README.md`](../README.md).
+only the IPv6 loopback. A running backend is needed for anything past the sign-in
+screen — see [`../README.md`](../README.md).
 
 ## Configuration
 
 | Variable | Where | Meaning |
 | --- | --- | --- |
 | `VITE_API_BASE_URL` | build/runtime env, optional | Absolute API origin when the API is not same-origin. Empty by default. **Never** a secret: Vite inlines every `VITE_*` value into the public bundle. |
-| `KEELSON_BACKEND_ORIGIN` | dev-server env, optional | Proxy target for `/api`, `/login`, `/login_check` and `/logout`. Defaults to `http://127.0.0.1:8000`. |
+| `KEELSON_BACKEND_ORIGIN` | dev-server env, optional | Proxy target for `/api` (the only proxied prefix). Defaults to `http://127.0.0.1:8000`. |
 
 The dev proxy uses `changeOrigin: false` on purpose: the session cookie must stay
 same-origin, and the API's mutation guard compares the request `Origin` with
@@ -66,22 +66,28 @@ misconfiguration.
 
 | File | Responsibility |
 | --- | --- |
-| `client.ts` | The only `fetch` call site. Same-origin credentials, `cache: 'no-store'`, JSON in/out, `204` and empty bodies, non-JSON error pages, network failures, abort passthrough, and an HTML success body on an API path mapped to `401`. No retries, no invented CSRF header. |
-| `errors.ts` | `ApiError` with `kind: 'http' \| 'network' \| 'parse'`, `status` and a sanitized `serverMessage`. |
+| `client.ts` | The only `fetch` call site. Same-origin credentials, `cache: 'no-store'`, JSON in/out, `204` and empty bodies, non-JSON error pages, network failures, abort passthrough, an HTML success body reported as a misrouted request, the `X-CSRF-Token` header on unsafe methods, and exactly one session re-read plus one replay after `403 csrf_invalid`. |
+| `auth.ts` | One function per `/api/auth/*` endpoint (`login`, `register`, `verifyEmail`, `resendVerification`, `forgotPassword`, `resetPassword`, `logout`); `login` returns the parsed session or throws. |
+| `errors.ts` | `ApiError` with `kind: 'http' \| 'network' \| 'parse'`, `status`, the server `code`, the per-field `fields` and a sanitized `serverMessage`. |
 | `types.ts` | Types mirroring the verified responses, plus the invoice status enum and the shared organization/team shapes. |
 | `organizations.ts` | `listOrganizations`, plus `canWriteInvoiceResources` / `canDeleteInvoiceResources`, which mirror `InvoiceVoter` only to hide actions the server would reject. |
 | `customers.ts`, `invoices.ts` | One function per endpoint, building paths and payloads. |
 | `useApiResource.ts` | Loads one resource, aborts on unmount or loader change, discards stale responses, derives `loading` instead of synchronizing it in an effect. |
-| `presentError.ts` | Maps `ApiError` to localized copy and exposes `isConflict`. |
+| `presentError.ts` | Maps `ApiError` to localized copy, `presentAuthError` for the auth screens (code → sentence, field → local rule) and `isConflict`. |
 
-Session and logout live in `src/session/session.ts`, which parses `/api/session`,
-validates the logout target and performs sign-out as a real top-level form POST so
-the browser follows the provider's end-session redirect.
+Session state lives in `src/session/`: `session.ts` parses `/api/session`,
+`AuthProvider.tsx` owns `{status, user, csrfToken}` plus `signIn`/`signOut`/`refresh`,
+and `AuthContext.ts` exposes it through `useAuth()`. The CSRF token is kept in
+memory only — never in `localStorage`, `sessionStorage` or a cookie of our own —
+and is handed to `api/client.ts` through `setCsrfToken`, which also installs the
+re-read the client uses after a `403 csrf_invalid`. Sign-out is a JSON call to
+`POST /api/auth/logout`; there is no provider redirect and no hidden form.
 
 ### Session and tenant rules
 
-- The shell renders only a gate until `/api/session` answers: loading, signed-out,
-  or "session unavailable" with a retry.
+- `src/AppRouter.tsx` renders a gate until `/api/session` answers (loading, or a
+  retryable failure when the API is unreachable), sends an anonymous visitor to
+  `/sign-in`, and keeps a signed-in user off the five public auth routes.
 - The display name and email come from the session; the organization list and role
   come from `/api/me/organizations`. There is no demo identity in that path.
 - The selected organization is a **client-side selection**, not authorization:
@@ -95,7 +101,7 @@ the browser follows the provider's end-session redirect.
 | Status | Shown as |
 | --- | --- |
 | `400`/`422` | the server's message at form level |
-| `401` (client-mapped) | session ended — the next shell load shows the signed-out screen |
+| `401` | for sign-in, "the email address or password is incorrect"; elsewhere, a session that ended — the next session read sends the visitor to `/sign-in` |
 | `403` | permission denied (the mutation origin/CSRF guard) |
 | `404` | "not found" — also what a foreign tenant returns |
 | `409` | conflict explanation and a refetch, never a silent overwrite |
@@ -137,15 +143,21 @@ icons and the mobile sidebar. Colors come from `src/theme/tokens.css` only
 
 ## Source layout
 
-- `src/App.tsx` — shell: session gate, sidebar navigation, topbar, organization
-  switcher, page switch, editor route state, theme control.
+- `src/AppRouter.tsx` — routes: the five public auth paths, the retryable gate, and
+  the shell for everything else. `src/components/StatusGate.tsx` renders loading and
+  the "cannot reach the API" retry.
+- `src/App.tsx` — shell: sidebar navigation, topbar, organization switcher, page
+  switch, editor route state, theme control. It reads the session from `useAuth`.
 - `src/api/` — the API layer above, with its tests.
-- `src/session/session.ts` — session parsing, logout-target validation, form-POST
-  sign-out.
+- `src/session/` — `session.ts` (payload parsing), `AuthProvider.tsx` (state machine
+  and the CSRF hand-off to the client), `AuthContext.ts` (`useAuth`).
 - `src/pages.ts` — `PageId`/`NavPageId`.
+- `src/screens/auth/` — `SignInScreen`, `SignUpScreen`, `VerifyEmailScreen`,
+  `ForgotPasswordScreen`, `ResetPasswordScreen`, plus the shared `AuthLayout`,
+  `PasswordField` and `useFieldFocus`.
 - `src/screens/` — `Dashboard`, `InvoicesScreen`, `InvoiceEditorScreen`,
   `CustomersScreen`, `TeamScreen`, `BillingScreen`, `PricingScreen`, `Onboarding`,
-  `NotificationsScreen`, `AccountScreen`, `SettingsScreen`, `SignedOutScreen`.
+  `NotificationsScreen`, `AccountScreen`, `SettingsScreen`.
 - `src/components/` — shared `StatusBadge`, `PersonCell`, `SearchField`,
   `EmptyState`, `OverlaySurface`, `Icon`, `SearchDialog`, `ProfileMenu`,
   `ThemeControl`, `SessionCard`.
@@ -156,12 +168,13 @@ icons and the mobile sidebar. Colors come from `src/theme/tokens.css` only
 
 ## Tests
 
-`pnpm test` — **57 tests in 5 files**, all in the Node environment:
+`pnpm test` — **61 tests in 6 files**, all in the Node environment:
 
 | File | Covers |
 | --- | --- |
-| `src/session/session.test.ts` (18) | session parsing, logout-target validation, rejection of unsafe targets |
-| `src/api/client.test.ts` (13) | JSON success, `204`, credentials/headers, validation error, non-JSON error, network failure, abort passthrough, HTML-success-as-`401` |
+| `src/session/session.test.ts` (8) | session parsing, anonymous shape, rejection of an authenticated payload without a usable CSRF token |
+| `src/api/auth.test.ts` (8) | one request shape per auth endpoint, sign-in session parsing, `email_not_verified` code, per-field `422` messages, CSRF header on sign-out |
+| `src/api/client.test.ts` (19) | JSON success, `204`, credentials/headers, validation error, non-JSON error, network failure, abort passthrough, HTML body, CSRF header on unsafe methods only, one replay after `csrf_invalid` with no retry loop |
 | `src/api/customers.test.ts` (7) | list path/limit/cursor, read, create, patch subset, delete `204`, delete `409` |
 | `src/api/invoices.test.ts` (9) | status filter, cursor, read, draft create/patch, send/mark-paid, delete, `409`, `422` |
 | `src/api/organizations.test.ts` (10) | membership shape filtering, capability helpers, `presentError` mapping, `isConflict` |
@@ -171,10 +184,11 @@ Library dependency, and adding one needs owner approval.
 
 ## Not verified here
 
-The authenticated shell, customer CRUD and the invoice lifecycle have never been
-exercised in a browser on this checkout, because there are no Logto credentials.
-They are covered by the backend HTTP tests, the authorization matrix and these API
-tests — not by a real sign-in round trip.
+The auth screens and the authenticated shell were exercised manually in Sprint 3
+over `pnpm start` + `php -S`: sign-up, Mailpit verification link, sign-in, customer
+and invoice-draft creation (which proves the CSRF header reaches the API), sign-out,
+wrong password, forgot/reset, and the sign-in screen in French and Arabic. That run
+is evidence, not an automated test: no component/DOM test covers it yet.
 
 ## Not implemented
 

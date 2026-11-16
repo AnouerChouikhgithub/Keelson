@@ -49,6 +49,12 @@ pnpm install --frozen-lockfile
 pnpm start                     # Vite on http://127.0.0.1:5173
 ```
 
+Then open http://localhost:5173. A signed-out visitor lands on `/sign-in`;
+"Create an account" registers the address together with its first organization.
+The confirmation mail is caught by Mailpit at http://localhost:8026 — open the
+link it contains and sign in. Nothing is pre-seeded, and the language selector on
+the auth screens switches the whole flow between English, French and Arabic.
+
 `backend/.env.local` is git-ignored and the only place credentials belong. It
 needs `APP_SECRET` and `DATABASE_URL` (the Compose URL is
 `postgresql://app:app@127.0.0.1:5433/keelson?serverVersion=16&charset=utf8`).
@@ -100,15 +106,15 @@ Last run in this repository (2026-11-16, Sprint 1):
 | Check | Result |
 | --- | --- |
 | `pnpm install --frozen-lockfile` | PASS |
-| `pnpm run build` | PASS — `dist/assets/index-*.js` 371.20 kB / 108.85 kB gzip |
+| `pnpm run build` | PASS — `dist/assets/index-*.js` 437.05 kB / 128.33 kB gzip |
 | `pnpm run lint` | PASS — 0 findings |
-| `pnpm test` | PASS — 57 tests in 5 files |
+| `pnpm test` | PASS — 61 tests in 6 files |
 | `composer install` | PASS |
 | `composer validate --no-check-publish` | PASS |
 | `php bin/console lint:container --env=test` | PASS |
-| `php bin/console debug:router --env=test` | PASS — 23 routes |
+| `php bin/console debug:router --env=test` | PASS — 24 routes |
 | `php bin/phpstan analyse` | PASS — no errors |
-| `php bin/phpunit` (disposable container) | PASS — 157 tests, 721 assertions |
+| `php bin/phpunit` (disposable container) | PASS — 161 tests, 754 assertions |
 | `doctrine:schema:validate --env=test` | **FAIL** — see limitations |
 
 The former anonymous-request failures are gone: an unauthenticated API call now
@@ -120,10 +126,11 @@ PHPStan reports no errors.
 
 - Tenant isolation is enforced in repositories and controllers, not by PostgreSQL
   RLS. There is no defence in depth behind the application layer.
-- The SPA's sign-in, registration and password-reset screens are not built yet
-  (Sprint 3): the frontend still calls the removed provider endpoints, so browser
-  sign-in is broken until that sprint lands. The backend flows are verified by the
-  test suite and by a manual `curl` round trip.
+- The shell's own navigation is still client-side state inside `App.tsx`; only
+  the five auth screens are routes today (Sprint 7 moves the rest onto the router).
+- No component/DOM tests: the auth screens are verified by a manual browser run
+  and the API/session parsers by the node-environment suite (Sprint 8 adds DOM
+  tests, which needs a `jsdom` dependency).
 - Billing, subscriptions, usage enforcement and invitation delivery are not
   implemented. In the frontend, dashboard metrics, onboarding/invitations, team,
   billing, pricing and notifications are mock surfaces.
