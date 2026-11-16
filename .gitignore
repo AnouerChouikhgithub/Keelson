@@ -10,17 +10,22 @@ build/
 backend/var/
 .phpunit.result.cache
 .php-cs-fixer.cache
+*.tsbuildinfo
+coverage/
 
 # env / secrets
+.env
 .env.local
 .env.*.local
 # machine-local backend snapshots; the shared defaults below stay tracked
 backend/.env.*
-!backend/.env.dev
 !backend/.env.example
 !backend/.env.test
 *.pem
 backend/config/jwt/*.pem
+
+# generated Symfony reference dump
+backend/config/reference.php
 
 # local tooling output
 graphify-out/
@@ -29,4 +34,5 @@ graphify-out/
 .DS_Store
 Thumbs.db
 .idea/
+.vscode/
 *.log
