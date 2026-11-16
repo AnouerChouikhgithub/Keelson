@@ -90,6 +90,75 @@ export type Paginated<T> = {
 
 export type OrganizationRole = 'Owner' | 'Admin' | 'Member' | 'Viewer'
 
+/** Roles an invitation may carry: ownership is never handed out by invitation. */
+export type InviteRole = Exclude<OrganizationRole, 'Owner'>
+
+/** Row of `GET …/members`. `name` is the principal's display name, if any. */
+export type Member = {
+  id: string
+  principalId: string
+  email: string
+  name: string | null
+  role: OrganizationRole
+  joinedAt: string
+}
+
+export type InvitationStatus = 'pending' | 'accepted' | 'revoked'
+
+/** Row of `GET …/invitations`; the plaintext token is never part of it. */
+export type Invitation = {
+  id: string
+  email: string
+  role: OrganizationRole
+  status: InvitationStatus
+  expired: boolean
+  expiresAt: string
+  createdAt: string
+}
+
+/** `GET /api/invitations/{token}` — public, reveals nothing about accounts. */
+export type InvitationPreview = {
+  organizationName: string
+  role: OrganizationRole
+  email: string
+  expired: boolean
+  accepted: boolean
+}
+
+export type AcceptInvitationResult = {
+  organization: { id: string; name: string }
+  role: OrganizationRole
+  accountCreated: boolean
+}
+
+/** Row of `GET /api/notifications`. `data` is opaque per `type`. */
+export type AppNotification = {
+  id: string
+  type: string
+  data: Record<string, unknown>
+  organizationId: string | null
+  read: boolean
+  createdAt: string
+  readAt: string | null
+}
+
+/** `PATCH /api/me` response. */
+export type ProfileUser = {
+  id: string
+  email: string
+  displayName: string | null
+}
+
+/** Organization administration responses (`POST`/`PATCH`/`DELETE /api/organizations`). */
+export type OrganizationDetail = {
+  id: string
+  name: string
+  subdomain: string
+  status: string
+  role: OrganizationRole
+  createdAt: string
+}
+
 /** Row of `GET /api/me/organizations`. */
 export type OrganizationMembership = {
   id: string

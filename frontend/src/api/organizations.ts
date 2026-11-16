@@ -37,3 +37,23 @@ export function canWriteInvoiceResources(role: OrganizationRole): boolean {
 export function canDeleteInvoiceResources(role: OrganizationRole): boolean {
   return role === 'Owner' || role === 'Admin'
 }
+
+/** Owner and Admin may read invitations and manage Members/Viewers. */
+export function canAdministerTeam(role: OrganizationRole): boolean {
+  return role === 'Owner' || role === 'Admin'
+}
+
+/** Renaming, readdressing and deleting the tenant are Owner-only. */
+export function canOwnOrganization(role: OrganizationRole): boolean {
+  return role === 'Owner'
+}
+
+/**
+ * Mirrors the server's privilege ceiling: an Owner may grant anything, an Admin
+ * may only invite or promote to Member/Viewer.
+ */
+export function canGrantRole(actorRole: OrganizationRole | null, targetRole: OrganizationRole): boolean {
+  if (actorRole === 'Owner') return true
+  if (actorRole === 'Admin') return targetRole === 'Member' || targetRole === 'Viewer'
+  return false
+}
