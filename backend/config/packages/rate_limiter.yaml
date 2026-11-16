@@ -15,3 +15,16 @@ framework:
             policy: 'fixed_window'
             limit: 100
             interval: '1 minute'
+
+        # Verification mail is a send loop and a token-replay surface, so it gets
+        # the same per-address budget as sign-in, in its own buckets: exhausting
+        # these must never lock the account out of signing in once it is verified.
+        resend_email:
+            policy: 'fixed_window'
+            limit: 5
+            interval: '1 minute'
+
+        resend_ip:
+            policy: 'fixed_window'
+            limit: 100
+            interval: '1 minute'

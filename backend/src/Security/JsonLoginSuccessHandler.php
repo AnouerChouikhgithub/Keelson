@@ -24,7 +24,7 @@ final class JsonLoginSuccessHandler implements AuthenticationSuccessHandlerInter
     public function __construct(
         private readonly SessionPayloadFactory $payloads,
         private readonly EntityManagerInterface $entityManager,
-        private readonly LoginAttemptLimiter $attempts,
+        private readonly AuthAttemptLimiter $attempts,
     ) {
     }
 

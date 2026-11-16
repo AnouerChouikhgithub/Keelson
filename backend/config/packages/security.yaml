@@ -30,7 +30,7 @@ security:
                 failure_handler: App\Security\JsonLoginFailureHandler
             # Five attempts per address per minute. The framework's throttle is
             # declared for completeness, but its listener is not invoked in this
-            # setup, so App\EventListener\LoginThrottleListener enforces the same
+            # setup, so App\EventListener\AuthThrottleListener enforces the same
             # policy in front of the firewall (config/packages/rate_limiter.yaml).
             login_throttling:
                 max_attempts: 5
@@ -39,7 +39,7 @@ security:
     access_control:
         # Sign-in, registration and the token flows are reachable without a
         # session. Everything else requires one.
-        - { path: ^/api/auth/(register|verify-email|login|forgot-password|reset-password)$, roles: PUBLIC_ACCESS }
+        - { path: ^/api/auth/(register|verify-email|login|forgot-password|reset-password|resend-verification)$, roles: PUBLIC_ACCESS }
         # The shell must learn it is signed out without a 401 of its own probe.
         - { path: ^/api/session$, roles: PUBLIC_ACCESS }
         - { path: ^/healthz$, roles: PUBLIC_ACCESS }

@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\EventListener;
 
 use App\Http\ApiErrorResponse;
-use App\Security\LoginAttemptLimiter;
+use App\Security\AuthAttemptLimiter;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -13,20 +13,22 @@ use Symfony\Component\HttpKernel\Event\RequestEvent;
 use Symfony\Component\HttpKernel\KernelEvents;
 
 /**
- * Refuses a sign-in attempt that is over the limit, before any credentials are
- * looked at.
+ * Refuses an authentication attempt that is over the limit, before any work is
+ * done on it.
  *
  * A request that reaches the authenticator has its password hashed and
- * compared, which is exactly the work an attacker wants to make us repeat, so
- * the check has to sit in front of the firewall (priority 8). It is also ahead
- * of it for a second reason: the answer must be the same whether or not the
- * account exists.
+ * compared, and a request that reaches the resend endpoint issues a token and
+ * sends a mail. Both are exactly the work an attacker wants to make us repeat,
+ * so the check sits in front of the firewall (priority 8). It is also ahead of it
+ * for a second reason: the answer must be the same whether or not the account
+ * exists.
  */
-final class LoginThrottleListener implements EventSubscriberInterface
+final class AuthThrottleListener implements EventSubscriberInterface
 {
     private const LOGIN_PATH = '/api/auth/login';
+    private const RESEND_PATH = '/api/auth/resend-verification';
 
-    public function __construct(private readonly LoginAttemptLimiter $limiter)
+    public function __construct(private readonly AuthAttemptLimiter $limiter)
     {
     }
 
@@ -43,19 +45,23 @@ final class LoginThrottleListener implements EventSubscriberInterface
         }
 
         $request = $event->getRequest();
-        if ('POST' !== $request->getMethod() || self::LOGIN_PATH !== rtrim($request->getPathInfo(), '/')) {
+        $path = rtrim($request->getPathInfo(), '/');
+        if ('POST' !== $request->getMethod() || (self::LOGIN_PATH !== $path && self::RESEND_PATH !== $path)) {
             return;
         }
 
-        $retryAfter = $this->limiter->consume($request, $this->email($request));
+        [$retryAfter, $code] = self::LOGIN_PATH === $path
+            ? [$this->limiter->consumeLogin($request, $this->email($request)), 'too_many_login_attempts']
+            : [$this->limiter->consumeResend($request, $this->email($request)), 'too_many_resend_attempts'];
+
         if (null === $retryAfter) {
             return;
         }
 
         $event->setResponse(ApiErrorResponse::make(
             Response::HTTP_TOO_MANY_REQUESTS,
-            'too_many_login_attempts',
-            'Too many sign-in attempts. Try again later.',
+            $code,
+            'Too many attempts. Try again later.',
             [],
             ['Retry-After' => (string) $retryAfter],
         ));
@@ -63,7 +69,7 @@ final class LoginThrottleListener implements EventSubscriberInterface
 
     /**
      * Reads the identifier from the JSON body without failing the request when
-     * the body is not JSON: a malformed body is the authenticator's problem and
+     * the body is not JSON: a malformed body is the controller's problem and
      * must still count against the client bucket only.
      */
     private function email(Request $request): ?string

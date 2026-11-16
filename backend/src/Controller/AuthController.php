@@ -10,6 +10,7 @@ use App\Http\InputHydrator;
 use App\Http\JsonBody;
 use App\Input\ForgotPasswordInput;
 use App\Input\RegisterInput;
+use App\Input\ResendVerificationInput;
 use App\Input\ResetPasswordInput;
 use App\Input\VerifyEmailInput;
 use App\Repository\PrincipalRepository;
@@ -125,6 +126,28 @@ final class AuthController
         }
 
         // Always the same answer: "we sent it if the address exists".
+        return new Response(null, Response::HTTP_ACCEPTED);
+    }
+
+    /**
+     * Sends a fresh verification link to an address that has not confirmed yet.
+     *
+     * Answers the same `202` for an unknown address and for one that is already
+     * verified, so the endpoint cannot be used to discover, or to probe the state
+     * of, an account. Issuing the new token retires the previous unused one.
+     * Throttled by {@see \App\EventListener\AuthThrottleListener}, like sign-in.
+     */
+    #[Route('/api/auth/resend-verification', name: 'app_api_auth_resend_verification', methods: ['POST'])]
+    public function resendVerification(Request $request): Response
+    {
+        $input = $this->hydrator->hydrate(ResendVerificationInput::class, JsonBody::decode($request));
+
+        $principal = $this->principals->findOneByEmail(Principal::normalizeEmail($input->email));
+        if (null !== $principal && !$principal->isEmailVerified()) {
+            $token = $this->tokens->issue($principal, AuthToken::TYPE_VERIFY);
+            $this->mailer->send($this->mails->verifyEmail($principal, $token));
+        }
+
         return new Response(null, Response::HTTP_ACCEPTED);
     }
 
