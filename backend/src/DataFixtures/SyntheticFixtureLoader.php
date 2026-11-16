@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace App\DataFixtures;
 
 use App\Entity\Customer;
+use App\Entity\Invitation;
 use App\Entity\Invoice;
 use App\Entity\Membership;
+use App\Entity\Notification;
 use App\Entity\Organization;
 use App\Entity\Principal;
 use App\Service\InvoiceAuditLogger;
@@ -194,6 +196,70 @@ final class SyntheticFixtureLoader
                     throw new \InvalidArgumentException(sprintf('Fixture invoice status "%s" is not supported.', $definition['status']));
             }
             ++$stats['created']['invoices'];
+        }
+        $this->entityManager->flush();
+
+        foreach ($definitions['invitations'] as $definition) {
+            $organization = $organizations[$definition['organization']];
+            $exists = $this->entityManager->getRepository(Invitation::class)
+                ->findOneBy(['organization' => $organization, 'email' => $definition['email']]);
+            if (null !== $exists) {
+                ++$stats['skipped']['invitations'];
+                continue;
+            }
+            // A known token makes the public accept link usable locally; the row
+            // still stores only its digest, exactly like a real invitation.
+            $token = 'fixture-invitation-'.$definition['key'];
+            $invitation = new Invitation(
+                $organization,
+                $definition['email'],
+                $definition['role'],
+                hash('sha256', $token),
+                $principals[$definition['invitedBy']],
+                (new \DateTimeImmutable())->modify(sprintf('%+d days', $definition['expiresInDays'])),
+            );
+            $this->entityManager->persist($invitation);
+            ++$stats['created']['invitations'];
+        }
+        $this->entityManager->flush();
+
+        // The expired invitation is created inside its window (the entity refuses
+        // a past expiry) and then aged by the loader, which is the only way to
+        // seed a state that otherwise takes a week to reach.
+        foreach ($definitions['invitations'] as $definition) {
+            if (!$definition['expired']) {
+                continue;
+            }
+            $this->entityManager->getConnection()->executeStatement(
+                'UPDATE invitations SET expires_at = now() - interval \'3 days\' WHERE organization_id = ? AND email = ? AND expires_at > now()',
+                [$organizations[$definition['organization']]->getId(), $definition['email']],
+            );
+        }
+
+        foreach ($definitions['notifications'] as $definition) {
+            $organization = $organizations[$definition['organization']];
+            $principal = $principals[$definition['principal']];
+            // `fixtureKey` is the natural key: the loader can tell its own rows
+            // apart from anything the application created, without a schema
+            // column that exists only for fixtures.
+            $exists = $this->entityManager->getConnection()->fetchOne(
+                "SELECT 1 FROM notifications WHERE principal_id = ? AND data->>'fixtureKey' = ? LIMIT 1",
+                [$principal->getId(), $definition['key']],
+            );
+            if (false !== $exists) {
+                ++$stats['skipped']['notifications'];
+                continue;
+            }
+            $createdAt = (new \DateTimeImmutable())->modify(sprintf('-%d days', $definition['daysAgo']))->setTime(9, 30);
+            $notification = new Notification($principal, $organization, $definition['type'], [
+                'fixtureKey' => $definition['key'],
+                'organizationName' => $organization->getName(),
+            ], $createdAt);
+            if ($definition['read']) {
+                $notification->markRead($createdAt->modify('+2 hours'));
+            }
+            $this->entityManager->persist($notification);
+            ++$stats['created']['notifications'];
         }
         $this->entityManager->flush();
 

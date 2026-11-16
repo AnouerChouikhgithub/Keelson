@@ -31,7 +31,9 @@ final class SyntheticFixtureCatalog
      *     organizations: list<array{key: string, name: string, subdomain: string}>,
      *     memberships: list<array{organization: string, principal: string, role: string}>,
      *     customers: list<array{key: string, organization: string, name: string, email: string, phone: ?string, billingAddress: ?array{street: string, city: string, postalCode: string, countryCode: string}}>,
-     *     invoices: list<array{key: string, organization: string, customer: string, number: string, status: string, issueOffsetDays: int, dueOffsetDays: int, lineItems: list<array{description: string, quantity: string, unitPrice: string}>, taxRate: ?string, discountAmount: ?string}>
+     *     invoices: list<array{key: string, organization: string, customer: string, number: string, status: string, issueOffsetDays: int, dueOffsetDays: int, lineItems: list<array{description: string, quantity: string, unitPrice: string}>, taxRate: ?string, discountAmount: ?string}>,
+     *     invitations: list<array{key: string, organization: string, email: string, role: string, invitedBy: string, expiresInDays: int, expired: bool}>,
+     *     notifications: list<array{key: string, organization: string, principal: string, type: string, read: bool, daysAgo: int}>
      * }
      */
     public function definitions(): array
@@ -74,6 +76,27 @@ final class SyntheticFixtureCatalog
                 ['key' => 'lumen', 'organization' => 'contoso', 'name' => 'Lumen Optics (fixture)', 'email' => 'lumen@example.test', 'phone' => null, 'billingAddress' => null],
             ],
             'invoices' => self::invoices(),
+            // Two live invitations and one that lapsed, so both the pending list
+            // and the expired state can be seen without waiting a week. The
+            // fixture token is derived from its key (`fixture-invitation-<key>`),
+            // which makes the public link usable in development.
+            'invitations' => [
+                ['key' => 'designer', 'organization' => 'northwind', 'email' => 'designer@example.test', 'role' => 'Member', 'invitedBy' => 'owner', 'expiresInDays' => 7, 'expired' => false],
+                ['key' => 'analyst', 'organization' => 'northwind', 'email' => 'analyst@example.test', 'role' => 'Viewer', 'invitedBy' => 'admin', 'expiresInDays' => 5, 'expired' => false],
+                ['key' => 'auditor', 'organization' => 'contoso', 'email' => 'auditor@example.test', 'role' => 'Viewer', 'invitedBy' => 'member', 'expiresInDays' => 3, 'expired' => true],
+            ],
+            // A believable inbox: both read and unread, the four notification
+            // types, and recipients on both sides of the Owner/Admin split.
+            'notifications' => [
+                ['key' => 'owner-overdue', 'organization' => 'northwind', 'principal' => 'owner', 'type' => 'invoice_overdue', 'read' => false, 'daysAgo' => 0],
+                ['key' => 'owner-paid', 'organization' => 'northwind', 'principal' => 'owner', 'type' => 'invoice_paid', 'read' => false, 'daysAgo' => 1],
+                ['key' => 'owner-joined', 'organization' => 'northwind', 'principal' => 'owner', 'type' => 'member_joined', 'read' => true, 'daysAgo' => 3],
+                ['key' => 'owner-invitation', 'organization' => 'northwind', 'principal' => 'owner', 'type' => 'invitation_accepted', 'read' => true, 'daysAgo' => 6],
+                ['key' => 'admin-overdue', 'organization' => 'northwind', 'principal' => 'admin', 'type' => 'invoice_overdue', 'read' => false, 'daysAgo' => 0],
+                ['key' => 'admin-paid', 'organization' => 'northwind', 'principal' => 'admin', 'type' => 'invoice_paid', 'read' => true, 'daysAgo' => 2],
+                ['key' => 'admin-joined', 'organization' => 'northwind', 'principal' => 'admin', 'type' => 'member_joined', 'read' => false, 'daysAgo' => 4],
+                ['key' => 'admin-invitation', 'organization' => 'northwind', 'principal' => 'admin', 'type' => 'invitation_accepted', 'read' => true, 'daysAgo' => 7],
+            ],
         ];
     }
 
