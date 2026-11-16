@@ -1,12 +1,12 @@
-import { ApiError, serverMessage } from './errors'
+import { ApiError, errorCode, errorFields, serverMessage } from './errors'
 
 /**
  * Single HTTP entry point for the SPA.
  *
  * Requests are same-origin by default (Vite proxies `/api` in development), so
- * the Symfony session cookie travels with `credentials: 'same-origin'`. The
- * backend's mutation guard accepts a same-origin `Origin`; no CSRF header or
- * token endpoint is invented here.
+ * the Symfony session cookie travels with `credentials: 'same-origin'`. Every
+ * unsafe request also carries the CSRF token the session handed out, in the
+ * `X-CSRF-Token` header the backend's mutation guard requires.
  *
  * `VITE_API_BASE_URL` exists for deployments that serve the API from another
  * origin (which then needs an explicit CORS allow-list). It must never contain
@@ -20,22 +20,56 @@ export type RequestOptions = {
   signal?: AbortSignal
   /** Overrides the request deadline; a hung backend must not spin forever. */
   timeoutMs?: number
+  /** Set on the single retry taken after a `csrf_invalid` refusal. */
+  csrfRetried?: boolean
 }
 
 const DEFAULT_TIMEOUT_MS = 20_000
+const UNSAFE_METHODS = new Set<string>(['POST', 'PUT', 'PATCH', 'DELETE'])
+
+/**
+ * The session's CSRF token, held in memory only.
+ *
+ * It is set by the session provider from `GET /api/session` (and refreshed after
+ * a rotation); it is never written to `localStorage`, `sessionStorage` or a
+ * cookie of our own, so closing the tab discards it.
+ */
+let csrfToken: string | null = null
+
+/** Re-reads the session and returns its (possibly rotated) token, or null. */
+let sessionRefresher: (() => Promise<string | null>) | null = null
+
+export function setCsrfToken(token: string | null): void {
+  csrfToken = token
+}
+
+export function setSessionRefresher(refresher: (() => Promise<string | null>) | null): void {
+  sessionRefresher = refresher
+}
 
 /**
  * Performs one request and returns the parsed JSON body.
  *
- * Callers must treat `ApiError.kind`/`status` as the contract and localize the
- * message; `detail` is only for validation/conflict text from the server.
+ * Callers must treat `ApiError.kind`/`status`/`code` as the contract and
+ * localize the message; `detail` is only for validation/conflict text from the
+ * server.
+ *
+ * A `403 csrf_invalid` means the session handed us a token the server no longer
+ * accepts (it was rotated by a login in another tab, for example). That is
+ * recoverable: re-read the session once, then replay the request once. The
+ * `csrfRetried` flag bounds it, so a server that keeps refusing cannot turn one
+ * click into a request loop.
  */
 export async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const { method = 'GET', body, signal: callerSignal, timeoutMs = DEFAULT_TIMEOUT_MS } = options
+  const { method = 'GET', body, signal: callerSignal, timeoutMs = DEFAULT_TIMEOUT_MS, csrfRetried = false } = options
   // A deadline is separate from a caller abort: the first is a failure the user
   // must see, the second is a request the caller deliberately superseded.
   const deadline = AbortSignal.timeout(timeoutMs)
   const signal = callerSignal === undefined ? deadline : AbortSignal.any([callerSignal, deadline])
+  const headers: Record<string, string> = { Accept: 'application/json' }
+  if (body !== undefined) headers['Content-Type'] = 'application/json'
+  if (UNSAFE_METHODS.has(method) && csrfToken !== null) headers['X-CSRF-Token'] = csrfToken
+
   let response: Response
   try {
     response = await fetch(`${configuredBaseUrl}${path}`, {
@@ -43,10 +77,7 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
       signal,
       credentials: 'same-origin',
       cache: 'no-store',
-      headers: {
-        Accept: 'application/json',
-        ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
-      },
+      headers,
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     })
   } catch (error) {
@@ -56,7 +87,7 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
     throw new ApiError('Network request failed', 'network')
   }
 
-  // 204 (delete) and other bodyless successes are valid responses.
+  // 204 (delete, sign-out) and other bodyless successes are valid responses.
   if (response.status === 204) return undefined as T
 
   const text = await response.text()
@@ -71,19 +102,31 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
 
   if (!response.ok) {
     // A non-JSON error page (proxy, HTML exception page) yields only a status.
-    throw new ApiError(
+    const failure = new ApiError(
       `Request failed with status ${response.status}`,
       'http',
       response.status,
       serverMessage(payload),
+      errorCode(payload),
+      errorFields(payload),
     )
+
+    if (failure.code === 'csrf_invalid' && !csrfRetried && UNSAFE_METHODS.has(method) && sessionRefresher !== null) {
+      const renewed = await sessionRefresher()
+      if (renewed !== null) {
+        return request<T>(path, { ...options, csrfRetried: true })
+      }
+    }
+
+    throw failure
   }
 
   if (text !== '' && payload === null) {
-    // An expired session is redirected to the provider's sign-in page, which
-    // `fetch` follows and which answers 200 HTML. That is an unauthenticated
-    // session, not a malformed payload, so it must not look like a server bug.
-    if (isHtml(response)) throw new ApiError('The session has ended', 'http', 401)
+    // The API answers JSON for every route, so HTML here means the request was
+    // served by something else (a proxy, the SPA fallback, a host rewrite) and
+    // the call never reached a controller. That is a misrouted request, not an
+    // ended session, so it must not be reported as one.
+    if (isHtml(response)) throw new ApiError('The API answered with an HTML page', 'http', response.status)
     throw new ApiError('The server returned a response that is not JSON', 'parse', response.status)
   }
 
