@@ -1,20 +1,8 @@
 parameters:
 	ignoreErrors:
 		-
-			message: '#^Dead catch \- JsonException is never thrown in the try block\.$#'
-			identifier: catch.neverThrown
-			count: 1
-			path: src/Controller/InvoiceApiController.php
-
-		-
 			message: '#^Property App\\Entity\\Customer\:\:\$id is never written, only read\.$#'
 			identifier: property.onlyRead
-			count: 1
-			path: src/Entity/Customer.php
-
-		-
-			message: '#^Property App\\Entity\\Customer\:\:\$invoices is never read, only written\.$#'
-			identifier: property.onlyWritten
 			count: 1
 			path: src/Entity/Customer.php
 
@@ -133,6 +121,18 @@ parameters:
 			path: src/Entity/Membership.php
 
 		-
+			message: '#^Property App\\Entity\\Membership\:\:\$principal is never read, only written\.$#'
+			identifier: property.onlyWritten
+			count: 1
+			path: src/Entity/Membership.php
+
+		-
+			message: '#^Property App\\Entity\\Membership\:\:\$updatedAt is never read, only written\.$#'
+			identifier: property.onlyWritten
+			count: 1
+			path: src/Entity/Membership.php
+
+		-
 			message: '#^Property App\\Entity\\Organization\:\:\$createdAt is never read, only written\.$#'
 			identifier: property.onlyWritten
 			count: 1
@@ -167,15 +167,3 @@ parameters:
 			identifier: property.onlyWritten
 			count: 1
 			path: src/Entity/Principal.php
-
-		-
-			message: '#^Call to function is_array\(\) with array\{description\: mixed, quantity\: mixed, unitPrice\: mixed\} will always evaluate to true\.$#'
-			identifier: function.alreadyNarrowedType
-			count: 1
-			path: src/Service/InvoiceCalculator.php
-
-		-
-			message: '#^If condition is always false\.$#'
-			identifier: if.alwaysFalse
-			count: 1
-			path: src/Service/TransactionBoundary.php

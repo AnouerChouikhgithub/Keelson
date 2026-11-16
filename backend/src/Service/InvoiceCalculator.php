@@ -26,7 +26,7 @@ final class InvoiceCalculator
         $subtotal = 0;
         $normalized = [];
         foreach ($items as $item) {
-            if (!is_array($item) || !is_string($item['description'] ?? null)) {
+            if (!is_string($item['description'] ?? null)) {
                 throw new \InvalidArgumentException('Each line item requires a description, quantity, and unitPrice.');
             }
             $description = trim($item['description']);

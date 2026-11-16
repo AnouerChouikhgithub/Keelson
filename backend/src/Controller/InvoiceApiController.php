@@ -438,11 +438,7 @@ final class InvoiceApiController extends AbstractController
     /** @return array<string, mixed> */
     private function payload(Request $request): array
     {
-        try {
-            $data = $request->toArray();
-        } catch (\JsonException) {
-            throw new \InvalidArgumentException('Request body must be a valid JSON object.');
-        }
+        $data = $request->toArray();
         if ([] === $data || array_is_list($data)) {
             throw new \InvalidArgumentException('Request body must be a non-empty JSON object.');
         }
