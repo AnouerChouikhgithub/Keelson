@@ -11,7 +11,6 @@ use Doctrine\ORM\Mapping as ORM;
 #[ORM\Entity(repositoryClass: CustomerRepository::class)]
 #[ORM\Table(name: 'customers')]
 #[ORM\UniqueConstraint(name: 'uniq_customers_organization_id_id', fields: ['organization', 'id'])]
-#[ORM\Index(name: 'idx_customers_organization_id', fields: ['organization', 'id'])]
 class Customer
 {
     #[ORM\Id]
@@ -43,9 +42,6 @@ class Customer
     #[ORM\Column(name: 'updated_at', type: 'datetimetz_immutable')]
     private \DateTimeImmutable $updatedAt;
 
-    #[ORM\OneToMany(targetEntity: Invoice::class, mappedBy: 'customer')]
-    private \Doctrine\Common\Collections\Collection $invoices;
-
     /** @param array<string, mixed>|null $billingAddress */
     public function __construct(
         Organization $organization,
@@ -56,7 +52,6 @@ class Customer
         ?\DateTimeImmutable $now = null,
     ) {
         $this->organization = $organization;
-        $this->invoices = new \Doctrine\Common\Collections\ArrayCollection();
         $this->apply($name, $email, $phone, $billingAddress);
         $this->createdAt = $now ?? new \DateTimeImmutable();
         $this->updatedAt = $this->createdAt;

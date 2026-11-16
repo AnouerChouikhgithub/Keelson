@@ -70,11 +70,6 @@ class Membership
         return $this->organization;
     }
 
-    public function getPrincipal(): Principal
-    {
-        return $this->principal;
-    }
-
     public function getId(): string
     {
         return $this->id;
@@ -83,11 +78,6 @@ class Membership
     public function getCreatedAt(): \DateTimeImmutable
     {
         return $this->createdAt;
-    }
-
-    public function getUpdatedAt(): \DateTimeImmutable
-    {
-        return $this->updatedAt;
     }
 
     public function touch(?\DateTimeImmutable $now = null): void
@@ -101,12 +91,6 @@ class Membership
         $this->touch($now);
     }
 
-    public function activate(?\DateTimeImmutable $now = null): void
-    {
-        $this->status = 'active';
-        $this->touch($now);
-    }
-
     public function canAdminister(): bool
     {
         return $this->isActive() && in_array($this->role, ['Owner', 'Admin'], true);
@@ -115,14 +99,5 @@ class Membership
     public function isOwner(): bool
     {
         return $this->isActive() && 'Owner' === $this->role;
-    }
-
-    public function changeRole(string $role, ?\DateTimeImmutable $now = null): void
-    {
-        if (!in_array($role, ['Owner', 'Admin', 'Member', 'Viewer'], true)) {
-            throw new \InvalidArgumentException('Membership role is not supported.');
-        }
-        $this->role = $role;
-        $this->touch($now);
     }
 }

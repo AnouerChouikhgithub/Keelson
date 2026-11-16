@@ -24,7 +24,7 @@ class Invoice
     #[ORM\JoinColumn(name: 'organization_id', referencedColumnName: 'id', nullable: false, onDelete: 'CASCADE')]
     private Organization $organization;
 
-    #[ORM\ManyToOne(targetEntity: Customer::class, inversedBy: 'invoices')]
+    #[ORM\ManyToOne(targetEntity: Customer::class)]
     #[ORM\JoinColumn(name: 'customer_id', referencedColumnName: 'id', nullable: false, onDelete: 'RESTRICT')]
     private Customer $customer;
 
