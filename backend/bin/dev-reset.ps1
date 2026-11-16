@@ -63,7 +63,7 @@ foreach ($step in $steps) {
     $arguments = @('bin/console') + $step + @('--no-interaction', "--env=$expectedEnvironment")
     & php @arguments
     if ($LASTEXITCODE -ne 0) {
-        Stop-WithError ("'php " + ($arguments -join ' ') + "' failed."
+        Stop-WithError ("'php " + ($arguments -join ' ') + "' failed.")
     }
 }
 
