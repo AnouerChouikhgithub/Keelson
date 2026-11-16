@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { login, logout } from '../api/auth'
 import { setCsrfToken, setSessionRefresher } from '../api/client'
+import { clearApiCache } from '../api/useApiResource'
 import { AuthContext } from './AuthContext'
 import type { AuthValue } from './AuthContext'
 import { readSession } from './session'
@@ -71,6 +72,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signIn = useCallback(async (email: string, password: string) => {
     const session = await login(email, password)
+    // A different principal may be signing in: tenant reads must not survive.
+    clearApiCache()
     setCsrfToken(session.csrfToken)
     setState({ status: 'authenticated', session })
   }, [])
@@ -80,6 +83,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // this state untouched and throws, so the caller can show the failure
     // instead of pretending the session is over.
     await logout()
+    clearApiCache()
     setCsrfToken(null)
     setState({ status: 'anonymous' })
   }, [])

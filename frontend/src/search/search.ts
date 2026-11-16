@@ -1,50 +1,55 @@
-import type { Messages } from '../i18n/messages'
-import type { AppNotification } from '../mocks/notifications'
-import { notificationText } from '../notifications/notificationText'
-import type { PageId } from '../pages'
+import type { Messages } from '../i18n'
 
-export type SearchResultKind = 'page' | 'organization' | 'invoice' | 'customer' | 'notification'
+export type SearchResultKind = 'page' | 'organization'
 
 export type SearchResult = {
   id: string
   kind: SearchResultKind
   title: string
   subtitle?: string
-  page: PageId
+  /** Route the result opens; every workspace route is organization-scoped. */
+  to: string
 }
 
-const searchablePages: PageId[] = [
+const searchablePages = [
   'dashboard',
-  'onboarding',
   'invoices',
   'customers',
   'team',
-  'billing',
+  'audit',
   'settings',
-  'notifications',
   'account',
-]
+  'notifications',
+] as const
 
 /** Detects the platform once so the shortcut hint matches the real key. */
 export function searchShortcutLabel(): string {
   return /Mac|iPhone|iPad/.test(navigator.userAgent) ? '⌘ K' : 'Ctrl K'
 }
 
+/**
+ * Pages plus the caller's organizations. Invoices and customers are absent on
+ * purpose: only the loaded page of a list lives in the browser, so a "global"
+ * search over them would silently miss records and imply server search.
+ */
 export function buildSearchResults({
   m,
   organizations,
-  notifications,
+  organizationId,
 }: {
   m: Messages
   organizations: { id: string; name: string; subdomain: string }[]
-  notifications: AppNotification[]
+  organizationId: string | null
 }): SearchResult[] {
-  const results: SearchResult[] = searchablePages.map((page) => ({
-    id: `page-${page}`,
-    kind: 'page',
-    title: m.page[page],
-    page,
-  }))
+  const base = organizationId === null ? null : `/o/${organizationId}`
+  const results: SearchResult[] = base === null
+    ? []
+    : searchablePages.map((page) => ({
+      id: `page-${page}`,
+      kind: 'page',
+      title: m.page[page],
+      to: `${base}/${page}`,
+    }))
 
   for (const organization of organizations) {
     results.push({
@@ -52,19 +57,7 @@ export function buildSearchResults({
       kind: 'organization',
       title: organization.name,
       subtitle: `${organization.subdomain}.keelson.app`,
-      page: 'onboarding',
-    })
-  }
-
-  // Invoices and customers are intentionally absent: the list is built from
-  // local state, and search must not surface mock records as if they were real.
-  for (const notification of notifications) {
-    results.push({
-      id: `notification-${notification.id}`,
-      kind: 'notification',
-      title: notificationText(notification, m),
-      subtitle: m.page.notifications,
-      page: notification.destination,
+      to: `/o/${organization.id}/dashboard`,
     })
   }
 

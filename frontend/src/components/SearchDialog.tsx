@@ -1,27 +1,24 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
 import { Icon } from './Icon'
 import type { IconName } from './Icon'
 import { useI18n } from '../i18n/I18nContext'
+import { useFocusTrap } from '../hooks/useFocusTrap'
 import { filterSearchResults, searchShortcutLabel } from '../search/search'
 import type { SearchResult, SearchResultKind } from '../search/search'
-import type { PageId } from '../pages'
 
 const kindIcons: Record<SearchResultKind, IconName> = {
   page: 'grid',
   organization: 'building',
-  invoice: 'file',
-  customer: 'users',
-  notification: 'bell',
 }
 
 type SearchDialogProps = {
   results: SearchResult[]
   onClose: () => void
-  onNavigate: (page: PageId) => void
+  onNavigate: (to: string) => void
 }
 
-/** Mounted only while open, so closing and reopening always starts with fresh state. */
+/** Mounted only while open, so closing and reopening always starts fresh. */
 export function SearchDialog({ results, onClose, onNavigate }: SearchDialogProps) {
   const { m, locale } = useI18n()
   const [query, setQuery] = useState('')
@@ -30,30 +27,14 @@ export function SearchDialog({ results, onClose, onNavigate }: SearchDialogProps
   const dialogRef = useRef<HTMLDivElement>(null)
   const filtered = useMemo(() => filterSearchResults(results, query, locale), [results, query, locale])
   const shortcut = searchShortcutLabel()
-
-  useEffect(() => {
-    const returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    const previousOverflow = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-    inputRef.current?.focus()
-
-    return () => {
-      document.body.style.overflow = previousOverflow
-      returnFocus?.focus()
-    }
-  }, [])
+  useFocusTrap(dialogRef, onClose)
 
   function choose(result: SearchResult) {
     onClose()
-    onNavigate(result.page)
+    onNavigate(result.to)
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLDivElement>) {
-    if (event.key === 'Escape') {
-      event.preventDefault()
-      onClose()
-      return
-    }
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       event.preventDefault()
       if (filtered.length === 0) return
@@ -64,20 +45,6 @@ export function SearchDialog({ results, onClose, onNavigate }: SearchDialogProps
     if (event.key === 'Enter' && filtered[activeIndex]) {
       event.preventDefault()
       choose(filtered[activeIndex])
-      return
-    }
-    if (event.key === 'Tab') {
-      const focusable = dialogRef.current?.querySelectorAll<HTMLElement>('input, button')
-      if (!focusable || focusable.length === 0) return
-      const first = focusable[0]
-      const last = focusable[focusable.length - 1]
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault()
-        last.focus()
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault()
-        first.focus()
-      }
     }
   }
 
@@ -127,9 +94,8 @@ export function SearchDialog({ results, onClose, onNavigate }: SearchDialogProps
         {query.trim() === '' ? (
           <div className="search-empty">
             <span className="search-empty-icon"><Icon name="search" size={20} /></span>
-            <h3>{m.search.emptyTitle}</h3>
-            <p>{m.search.emptyBody}</p>
-            <span className="search-hint"><Icon name="sparkle" size={14} /> {m.search.shortcutHint(shortcut)}</span>
+            <h3>{m.search.title}</h3>
+            <p>{m.search.hint}</p>
           </div>
         ) : filtered.length === 0 ? (
           <div className="search-empty">

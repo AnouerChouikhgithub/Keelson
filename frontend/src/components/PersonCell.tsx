@@ -10,7 +10,7 @@ export function PersonCell({
 }) {
   return (
     <span className="customer-cell">
-      <span className={`customer-avatar customer-${tone}`}>{initials}</span>
+      <span className={`customer-avatar customer-${tone}`} aria-hidden="true">{initials}</span>
       {name}
     </span>
   )

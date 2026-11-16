@@ -1,0 +1,96 @@
+/* App-wide primitives shared by every screen. Imported once from index.css. */
+
+.panel {
+  min-width: 0;
+  padding: var(--space-5);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+
+.panel-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-3); }
+.panel-heading h2 { margin: 0; font-size: var(--text-heading); }
+.panel-heading p, .panel-help { margin: var(--space-1) 0 0; color: var(--color-text-muted); font-size: var(--text-caption); line-height: var(--leading-caption); }
+.panel-help + .panel-help { margin-block-start: var(--space-2); }
+
+.page-intro { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--space-4); }
+.page-intro h1 { margin: 0; }
+.page-intro > div > p:last-child { margin: var(--space-2) 0 0; color: var(--color-text-secondary); font-size: var(--text-caption); }
+
+.eyebrow {
+  margin: 0 0 var(--space-1);
+  color: var(--color-text-muted);
+  font-size: 12px;
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.08em;
+}
+
+.list-panel { padding: 0; overflow: hidden; }
+.list-panel .data-table { padding: 0 var(--space-4) var(--space-4); }
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  padding: var(--space-4);
+  gap: var(--space-3);
+  border-block-end: 1px solid var(--color-border);
+}
+
+.search-field {
+  display: flex;
+  align-items: center;
+  min-width: 240px;
+  min-height: var(--tap-target);
+  padding: 0 var(--space-3);
+  gap: var(--space-2);
+  color: var(--color-text-muted);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+}
+.search-field input { width: 100%; color: var(--color-text); background: transparent; border: 0; outline: 0; }
+.search-field:focus-within { border-color: var(--color-focus); }
+
+.filter-tabs { display: flex; flex-wrap: wrap; margin-inline-start: auto; gap: var(--space-1); }
+.filter-tab {
+  min-height: 36px;
+  padding: 0 var(--space-3);
+  color: var(--color-text-secondary);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  font-size: var(--text-caption);
+}
+.filter-tab:hover { color: var(--color-text); background: var(--color-background); }
+.filter-tab.active { color: var(--color-primary); background: var(--color-primary-soft); border-color: var(--color-primary); font-weight: var(--weight-semibold); }
+
+/* Status badge, shared by invoices and dashboard counts. */
+.status-badge { display: inline-flex; align-items: center; padding: 3px var(--space-2); gap: var(--space-1); border-radius: var(--radius-full); font-size: 12px; font-weight: var(--weight-semibold); }
+.status-badge > span { width: 6px; height: 6px; background: currentColor; border-radius: var(--radius-full); }
+.status-green { color: var(--color-success); background: var(--color-success-soft); }
+.status-red { color: var(--color-danger); background: var(--color-danger-soft); }
+.status-blue { color: var(--color-info); background: var(--color-info-soft); }
+.status-gray { color: var(--color-text-secondary); background: var(--color-background); }
+
+/* Person cell used by tables. */
+.customer-cell { display: inline-flex; align-items: center; gap: var(--space-2); color: var(--color-text); font-weight: var(--weight-medium); }
+.customer-avatar { display: grid; width: 28px; height: 28px; place-items: center; border-radius: var(--radius-sm); font-size: 11px; font-weight: var(--weight-bold); }
+.customer-teal { color: var(--color-primary); background: var(--color-primary-soft); }
+.customer-green { color: var(--color-success); background: var(--color-success-soft); }
+.customer-red { color: var(--color-danger); background: var(--color-danger-soft); }
+.customer-blue { color: var(--color-info); background: var(--color-info-soft); }
+.customer-gray { color: var(--color-text-secondary); background: var(--color-background); }
+
+.danger-text { color: var(--color-danger); }
+.cell-end { text-align: end; }
+.cell-actions { justify-content: flex-end; }
+
+@media (max-width: 720px) {
+  .page-intro { align-items: flex-start; flex-direction: column; }
+  .toolbar { flex-direction: column; align-items: stretch; }
+  .search-field { min-width: 0; }
+  .filter-tabs { margin-inline-start: 0; }
+  .list-panel .data-table { padding-inline: var(--space-3); }
+}
