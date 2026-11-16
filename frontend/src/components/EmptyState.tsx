@@ -1,20 +1,25 @@
+import type { ReactNode } from 'react'
 import { Icon } from './Icon'
 import type { IconName } from './Icon'
+import './EmptyState.css'
 
+/** The designed "nothing here" state shared by every list and panel. */
 export function EmptyState({
-  icon,
+  icon = 'sparkle',
   title,
   body,
   action,
+  children,
 }: {
-  icon: IconName
+  icon?: IconName
   title: string
   body?: string
   action?: { label: string; onClick: () => void }
+  children?: ReactNode
 }) {
   return (
     <div className="empty-state">
-      <Icon name={icon} size={26} />
+      <span className="empty-state-icon" aria-hidden="true"><Icon name={icon} size={24} /></span>
       <strong>{title}</strong>
       {body && <p>{body}</p>}
       {action && (
@@ -22,6 +27,7 @@ export function EmptyState({
           {action.label}
         </button>
       )}
+      {children}
     </div>
   )
 }

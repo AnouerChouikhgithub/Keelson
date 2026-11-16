@@ -1,0 +1,159 @@
+/* Invoice list, detail, print view and editor share this stylesheet. */
+.invoices-page, .invoice-detail, .editor-page { display: grid; gap: var(--space-4); }
+
+.list-panel { padding: 0; overflow: hidden; }
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  padding: var(--space-4);
+  gap: var(--space-3);
+  border-block-end: 1px solid var(--color-border);
+}
+
+.search-field {
+  display: flex;
+  align-items: center;
+  min-width: 240px;
+  min-height: var(--tap-target);
+  padding: 0 var(--space-3);
+  gap: var(--space-2);
+  color: var(--color-text-muted);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+}
+.search-field input { width: 100%; color: var(--color-text); background: transparent; border: 0; outline: 0; }
+.search-field:focus-within { border-color: var(--color-focus); }
+
+.filter-tabs { display: flex; flex-wrap: wrap; margin-inline-start: auto; gap: var(--space-1); }
+.filter-tab {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 var(--space-3);
+  color: var(--color-text-secondary);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  font-size: var(--text-caption);
+}
+.filter-tab:hover { color: var(--color-text); background: var(--color-background); }
+.filter-tab.active { color: var(--color-primary); background: var(--color-primary-soft); border-color: var(--color-primary); font-weight: var(--weight-semibold); }
+
+.list-panel .data-table { padding: 0 var(--space-4) var(--space-4); }
+
+/* --- Detail --- */
+.detail-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2); }
+.detail-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+
+.invoice-document {
+  display: grid;
+  padding: var(--space-8);
+  gap: var(--space-5);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+
+.invoice-document-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-4); }
+.invoice-brand { display: flex; align-items: center; gap: var(--space-2); }
+.invoice-brand div { display: grid; gap: 2px; }
+.invoice-brand strong { font-size: var(--text-heading); letter-spacing: -0.02em; }
+.invoice-brand span { color: var(--color-text-secondary); font-size: var(--text-caption); }
+.invoice-document-meta { display: grid; justify-items: end; gap: var(--space-2); }
+.invoice-document-meta h1 { margin: 0; font-size: var(--text-display); }
+
+.invoice-meta-grid { display: grid; margin: 0; grid-template-columns: 1.6fr 1fr 1fr 1fr; gap: var(--space-4); }
+.invoice-meta-grid div { display: grid; align-content: start; gap: var(--space-1); }
+.invoice-meta-grid dt { color: var(--color-text-muted); font-size: 12px; font-weight: var(--weight-semibold); }
+.invoice-meta-grid dd { display: grid; margin: 0; gap: 2px; color: var(--color-text); font-size: var(--text-caption); }
+.invoice-meta-grid dd span { color: var(--color-text-secondary); }
+
+.invoice-totals { display: grid; width: min(320px, 100%); margin: 0; margin-inline-start: auto; gap: var(--space-2); }
+.invoice-totals div { display: flex; justify-content: space-between; gap: var(--space-4); color: var(--color-text-secondary); font-size: var(--text-caption); }
+.invoice-totals dd { margin: 0; color: var(--color-text); font-variant-numeric: tabular-nums; }
+.invoice-grand-total { padding-block-start: var(--space-2); border-block-start: 1px solid var(--color-border); font-weight: var(--weight-bold); }
+.invoice-grand-total dt, .invoice-grand-total dd { color: var(--color-text); font-size: var(--text-heading); }
+.invoice-print-note { margin: 0; color: var(--color-text-muted); font-size: 12px; }
+
+.audit-panel { display: grid; gap: var(--space-3); }
+
+/* --- Editor --- */
+.editor-layout { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr); align-items: start; gap: var(--space-4); }
+.editor-form { display: grid; gap: var(--space-3); }
+.editor-form h2 { margin: 0; font-size: var(--text-heading); }
+.editor-form h2 + .line-list { margin-block-start: calc(-1 * var(--space-1)); }
+
+.line-list { display: grid; gap: var(--space-2); }
+.line-row { display: grid; grid-template-columns: minmax(0, 1fr) 72px 110px auto 44px; align-items: end; gap: var(--space-2); }
+.line-total { padding-block-end: var(--space-3); color: var(--color-text); font-size: var(--text-caption); text-align: end; white-space: nowrap; }
+.add-line { justify-self: start; }
+.editor-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-2); margin-block-start: var(--space-2); }
+
+.preview-pane { display: grid; gap: var(--space-3); }
+.preview-heading { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--space-2); }
+.preview-heading h2 { margin: 0; font-size: var(--text-heading); }
+.preview-note { color: var(--color-text-muted); font-size: 12px; }
+
+.preview-paper { display: grid; padding: var(--space-4); gap: var(--space-4); background: var(--color-surface-elevated); border: 1px solid var(--color-border); border-radius: var(--radius-md); font-size: var(--text-caption); }
+.preview-brand { display: flex; align-items: center; gap: var(--space-2); font-weight: var(--weight-semibold); }
+.preview-meta { display: flex; justify-content: space-between; gap: var(--space-3); color: var(--color-text-secondary); font-size: 12px; }
+.preview-meta strong { display: block; color: var(--color-text); font-size: var(--text-caption); }
+.preview-meta small { display: block; }
+.preview-dates { display: grid; gap: 2px; text-align: end; }
+
+.preview-lines { width: 100%; border-collapse: collapse; font-size: 12px; }
+.preview-lines th, .preview-lines td { padding: var(--space-2) var(--space-1); text-align: start; border-block-end: 1px solid var(--color-border); }
+.preview-lines th { color: var(--color-text-muted); font-weight: var(--weight-semibold); }
+.preview-lines th:not(:first-child), .preview-lines td:not(:first-child) { text-align: end; }
+
+.preview-totals { display: grid; margin: 0; gap: var(--space-1); }
+.preview-totals div { display: flex; justify-content: space-between; gap: var(--space-3); }
+.preview-totals dd { margin: 0; font-variant-numeric: tabular-nums; }
+.preview-grand { padding-block-start: var(--space-1); border-block-start: 1px solid var(--color-border); font-weight: var(--weight-bold); }
+
+/* --- Print: the invoice only --- */
+@media print {
+  :root {
+    --color-background: #FFFFFF;
+    --color-surface: #FFFFFF;
+    --color-text: #000000;
+    --color-text-secondary: #333333;
+    --color-text-muted: #555555;
+    --color-border: #CCCCCC;
+  }
+
+  body { background: #FFFFFF; }
+  .sidebar, .topbar, .toast-region, .skip-link, .no-print, .sidebar-scrim { display: none !important; }
+  .app-shell, .main-column { display: block; width: 100%; margin: 0; }
+  .main-content { padding: 0; max-width: none; }
+  .invoice-detail { gap: 0; }
+  .invoice-document { padding: 0; border: 0; border-radius: 0; }
+  .data-table-scroll { overflow: visible; }
+  .data-table table { white-space: normal; }
+  .invoice-print-note { display: none; }
+}
+
+@media (max-width: 1080px) {
+  .editor-layout { grid-template-columns: 1fr; }
+  .invoice-meta-grid { grid-template-columns: 1fr 1fr; }
+}
+
+@media (max-width: 720px) {
+  .toolbar { flex-direction: column; align-items: stretch; }
+  .search-field { min-width: 0; }
+  .filter-tabs { margin-inline-start: 0; }
+  .list-panel .data-table { padding-inline: var(--space-3); }
+  .invoice-document { padding: var(--space-4); }
+  .invoice-document-head { flex-direction: column; }
+  .invoice-document-meta { justify-items: start; }
+  .invoice-meta-grid { grid-template-columns: 1fr; }
+  .line-row { grid-template-columns: 72px minmax(0, 1fr) 44px; gap: var(--space-2); }
+  .line-row > .field:first-of-type { grid-column: 1 / -1; }
+  .line-total { grid-column: 1 / 3; padding-block-end: 0; }
+  .line-row > .icon-button { justify-self: end; }
+  .detail-toolbar { align-items: flex-start; flex-direction: column; }
+}

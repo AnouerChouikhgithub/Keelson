@@ -1,4 +1,6 @@
 import { useI18n } from '../i18n/I18nContext'
+import '../screens/auth/auth.css'
+import './Button.css'
 
 /**
  * Shown while the session or the caller's memberships cannot be read.
@@ -19,7 +21,7 @@ export function StatusGate({ title, message, onRetry }: { title: string; message
         <h1>{title}</h1>
         <p className="auth-subtitle">{message}</p>
         <button type="button" className="button button-secondary auth-submit" onClick={onRetry}>
-          {m.api.reload}
+          {m.common.reload}
         </button>
       </section>
     </main>

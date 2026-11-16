@@ -11,6 +11,10 @@ import { ApiError, errorCode, errorFields, serverMessage } from './errors'
  * `VITE_API_BASE_URL` exists for deployments that serve the API from another
  * origin (which then needs an explicit CORS allow-list). It must never contain
  * a secret: Vite inlines every `VITE_*` value into the public bundle.
+ *
+ * Failure messages on `ApiError` are stable machine codes, never prose: the UI
+ * localizes from `kind`/`status`/`code` in `presentError`, so no English string
+ * from this file can reach a screen.
  */
 const configuredBaseUrl = (import.meta.env.VITE_API_BASE_URL ?? '').trim().replace(/\/+$/, '')
 
@@ -82,9 +86,9 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
     })
   } catch (error) {
     // A deadline is a real failure; a caller abort is not (the caller moved on).
-    if (deadline.aborted) throw new ApiError('The request timed out', 'timeout')
+    if (deadline.aborted) throw new ApiError('request_timeout', 'timeout')
     if (error instanceof DOMException && error.name === 'AbortError') throw error
-    throw new ApiError('Network request failed', 'network')
+    throw new ApiError('network_error', 'network')
   }
 
   // 204 (delete, sign-out) and other bodyless successes are valid responses.
@@ -103,7 +107,7 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
   if (!response.ok) {
     // A non-JSON error page (proxy, HTML exception page) yields only a status.
     const failure = new ApiError(
-      `Request failed with status ${response.status}`,
+      'http_error',
       'http',
       response.status,
       serverMessage(payload),
@@ -126,8 +130,8 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
     // served by something else (a proxy, the SPA fallback, a host rewrite) and
     // the call never reached a controller. That is a misrouted request, not an
     // ended session, so it must not be reported as one.
-    if (isHtml(response)) throw new ApiError('The API answered with an HTML page', 'http', response.status)
-    throw new ApiError('The server returned a response that is not JSON', 'parse', response.status)
+    if (isHtml(response)) throw new ApiError('html_response', 'http', response.status)
+    throw new ApiError('invalid_json_response', 'parse', response.status)
   }
 
   return payload as T
