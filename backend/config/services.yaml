@@ -68,6 +68,20 @@ services:
 
     App\Config\EnvironmentValidator: ~
 
+    # Session storage on the application connection (see App\Session\PdoSessionHandlerFactory).
+    App\Session\PdoSessionHandlerFactory:
+        arguments:
+            $environment: '%kernel.environment%'
+
+    session.handler.pdo:
+        class: Symfony\Component\HttpFoundation\Session\Storage\Handler\PdoSessionHandler
+        factory: ['@App\Session\PdoSessionHandlerFactory', 'create']
+
+    # HSTS depends on the environment, which autowiring cannot resolve.
+    App\EventListener\SecurityHeadersListener:
+        arguments:
+            $environment: '%kernel.environment%'
+
     App\Config\ConfigurationCheckWarmer:
         arguments:
             $environment: '%kernel.environment%'

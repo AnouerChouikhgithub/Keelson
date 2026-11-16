@@ -162,13 +162,15 @@ final class OrganizationApiTest extends WebTestCase
 
     public function testAnonymousRequestsAreRejected(): void
     {
-        $this->client->request('POST', '/api/organizations', [
+        // The headers belong in `server`: the third positional argument is the
+        // form parameter bag, and passing them there silently sent a form body.
+        $this->client->request('POST', '/api/organizations', server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_ORIGIN' => 'http://localhost',
         ], content: json_encode(['name' => 'Anon', 'subdomain' => 'created-anon-'.$this->suffix]));
         self::assertResponseStatusCodeSame(401);
 
-        $this->client->request('PATCH', $this->path(), [
+        $this->client->request('PATCH', $this->path(), server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_ORIGIN' => 'http://localhost',
         ], content: json_encode(['name' => 'Anon']));

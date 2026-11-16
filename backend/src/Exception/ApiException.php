@@ -19,13 +19,17 @@ use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
  */
 class ApiException extends \RuntimeException implements HttpExceptionInterface
 {
-    /** @param array<string, list<string>> $fields */
+    /**
+     * @param array<string, list<string>> $fields
+     * @param array<string, string>       $headers
+     */
     public function __construct(
         private readonly int $statusCode,
         private readonly string $errorCode,
         string $message,
         private readonly array $fields = [],
         ?\Throwable $previous = null,
+        private readonly array $headers = [],
     ) {
         parent::__construct($message, 0, $previous);
     }
@@ -39,6 +43,26 @@ class ApiException extends \RuntimeException implements HttpExceptionInterface
     public static function invalidJson(): self
     {
         return new self(Response::HTTP_BAD_REQUEST, 'invalid_json', 'The request body must be a JSON object.');
+    }
+
+    public static function jsonTooDeep(): self
+    {
+        return new self(Response::HTTP_BAD_REQUEST, 'invalid_json', 'The request body must not be nested deeper than 16 levels.');
+    }
+
+    public static function unsupportedMediaType(): self
+    {
+        return new self(Response::HTTP_UNSUPPORTED_MEDIA_TYPE, 'unsupported_media_type', 'Requests with a body must use Content-Type: application/json.');
+    }
+
+    public static function payloadTooLarge(): self
+    {
+        return new self(Response::HTTP_REQUEST_ENTITY_TOO_LARGE, 'payload_too_large', 'The request body must not exceed 1 MiB.');
+    }
+
+    public static function rateLimited(int $retryAfter): self
+    {
+        return new self(Response::HTTP_TOO_MANY_REQUESTS, 'rate_limited', 'Too many requests; try again shortly.', [], null, ['Retry-After' => (string) max(1, $retryAfter)]);
     }
 
     public static function invalidId(): self
@@ -113,7 +137,7 @@ class ApiException extends \RuntimeException implements HttpExceptionInterface
 
     public function getHeaders(): array
     {
-        return ['Cache-Control' => 'no-store'];
+        return ['Cache-Control' => 'no-store'] + $this->headers;
     }
 
     public function getErrorCode(): string
