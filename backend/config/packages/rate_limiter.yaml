@@ -44,3 +44,34 @@ framework:
             policy: 'fixed_window'
             limit: 5
             interval: '1 minute'
+
+        # Account creation writes a principal, an organization and a membership
+        # and sends a mail, so the bucket is per client address and deliberately
+        # small: a legitimate person needs one or two attempts.
+        register_ip:
+            policy: 'fixed_window'
+            limit: 100
+            interval: '1 hour'
+
+        # A reset mail is an outbound send and an account-existence oracle.
+        forgot_password_email:
+            policy: 'fixed_window'
+            limit: 5
+            interval: '15 minutes'
+        forgot_password_ip:
+            policy: 'fixed_window'
+            limit: 300
+            interval: '15 minutes'
+
+        # Accepting consumes a single-use token, so replay is already handled;
+        # this only bounds one host trying many tokens.
+        accept_invitation_ip:
+            policy: 'fixed_window'
+            limit: 100
+            interval: '10 minutes'
+
+        # Changing a password rehashes and rewrites every session token.
+        change_password_principal:
+            policy: 'fixed_window'
+            limit: 20
+            interval: '15 minutes'
