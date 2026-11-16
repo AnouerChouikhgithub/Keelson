@@ -1,5 +1,5 @@
 import { useI18n } from '../i18n/I18nContext'
-import type { InvoiceStatus } from '../mocks/dashboard'
+import type { InvoiceStatus } from '../api/types'
 import { statusTone } from './statusTone'
 
 export function StatusBadge({ status }: { status: InvoiceStatus }) {

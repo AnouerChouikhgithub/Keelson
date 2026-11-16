@@ -1,4 +1,4 @@
-import type { InvoiceStatus } from '../mocks/dashboard'
+import type { InvoiceStatus } from '../api/types'
 
 /** Avatar/badge tone per invoice status, shared by the dashboard and invoices table. */
 export const statusTone: Record<InvoiceStatus, string> = {

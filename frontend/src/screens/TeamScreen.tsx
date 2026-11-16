@@ -1,12 +1,13 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
+import type { TeamMember } from '../api/types'
 import { EmptyState } from '../components/EmptyState'
 import { Icon } from '../components/Icon'
 import { OverlaySurface } from '../components/OverlaySurface'
 import { PersonCell } from '../components/PersonCell'
 import { useEscapeKey } from '../hooks/useEscapeKey'
 import { useI18n } from '../i18n/I18nContext'
-import type { InvitationRecord, TeamMember } from '../mocks/organizations'
+import type { InvitationRecord } from '../mocks/organizations'
 import { mockInvitations, mockTeamMembers } from '../mocks/organizations'
 
 type AssignedRole = Exclude<TeamMember['role'], 'Owner'>

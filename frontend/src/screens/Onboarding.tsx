@@ -1,10 +1,11 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
+import type { OrganizationSummary, TeamMember } from '../api/types'
 import { Icon } from '../components/Icon'
 import { useI18n } from '../i18n/I18nContext'
 import { organization as demoOrganization } from '../mocks/dashboard'
 import { mockTeamMembers } from '../mocks/organizations'
-import type { InvitationRecord, OrganizationSummary, TeamMember } from '../mocks/organizations'
+import type { InvitationRecord } from '../mocks/organizations'
 
 function MemberPreview({ member }: { member: TeamMember }) {
   const { m } = useI18n()
@@ -18,16 +19,13 @@ function MemberPreview({ member }: { member: TeamMember }) {
 }
 
 type OnboardingProps = {
-  /** Demo only: the backend has no organization-create endpoint yet, so this
-   *  must not add anything to the real workspace list. */
-  onOrganizationCreated?: (organization: OrganizationSummary) => void
   onInvitationCreated: (invitation: InvitationRecord) => void
   invitations: InvitationRecord[]
   organizations: { id: string; name: string; subdomain: string }[]
   activeOrganizationId: string | null
 }
 
-export function Onboarding({ onOrganizationCreated, onInvitationCreated, invitations, organizations, activeOrganizationId }: OnboardingProps) {
+export function Onboarding({ onInvitationCreated, invitations, organizations, activeOrganizationId }: OnboardingProps) {
   const { m, date } = useI18n()
   const [name, setName] = useState('')
   const [subdomain, setSubdomain] = useState('')
@@ -55,7 +53,6 @@ export function Onboarding({ onOrganizationCreated, onInvitationCreated, invitat
       location: 'Tunisia',
     }
     setCreatedOrganization(created)
-    onOrganizationCreated?.(created)
     setMessage(m.onboarding.messages.orgCreated(created.name, plan))
     setName('')
     setSubdomain('')

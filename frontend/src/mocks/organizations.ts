@@ -1,34 +1,14 @@
-export type OrganizationSummary = {
-  id: string
-  name: string
-  subdomain: string
-  initials: string
-  location: string
-}
-
-export type TeamMember = {
-  id: string
-  name: string
-  email: string
-  initials: string
-  role: 'Owner' | 'Admin' | 'Member' | 'Viewer'
-  location: string
-}
+import type { OrganizationRole, TeamMember } from '../api/types'
 
 export type InvitationRecord = {
   id: string
   organizationId: string
   email: string
-  role: 'Admin' | 'Member' | 'Viewer'
+  role: Exclude<OrganizationRole, 'Owner'>
   status: 'Pending' | 'Revoked'
   sentAt: string
   expiresAt: string
 }
-
-export const mockOrganizations: OrganizationSummary[] = [
-  { id: 'atelier-noura', name: 'Atelier Noura', subdomain: 'atelier-noura', initials: 'AN', location: 'Tunis, Tunisia' },
-  { id: 'carthage-studio', name: 'Carthage Studio', subdomain: 'carthage-studio', initials: 'CS', location: 'La Marsa, Tunisia' },
-]
 
 export const mockTeamMembers: TeamMember[] = [
   { id: 'amine-ben-salah', name: 'Amine Ben Salah', email: 'amine@atelier-noura.tn', initials: 'AB', role: 'Owner', location: 'Tunis' },

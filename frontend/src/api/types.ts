@@ -97,3 +97,25 @@ export type OrganizationMembership = {
   subdomain: string
   role: OrganizationRole
 }
+
+/**
+ * A created/selected organization as the screens render it. Not an API shape:
+ * organization creation has no endpoint yet, so this is built locally.
+ */
+export type OrganizationSummary = {
+  id: string
+  name: string
+  subdomain: string
+  initials: string
+  location: string
+}
+
+/** Team rows are mock data until the team API exists. */
+export type TeamMember = {
+  id: string
+  name: string
+  email: string
+  initials: string
+  role: OrganizationRole
+  location: string
+}
