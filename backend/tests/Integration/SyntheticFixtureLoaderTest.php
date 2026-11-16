@@ -49,6 +49,46 @@ final class SyntheticFixtureLoaderTest extends KernelTestCase
         parent::tearDown();
     }
 
+    public function testInvitationsAndNotificationsAreSeededOnceWithTheirIntendedStates(): void
+    {
+        $first = $this->loader->load();
+        self::assertSame(3, $first['created']['invitations']);
+        self::assertSame(8, $first['created']['notifications']);
+
+        $second = $this->loader->load();
+        self::assertSame(0, $second['created']['invitations']);
+        self::assertSame(0, $second['created']['notifications']);
+        self::assertSame(3, $second['skipped']['invitations']);
+        self::assertSame(8, $second['skipped']['notifications']);
+
+        $connection = $this->entityManager->getConnection();
+        $pending = (int) $connection->fetchOne(
+            "SELECT COUNT(*) FROM invitations i JOIN organizations o ON o.id = i.organization_id
+             WHERE o.subdomain LIKE 'fixture-%' AND i.status = 'pending' AND i.expires_at > now()"
+        );
+        $expired = (int) $connection->fetchOne(
+            "SELECT COUNT(*) FROM invitations i JOIN organizations o ON o.id = i.organization_id
+             WHERE o.subdomain LIKE 'fixture-%' AND i.status = 'pending' AND i.expires_at <= now()"
+        );
+        self::assertSame(2, $pending);
+        self::assertSame(1, $expired);
+
+        // The documented fixture token is the one stored as a digest.
+        self::assertSame(1, (int) $connection->fetchOne(
+            'SELECT COUNT(*) FROM invitations WHERE token_hash = ?',
+            [hash('sha256', 'fixture-invitation-designer')],
+        ));
+
+        $notifications = (int) $connection->fetchOne(
+            "SELECT COUNT(*) FROM notifications n JOIN organizations o ON o.id = n.organization_id WHERE o.subdomain LIKE 'fixture-%'"
+        );
+        $unread = (int) $connection->fetchOne(
+            "SELECT COUNT(*) FROM notifications n JOIN organizations o ON o.id = n.organization_id WHERE o.subdomain LIKE 'fixture-%' AND n.read_at IS NULL"
+        );
+        self::assertSame(8, $notifications);
+        self::assertSame(4, $unread);
+    }
+
     public function testSeedingIsIdempotentAndKeepsRoleAndTenantInvariants(): void
     {
         $first = $this->loader->load();

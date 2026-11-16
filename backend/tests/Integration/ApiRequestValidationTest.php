@@ -82,7 +82,7 @@ final class ApiRequestValidationTest extends WebTestCase
         // Ignoring a cursor would silently return the first page again, which
         // looks to the client like the end of the list.
         self::assertResponseStatusCodeSame(400);
-        self::assertSame('invalid_id', $this->payload()['error']['code']);
+        self::assertSame('invalid_cursor', $this->payload()['error']['code']);
     }
 
     public function testMalformedJsonIsABadRequest(): void
