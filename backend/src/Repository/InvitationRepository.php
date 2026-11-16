@@ -44,6 +44,33 @@ final class InvitationRepository extends ServiceEntityRepository
         return $this->findOneBy(['tokenHash' => $tokenHash]);
     }
 
+    /** Public redemption lookup: the organization name is part of the answer. */
+    public function findUsableByTokenHash(string $tokenHash): ?Invitation
+    {
+        return $this->createQueryBuilder('invitation')
+            ->innerJoin('invitation.organization', 'organization')
+            ->addSelect('organization')
+            ->andWhere('invitation.tokenHash = :tokenHash')
+            ->setParameter('tokenHash', $tokenHash)
+            ->getQuery()
+            ->getOneOrNullResult();
+    }
+
+    /** A pending invitation for the same address and tenant is a conflict, not a second row. */
+    public function findPendingForEmail(string $organizationId, string $email): ?Invitation
+    {
+        return $this->createQueryBuilder('invitation')
+            ->andWhere('IDENTITY(invitation.organization) = :organizationId')
+            ->andWhere('invitation.email = :email')
+            ->andWhere('invitation.status = :pending')
+            ->setParameter('organizationId', $organizationId)
+            ->setParameter('email', $email)
+            ->setParameter('pending', Invitation::STATUS_PENDING)
+            ->setMaxResults(1)
+            ->getQuery()
+            ->getOneOrNullResult();
+    }
+
     /** @return list<Invitation> */
     public function findForOrganizationList(string $organizationId, string $principalId): array
     {

@@ -28,3 +28,19 @@ framework:
             policy: 'fixed_window'
             limit: 100
             interval: '1 minute'
+
+        # The subdomain check runs while someone types in the create form, so it
+        # gets a larger budget than a mail sender, but not an unlimited one: it is
+        # the only unauthenticated-adjacent read that touches another tenant's
+        # existence (it answers "taken" for any subdomain).
+        subdomain_availability:
+            policy: 'fixed_window'
+            limit: 60
+            interval: '1 minute'
+
+        # Resending sends mail. Five per invitation per minute stops a link from
+        # being used as a mail relay while leaving room for a genuine retry.
+        invitation_resend:
+            policy: 'fixed_window'
+            limit: 5
+            interval: '1 minute'

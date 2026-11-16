@@ -39,7 +39,11 @@ security:
     access_control:
         # Sign-in, registration and the token flows are reachable without a
         # session. Everything else requires one.
-        - { path: ^/api/auth/(register|verify-email|login|forgot-password|reset-password|resend-verification)$, roles: PUBLIC_ACCESS }
+        - { path: ^/api/auth/(register|verify-email|login|forgot-password|reset-password|resend-verification|accept-invitation)$, roles: PUBLIC_ACCESS }
+        # The invitation link is opened by someone who has no account yet: the
+        # preview must work without a session, and the response reveals only what
+        # the recipient was already sent.
+        - { path: ^/api/invitations/[^/]+$, roles: PUBLIC_ACCESS, methods: GET }
         # The shell must learn it is signed out without a 401 of its own probe.
         - { path: ^/api/session$, roles: PUBLIC_ACCESS }
         - { path: ^/healthz$, roles: PUBLIC_ACCESS }

@@ -57,6 +57,26 @@ final class MailFactory
                 TEXT);
     }
 
+    public function invitation(string $organizationName, Principal $inviter, string $email, string $role, string $token): Email
+    {
+        $url = $this->link('/accept-invitation', $token);
+        $inviterName = $inviter->getDisplayName() ?? $inviter->getEmail();
+
+        return (new Email())
+            ->from($this->fromAddress)
+            ->to($email)
+            ->subject(sprintf('%s invited you to %s on Keelson', $inviterName, $organizationName))
+            ->text(<<<TEXT
+                {$inviterName} invited you to join {$organizationName} on Keelson as {$role}.
+
+                Accept the invitation here:
+
+                {$url}
+
+                The link is valid for 7 days. If you were not expecting it, ignore this message.
+                TEXT);
+    }
+
     private function base(Principal $principal): Email
     {
         return (new Email())

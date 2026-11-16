@@ -46,6 +46,11 @@ class ApiException extends \RuntimeException implements HttpExceptionInterface
         return new self(Response::HTTP_BAD_REQUEST, 'invalid_id', 'The requested identifier is not valid.');
     }
 
+    public static function invalidCursor(string $field = 'cursor'): self
+    {
+        return new self(Response::HTTP_BAD_REQUEST, 'invalid_cursor', sprintf('The %s value is not a valid cursor.', $field));
+    }
+
     public static function invalidToken(): self
     {
         return new self(Response::HTTP_BAD_REQUEST, 'invalid_token', 'This link is no longer valid.');
@@ -71,9 +76,34 @@ class ApiException extends \RuntimeException implements HttpExceptionInterface
         return new self(Response::HTTP_NOT_FOUND, 'not_found', $message);
     }
 
-    public static function conflict(string $message): self
+    public static function conflict(string $message, string $code = 'conflict'): self
     {
-        return new self(Response::HTTP_CONFLICT, 'conflict', $message);
+        return new self(Response::HTTP_CONFLICT, $code, $message);
+    }
+
+    public static function lastOwner(): self
+    {
+        return new self(Response::HTTP_CONFLICT, 'last_owner', 'An organization must keep at least one Owner.');
+    }
+
+    public static function conflictAlreadyMember(): self
+    {
+        return new self(Response::HTTP_CONFLICT, 'already_member', 'That address already belongs to this organization.');
+    }
+
+    public static function unauthenticated(): self
+    {
+        return new self(Response::HTTP_UNAUTHORIZED, 'unauthenticated', 'Authentication is required.');
+    }
+
+    public static function signInRequired(): self
+    {
+        return new self(Response::HTTP_UNAUTHORIZED, 'sign_in_required', 'Sign in as the invited address to accept this invitation.');
+    }
+
+    public static function tooManyRequests(string $code = 'too_many_requests'): self
+    {
+        return new self(Response::HTTP_TOO_MANY_REQUESTS, $code, 'Too many requests; try again in a minute.');
     }
 
     public function getStatusCode(): int

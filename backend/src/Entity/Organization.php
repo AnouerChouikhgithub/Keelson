@@ -69,8 +69,53 @@ class Organization
         return $this->subdomain;
     }
 
+    public function getCreatedAt(): \DateTimeImmutable
+    {
+        return $this->createdAt;
+    }
+
     public function getStatus(): string
     {
         return $this->status;
+    }
+
+    public function isActive(): bool
+    {
+        return 'active' === $this->status;
+    }
+
+    public function rename(string $name, ?\DateTimeImmutable $now = null): void
+    {
+        $name = trim($name);
+        if ('' === $name || mb_strlen($name) > 120) {
+            throw new \InvalidArgumentException('Organization name must contain 1 to 120 characters.');
+        }
+        $this->name = $name;
+        $this->touch($now);
+    }
+
+    public function changeSubdomain(string $subdomain, ?\DateTimeImmutable $now = null): void
+    {
+        $normalized = strtolower(trim($subdomain));
+        if (!preg_match('/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/', $normalized)) {
+            throw new \InvalidArgumentException('Subdomain must be a normalized DNS label.');
+        }
+        $this->subdomain = $normalized;
+        $this->touch($now);
+    }
+
+    /**
+     * Soft delete: the row stays so invoices, audit events and memberships keep
+     * their referential integrity, and every read path filters on `status`.
+     */
+    public function markDeleted(?\DateTimeImmutable $now = null): void
+    {
+        $this->status = 'deleted';
+        $this->touch($now);
+    }
+
+    private function touch(?\DateTimeImmutable $now = null): void
+    {
+        $this->updatedAt = $now ?? new \DateTimeImmutable();
     }
 }

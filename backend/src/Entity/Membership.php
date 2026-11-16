@@ -75,6 +75,20 @@ class Membership
         return $this->id;
     }
 
+    public function getPrincipal(): Principal
+    {
+        return $this->principal;
+    }
+
+    public function changeRole(string $role, ?\DateTimeImmutable $now = null): void
+    {
+        if (!in_array($role, ['Owner', 'Admin', 'Member', 'Viewer'], true)) {
+            throw new \InvalidArgumentException('Membership role is not supported.');
+        }
+        $this->role = $role;
+        $this->touch($now);
+    }
+
     public function getCreatedAt(): \DateTimeImmutable
     {
         return $this->createdAt;
