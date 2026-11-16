@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Entity;
 
-use App\Id\UuidGenerator;
+use App\Util\Uuid;
 use App\Repository\InvoiceRepository;
 use Doctrine\ORM\Mapping as ORM;
 
@@ -15,8 +15,6 @@ use Doctrine\ORM\Mapping as ORM;
 class Invoice
 {
     #[ORM\Id]
-    #[ORM\GeneratedValue(strategy: 'CUSTOM')]
-    #[ORM\CustomIdGenerator(class: UuidGenerator::class)]
     #[ORM\Column(type: 'guid')]
     private string $id;
 
@@ -34,6 +32,7 @@ class Invoice
     #[ORM\Column(length: 16)]
     private string $status = 'draft';
 
+    /** @var array<string, mixed> */
     #[ORM\Column(name: 'customer_snapshot', type: 'json')]
     private array $customerSnapshot;
 
@@ -106,6 +105,7 @@ class Invoice
         if ($dueDate < $issueDate) {
             throw new \InvalidArgumentException('Invoice due date cannot precede issue date.');
         }
+        $this->id = Uuid::v4();
         $this->organization = $organization;
         $this->customer = $customer;
         $this->number = $number;
@@ -329,5 +329,10 @@ class Invoice
     public function getCreatedAt(): \DateTimeImmutable
     {
         return $this->createdAt;
+    }
+
+    public function getUpdatedAt(): \DateTimeImmutable
+    {
+        return $this->updatedAt;
     }
 }

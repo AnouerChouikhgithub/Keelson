@@ -16,7 +16,10 @@ use Symfony\Component\HttpFoundation\JsonResponse;
  */
 final class ApiErrorResponse
 {
-    /** @param array<string, list<string>> $fields */
+    /**
+     * @param array<string, list<string>> $fields
+     * @param array<string, string>       $headers
+     */
     public static function make(int $status, string $code, string $message, array $fields = [], array $headers = []): JsonResponse
     {
         $error = ['code' => $code, 'message' => $message];

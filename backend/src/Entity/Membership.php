@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Entity;
 
-use App\Id\UuidGenerator;
+use App\Util\Uuid;
 use App\Repository\MembershipRepository;
 use Doctrine\ORM\Mapping as ORM;
 
@@ -16,8 +16,6 @@ use Doctrine\ORM\Mapping as ORM;
 class Membership
 {
     #[ORM\Id]
-    #[ORM\GeneratedValue(strategy: 'CUSTOM')]
-    #[ORM\CustomIdGenerator(class: UuidGenerator::class)]
     #[ORM\Column(type: 'guid')]
     private string $id;
 
@@ -47,6 +45,7 @@ class Membership
             throw new \InvalidArgumentException('Membership role is not supported.');
         }
 
+        $this->id = Uuid::v4();
         $now ??= new \DateTimeImmutable();
         $this->organization = $organization;
         $this->principal = $principal;
@@ -113,5 +112,10 @@ class Membership
     public function isOwner(): bool
     {
         return $this->isActive() && 'Owner' === $this->role;
+    }
+
+    public function getUpdatedAt(): \DateTimeImmutable
+    {
+        return $this->updatedAt;
     }
 }

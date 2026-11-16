@@ -9,6 +9,7 @@ use App\Entity\Principal;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
 
+/** @extends ServiceEntityRepository<AuthToken> */
 final class AuthTokenRepository extends ServiceEntityRepository
 {
     public function __construct(ManagerRegistry $registry)

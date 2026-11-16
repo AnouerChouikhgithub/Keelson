@@ -135,6 +135,7 @@ class ApiException extends \RuntimeException implements HttpExceptionInterface
         return $this->statusCode;
     }
 
+    /** @return array<string, string> */
     public function getHeaders(): array
     {
         return ['Cache-Control' => 'no-store'] + $this->headers;

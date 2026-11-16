@@ -1,11 +1,7 @@
-# Static analysis for application code. The baseline records the findings that
-# existed when the check was introduced; new code must not add findings. Fix a
-# baselined entry and delete its line rather than widening the baseline.
-includes:
-    - phpstan-baseline.neon
-
+# Static analysis for application code at the strictest level this codebase can
+# hold today. There is deliberately no baseline: a finding is fixed, not hidden.
 parameters:
-    level: 5
+    level: 8
     paths:
         - src
     excludePaths:

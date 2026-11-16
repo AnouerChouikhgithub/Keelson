@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Entity;
 
-use App\Id\UuidGenerator;
+use App\Util\Uuid;
 use App\Repository\OrganizationRepository;
 use Doctrine\ORM\Mapping as ORM;
 
@@ -15,8 +15,6 @@ use Doctrine\ORM\Mapping as ORM;
 class Organization
 {
     #[ORM\Id]
-    #[ORM\GeneratedValue(strategy: 'CUSTOM')]
-    #[ORM\CustomIdGenerator(class: UuidGenerator::class)]
     #[ORM\Column(type: 'guid')]
     private string $id;
 
@@ -47,6 +45,7 @@ class Organization
             throw new \InvalidArgumentException('Organization name must contain 1 to 120 characters.');
         }
 
+        $this->id = Uuid::v4();
         $now ??= new \DateTimeImmutable();
         $this->name = $name;
         $this->subdomain = $normalizedSubdomain;
@@ -117,5 +116,10 @@ class Organization
     private function touch(?\DateTimeImmutable $now = null): void
     {
         $this->updatedAt = $now ?? new \DateTimeImmutable();
+    }
+
+    public function getUpdatedAt(): \DateTimeImmutable
+    {
+        return $this->updatedAt;
     }
 }

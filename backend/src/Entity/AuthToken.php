@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Entity;
 
-use App\Id\UuidGenerator;
+use App\Util\Uuid;
 use App\Repository\AuthTokenRepository;
 use Doctrine\ORM\Mapping as ORM;
 
@@ -28,8 +28,6 @@ class AuthToken
     public const TYPES = [self::TYPE_VERIFY, self::TYPE_RESET];
 
     #[ORM\Id]
-    #[ORM\GeneratedValue(strategy: 'CUSTOM')]
-    #[ORM\CustomIdGenerator(class: UuidGenerator::class)]
     #[ORM\Column(type: 'guid')]
     private string $id;
 
@@ -42,7 +40,8 @@ class AuthToken
 
     // CHAR(64), not VARCHAR: every digest is exactly 64 hex characters.
     #[ORM\Column(name: 'token_hash', length: 64, options: ['fixed' => true])]
-    private string $tokenHash;
+    // Compared by the repository's query; PHP never reads the digest.
+    protected string $tokenHash;
 
     #[ORM\Column(name: 'expires_at', type: 'datetimetz_immutable')]
     private \DateTimeImmutable $expiresAt;
@@ -67,6 +66,7 @@ class AuthToken
             throw new \InvalidArgumentException('Auth token hash must be a lower-case SHA-256 digest.');
         }
 
+        $this->id = Uuid::v4();
         $now ??= new \DateTimeImmutable();
         $this->principal = $principal;
         $this->type = $type;

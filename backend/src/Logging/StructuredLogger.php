@@ -130,7 +130,11 @@ final class StructuredLogger implements LoggerInterface
         fwrite($stream, $line."\n");
     }
 
-    /** @param array<mixed> $context */
+    /**
+     * @param array<mixed> $context
+     *
+     * @return array<string, mixed>
+     */
     private function sanitize(array $context, int $depth = 0): array
     {
         if ($depth >= self::MAX_DEPTH) {
