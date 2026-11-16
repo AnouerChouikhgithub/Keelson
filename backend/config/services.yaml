@@ -4,12 +4,18 @@
 # Files in the packages/ subdirectory configure your dependencies.
 # See also https://symfony.com/doc/current/service_container/import.html
 
-# Put parameters here that don't need to change on each machine where the app is deployed
-# https://symfony.com/doc/current/best_practices.html#use-parameters-for-application-configuration
 parameters:
-    app.oidc.issuer: '%env(resolve:OIDC_ISSUER)%'
     # Structured log threshold; LOG_LEVEL overrides it for an investigation.
     app.log.minimum_level: 'warning'
+
+    # Where the SPA lives. Verification and reset emails link here, because the
+    # token is redeemed by the client, not by an API GET.
+    app.frontend_url: '%env(FRONTEND_URL)%'
+    app.mail.from: 'no-reply@keelson.local'
+
+    # Off only where accounts must work before mail delivery exists. On, an
+    # unverified account cannot sign in.
+    app.auth.require_verified_email: '%env(bool:REQUIRE_VERIFIED_EMAIL)%'
 
     # Inputs for App\Config\EnvironmentValidator. Only presence and shape are
     # checked, and only names are reported, so reading this map never exposes a
@@ -19,10 +25,8 @@ parameters:
         APP_SECRET: '%env(default::APP_SECRET)%'
         DATABASE_URL: '%env(default::DATABASE_URL)%'
         DEFAULT_URI: '%env(default::DEFAULT_URI)%'
-        OIDC_ISSUER: '%env(default::OIDC_ISSUER)%'
-        OIDC_WELL_KNOWN_URL: '%env(default::OIDC_WELL_KNOWN_URL)%'
-        OIDC_CLIENT_ID: '%env(default::OIDC_CLIENT_ID)%'
-        OIDC_CLIENT_SECRET: '%env(default::OIDC_CLIENT_SECRET)%'
+        FRONTEND_URL: '%env(default::FRONTEND_URL)%'
+        MAILER_DSN: '%env(default::MAILER_DSN)%'
         TRUSTED_HOSTS: '%env(default::TRUSTED_HOSTS)%'
         TRUSTED_PROXIES: '%env(default::TRUSTED_PROXIES)%'
         TRUSTED_HEADERS: '%env(default::TRUSTED_HEADERS)%'
@@ -38,15 +42,14 @@ services:
     App\:
         resource: '../src/'
 
-    App\Security\OidcPrincipalProvider:
+    App\Service\MailFactory:
         arguments:
-            $issuer: '%app.oidc.issuer%'
+            $frontendUrl: '%app.frontend_url%'
+            $fromAddress: '%app.mail.from%'
 
-    # The bundle registers the OIDC client per client name, not as an interface
-    # alias, so the end-session redirector is wired to the default client here.
-    App\Service\ProviderEndSessionRedirector:
+    App\Security\VerifiedUserChecker:
         arguments:
-            $oidcClient: '@drenso.oidc.client.default'
+            $requireVerifiedEmail: '%app.auth.require_verified_email%'
 
     # One JSON log line per event, with the request id and redacted context.
     # It decorates the framework logger so framework and application records

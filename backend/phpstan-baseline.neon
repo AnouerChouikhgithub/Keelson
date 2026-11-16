@@ -150,11 +150,6 @@ parameters:
 			count: 1
 			path: src/Entity/Organization.php
 
-		-
-			message: '#^Property App\\Entity\\Principal\:\:\$createdAt is never read, only written\.$#'
-			identifier: property.onlyWritten
-			count: 1
-			path: src/Entity/Principal.php
 
 		-
 			message: '#^Property App\\Entity\\Principal\:\:\$id is never written, only read\.$#'
@@ -163,7 +158,13 @@ parameters:
 			path: src/Entity/Principal.php
 
 		-
-			message: '#^Property App\\Entity\\Principal\:\:\$updatedAt is never read, only written\.$#'
+			message: '#^Property App\\Entity\\AuthToken\:\:\$id is never written, only read\.$#'
+			identifier: property.onlyRead
+			count: 1
+			path: src/Entity/AuthToken.php
+
+		-
+			message: '#^Property App\\Entity\\AuthToken\:\:\$tokenHash is never read, only written\.$#'
 			identifier: property.onlyWritten
 			count: 1
-			path: src/Entity/Principal.php
+			path: src/Entity/AuthToken.php

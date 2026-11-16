@@ -11,6 +11,7 @@ use App\Entity\Organization;
 use App\Entity\Principal;
 use App\Service\InvoiceCalculator;
 use Doctrine\ORM\EntityManagerInterface;
+use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
 
 /**
  * Idempotent loader for {@see SyntheticFixtureCatalog}: existing records are
@@ -25,6 +26,7 @@ final class SyntheticFixtureLoader
         private readonly InvoiceCalculator $calculator,
         private readonly SyntheticFixtureCatalog $catalog,
         private readonly FixtureTargetGuard $targetGuard,
+        private readonly UserPasswordHasherInterface $passwordHasher,
         private readonly string $environment,
     ) {
     }
@@ -45,10 +47,13 @@ final class SyntheticFixtureLoader
         $principals = [];
         foreach ($definitions['principals'] as $definition) {
             $principal = $this->entityManager->getRepository(Principal::class)
-                ->findOneBy(['issuer' => SyntheticFixtureCatalog::ISSUER, 'subject' => $definition['subject']]);
+                ->findOneBy(['email' => $definition['email']]);
             if (null === $principal) {
-                $principal = new Principal(SyntheticFixtureCatalog::ISSUER, $definition['subject']);
-                $principal->updateProfile($definition['displayName'], $definition['email'], true);
+                $principal = new Principal($definition['email'], $definition['displayName']);
+                // Documented development password so the seeded accounts can be
+                // signed into locally; the target guard keeps this off real databases.
+                $principal->setPasswordHash($this->passwordHasher->hashPassword($principal, SyntheticFixtureCatalog::DEV_PASSWORD));
+                $principal->markEmailVerified();
                 $this->entityManager->persist($principal);
                 ++$stats['created']['principals'];
             } else {

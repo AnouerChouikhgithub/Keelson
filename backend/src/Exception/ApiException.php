@@ -1,0 +1,99 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Exception;
+
+use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
+
+/**
+ * The one error type controllers throw.
+ *
+ * {@see \App\EventListener\ApiExceptionListener} is the only place that turns
+ * an exception into a response body, so every API error has the same
+ * `{error: {code, message, fields?}}` shape. The class carries the status, the
+ * machine-readable code and optionally per-field messages; the message is
+ * always safe to show, because controllers construct it from text they own
+ * rather than from an internal exception.
+ */
+class ApiException extends \RuntimeException implements HttpExceptionInterface
+{
+    /** @param array<string, list<string>> $fields */
+    public function __construct(
+        private readonly int $statusCode,
+        private readonly string $errorCode,
+        string $message,
+        private readonly array $fields = [],
+        ?\Throwable $previous = null,
+    ) {
+        parent::__construct($message, 0, $previous);
+    }
+
+    /** @param array<string, list<string>> $fields */
+    public static function validationFailed(string $message, array $fields = []): self
+    {
+        return new self(Response::HTTP_UNPROCESSABLE_ENTITY, 'validation_failed', $message, $fields);
+    }
+
+    public static function invalidJson(): self
+    {
+        return new self(Response::HTTP_BAD_REQUEST, 'invalid_json', 'The request body must be a JSON object.');
+    }
+
+    public static function invalidId(): self
+    {
+        return new self(Response::HTTP_BAD_REQUEST, 'invalid_id', 'The requested identifier is not valid.');
+    }
+
+    public static function invalidToken(): self
+    {
+        return new self(Response::HTTP_BAD_REQUEST, 'invalid_token', 'This link is no longer valid.');
+    }
+
+    public static function badRequest(string $message): self
+    {
+        return new self(Response::HTTP_BAD_REQUEST, 'invalid_request', $message);
+    }
+
+    public static function csrfInvalid(): self
+    {
+        return new self(Response::HTTP_FORBIDDEN, 'csrf_invalid', 'A valid CSRF token is required for this request.');
+    }
+
+    public static function forbidden(string $message = 'You are not allowed to perform this action.'): self
+    {
+        return new self(Response::HTTP_FORBIDDEN, 'forbidden', $message);
+    }
+
+    public static function notFound(string $message = 'Resource not found.'): self
+    {
+        return new self(Response::HTTP_NOT_FOUND, 'not_found', $message);
+    }
+
+    public static function conflict(string $message): self
+    {
+        return new self(Response::HTTP_CONFLICT, 'conflict', $message);
+    }
+
+    public function getStatusCode(): int
+    {
+        return $this->statusCode;
+    }
+
+    public function getHeaders(): array
+    {
+        return ['Cache-Control' => 'no-store'];
+    }
+
+    public function getErrorCode(): string
+    {
+        return $this->errorCode;
+    }
+
+    /** @return array<string, list<string>> */
+    public function getFields(): array
+    {
+        return $this->fields;
+    }
+}

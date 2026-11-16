@@ -1,61 +1,57 @@
 security:
+    password_hashers:
+        App\Entity\Principal:
+            algorithm: auto
+
     providers:
-        oidc_principals:
-            id: App\Security\OidcPrincipalProvider
+        # The account is its email address; the provider looks it up verbatim,
+        # so Principal normalizes the address before it is stored.
+        app_principals:
+            entity:
+                class: App\Entity\Principal
+                property: email
 
     firewalls:
         dev:
             pattern: ^/(_profiler|_wdt|assets|build)/
             security: false
-        # Liveness must answer before OIDC is configured: the main firewall
-        # builds the OIDC authenticator per request and would fail with a
-        # missing-client error instead of returning a probe response.
-        healthz:
-            pattern: ^/healthz$
-            security: false
-            stateless: true
-        # Readiness performs one database query and must answer without an
-        # OIDC client, so it gets the same treatment as liveness.
-        readiness:
-            pattern: ^/readyz$
-            security: false
-            stateless: true
         main:
             lazy: true
-            provider: oidc_principals
-            pattern: ^/(?!login$)
-            # API clients get 401 JSON; browser navigations still redirect to
-            # /login and start the OIDC flow.
+            provider: app_principals
+            # An unauthenticated API call is answered with 401 JSON. There is no
+            # server-rendered sign-in page to redirect to.
             entry_point: App\Security\ApiAuthenticationEntryPoint
-            oidc:
-                check_path: /login_check
-                login_path: app_login
-                user_identifier_property: sub
-                user_identifier_from_idtoken: true
-                # The provider redirect is implemented by
-                # App\EventListener\OidcEndSessionLogoutListener so that a
-                # provider failure degrades to the local logout instead of
-                # failing the request after the session was invalidated.
-                enable_end_session_listener: false
-            logout:
-                path: /logout
-                target: /
-                enable_csrf: true
+            user_checker: App\Security\VerifiedUserChecker
+            json_login:
+                check_path: /api/auth/login
+                username_path: email
+                password_path: password
+                success_handler: App\Security\JsonLoginSuccessHandler
+                failure_handler: App\Security\JsonLoginFailureHandler
+            # Five attempts per address per minute. The framework's throttle is
+            # declared for completeness, but its listener is not invoked in this
+            # setup, so App\EventListener\LoginThrottleListener enforces the same
+            # policy in front of the firewall (config/packages/rate_limiter.yaml).
+            login_throttling:
+                max_attempts: 5
+                interval: '1 minute'
 
     access_control:
-        - { path: ^/login$, roles: PUBLIC_ACCESS }
-        # The browser shell must learn it is signed out without being bounced
-        # through OIDC; the controller exposes only the caller's own identity.
+        # Sign-in, registration and the token flows are reachable without a
+        # session. Everything else requires one.
+        - { path: ^/api/auth/(register|verify-email|login|forgot-password|reset-password)$, roles: PUBLIC_ACCESS }
+        # The shell must learn it is signed out without a 401 of its own probe.
         - { path: ^/api/session$, roles: PUBLIC_ACCESS }
-        - { path: ^/logout$, roles: ROLE_USER }
         - { path: ^/healthz$, roles: PUBLIC_ACCESS }
         - { path: ^/readyz$, roles: PUBLIC_ACCESS }
         - { path: ^/, roles: ROLE_USER }
 
 when@test:
     security:
+        # Tests hash and verify hundreds of passwords; the production cost is
+        # deliberately unaffordable there.
         password_hashers:
-            Symfony\Component\Security\Core\User\PasswordAuthenticatedUserInterface:
+            App\Entity\Principal:
                 algorithm: auto
                 cost: 4
                 time_cost: 3

@@ -7,18 +7,24 @@ namespace App\DataFixtures;
 /**
  * Synthetic, non-production demo data for local development and tests.
  *
- * Every record here is fake: the issuer is a fixture-only URL, emails use the
- * reserved `example.test` domain, and no credentials exist for these subjects.
- * The loader resolves records by natural keys, so this catalog can be seeded
- * repeatedly without creating duplicates.
+ * Every record here is fake: emails use the reserved `example.test` domain and
+ * the shared password below is documented on purpose so a developer can sign in
+ * locally. It must never be reused anywhere real — the fixture loader refuses
+ * any target that is not an obvious local development or test database.
  */
 final class SyntheticFixtureCatalog
 {
-    public const ISSUER = 'https://fixtures.example.test/oidc';
+    /**
+     * The password every fixture principal is created with.
+     *
+     * Sprint 4 finalises this flow; today it exists so the seeded accounts can
+     * actually be signed into from the SPA.
+     */
+    public const DEV_PASSWORD = 'Keelson-dev-2026';
 
     /**
      * @return array{
-     *     principals: list<array{key: string, subject: string, displayName: string, email: string}>,
+     *     principals: list<array{key: string, displayName: string, email: string}>,
      *     organizations: list<array{key: string, name: string, subdomain: string}>,
      *     memberships: list<array{organization: string, principal: string, role: string}>,
      *     customers: list<array{key: string, organization: string, name: string, email: string, phone: ?string, billingAddress: ?array{street: string, city: string, postalCode: string, countryCode: string}}>,
@@ -29,10 +35,10 @@ final class SyntheticFixtureCatalog
     {
         return [
             'principals' => [
-                ['key' => 'owner-a', 'subject' => 'fixture-owner-a', 'displayName' => 'Amina Owner (fixture)', 'email' => 'owner-a@example.test'],
-                ['key' => 'admin-a', 'subject' => 'fixture-admin-a', 'displayName' => 'Youssef Admin (fixture)', 'email' => 'admin-a@example.test'],
-                ['key' => 'member-a', 'subject' => 'fixture-member-a', 'displayName' => 'Sami Member (fixture)', 'email' => 'member-a@example.test'],
-                ['key' => 'viewer-b', 'subject' => 'fixture-viewer-b', 'displayName' => 'Leila Viewer (fixture)', 'email' => 'viewer-b@example.test'],
+                ['key' => 'owner-a', 'displayName' => 'Amina Owner (fixture)', 'email' => 'owner-a@example.test'],
+                ['key' => 'admin-a', 'displayName' => 'Youssef Admin (fixture)', 'email' => 'admin-a@example.test'],
+                ['key' => 'member-a', 'displayName' => 'Sami Member (fixture)', 'email' => 'member-a@example.test'],
+                ['key' => 'viewer-b', 'displayName' => 'Leila Viewer (fixture)', 'email' => 'viewer-b@example.test'],
             ],
             'organizations' => [
                 ['key' => 'northwind', 'name' => 'Northwind Demo (fixture)', 'subdomain' => 'fixture-northwind'],

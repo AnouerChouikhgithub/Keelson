@@ -4,23 +4,25 @@ declare(strict_types=1);
 
 namespace App\EventListener;
 
+use App\Exception\ApiException;
+use App\Http\ApiErrorResponse;
 use Psr\Log\LoggerInterface;
 use Psr\Log\LogLevel;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
-use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Event\ExceptionEvent;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 use Symfony\Component\HttpKernel\KernelEvents;
 
 /**
- * Guarantees a JSON error document for uncaught `/api/...` failures.
+ * The single place that turns a failure under `/api/...` into a response.
  *
- * The API controllers return their own error document for expected business
- * outcomes; this listener only covers what escapes them (routing errors,
- * database outages, unexpected exceptions). Without it Symfony would answer an
- * XHR with an HTML error page, which the SPA can only report as an unknown
- * failure.
+ * Controllers throw {@see ApiException} (carrying status, code and optional
+ * field messages) instead of building their own error documents; anything else
+ * that escapes (routing errors, database outages, unexpected exceptions) is
+ * mapped from its HTTP status to a generic code. Either way the client gets
+ * `{error: {code, message, fields?}}` and never an HTML page, an exception
+ * message or a stack trace.
  *
  * It logs exactly once per failure. Symfony's own error listener would log the
  * same exception, so propagation is stopped after the response is set; that is
@@ -48,30 +50,31 @@ final class ApiExceptionListener implements EventSubscriberInterface
         }
 
         $throwable = $event->getThrowable();
-        $status = $throwable instanceof HttpExceptionInterface ? $throwable->getStatusCode() : Response::HTTP_INTERNAL_SERVER_ERROR;
-        if ($status < 400 || $status > 599) {
-            $status = Response::HTTP_INTERNAL_SERVER_ERROR;
+
+        if ($throwable instanceof ApiException) {
+            // Already client-safe: the controller wrote the message itself.
+            $response = ApiErrorResponse::fromException($throwable);
+        } else {
+            $status = $throwable instanceof HttpExceptionInterface ? $throwable->getStatusCode() : Response::HTTP_INTERNAL_SERVER_ERROR;
+            if ($status < 400 || $status > 599) {
+                $status = Response::HTTP_INTERNAL_SERVER_ERROR;
+            }
+            [$code, $message] = $this->describe($status);
+            $response = ApiErrorResponse::make($status, $code, $message);
         }
 
-        [$code, $message] = $this->describe($status);
-
         $this->logger->log(
-            $status >= 500 ? LogLevel::CRITICAL : LogLevel::WARNING,
+            $response->getStatusCode() >= 500 ? LogLevel::CRITICAL : LogLevel::WARNING,
             'API request failed',
             [
-                'status' => $status,
+                'status' => $response->getStatusCode(),
                 'method' => $request->getMethod(),
                 'path' => $request->getPathInfo(),
                 'exception' => $throwable,
             ],
         );
 
-        // No exception message, class, trace or DSN is ever copied to the client.
-        $event->setResponse(new JsonResponse(
-            ['error' => ['code' => $code, 'message' => $message]],
-            $status,
-            ['Cache-Control' => 'no-store'],
-        ));
+        $event->setResponse($response);
         $event->stopPropagation();
     }
 

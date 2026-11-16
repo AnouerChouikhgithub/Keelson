@@ -1,0 +1,17 @@
+framework:
+    rate_limiter:
+        # Failed sign-in attempts for one address. Five per minute is the
+        # product policy; the sixth is answered 429 with Retry-After.
+        login_email:
+            policy: 'fixed_window'
+            limit: 5
+            interval: '1 minute'
+
+        # A wider bucket per client address so a single host cannot grind
+        # through many accounts. Deliberately loose: offices and test suites
+        # sign in from one address, and the per-address rule is what stops a
+        # single account from being guessed.
+        login_ip:
+            policy: 'fixed_window'
+            limit: 100
+            interval: '1 minute'

@@ -5,8 +5,6 @@ declare(strict_types=1);
 namespace App\Logging;
 
 use Psr\Log\LoggerInterface;
-use Stringable;
-use Throwable;
 
 /**
  * Writes one JSON object per log line so logs can be filtered by level and
@@ -38,7 +36,7 @@ final class StructuredLogger implements LoggerInterface
     ];
 
     /** @var resource|null */
-    private $stream = null;
+    private $stream;
 
     private readonly int $minimumLevelIndex;
 
@@ -54,47 +52,47 @@ final class StructuredLogger implements LoggerInterface
         $this->minimumLevelIndex = self::LEVELS[strtolower($minimumLevel)] ?? self::LEVELS['warning'];
     }
 
-    public function emergency(string|Stringable $message, array $context = []): void
+    public function emergency(string|\Stringable $message, array $context = []): void
     {
         $this->log('emergency', $message, $context);
     }
 
-    public function alert(string|Stringable $message, array $context = []): void
+    public function alert(string|\Stringable $message, array $context = []): void
     {
         $this->log('alert', $message, $context);
     }
 
-    public function critical(string|Stringable $message, array $context = []): void
+    public function critical(string|\Stringable $message, array $context = []): void
     {
         $this->log('critical', $message, $context);
     }
 
-    public function error(string|Stringable $message, array $context = []): void
+    public function error(string|\Stringable $message, array $context = []): void
     {
         $this->log('error', $message, $context);
     }
 
-    public function warning(string|Stringable $message, array $context = []): void
+    public function warning(string|\Stringable $message, array $context = []): void
     {
         $this->log('warning', $message, $context);
     }
 
-    public function notice(string|Stringable $message, array $context = []): void
+    public function notice(string|\Stringable $message, array $context = []): void
     {
         $this->log('notice', $message, $context);
     }
 
-    public function info(string|Stringable $message, array $context = []): void
+    public function info(string|\Stringable $message, array $context = []): void
     {
         $this->log('info', $message, $context);
     }
 
-    public function debug(string|Stringable $message, array $context = []): void
+    public function debug(string|\Stringable $message, array $context = []): void
     {
         $this->log('debug', $message, $context);
     }
 
-    public function log($level, string|Stringable $message, array $context = []): void
+    public function log($level, string|\Stringable $message, array $context = []): void
     {
         $levelName = \is_string($level) ? strtolower($level) : (string) $level;
         if (!isset(self::LEVELS[$levelName]) || self::LEVELS[$levelName] < $this->minimumLevelIndex) {
@@ -158,14 +156,14 @@ final class StructuredLogger implements LoggerInterface
         if ($depth >= self::MAX_DEPTH) {
             return '[depth limit]';
         }
-        if ($value instanceof Throwable) {
+        if ($value instanceof \Throwable) {
             return $this->throwable($value);
         }
         if (\is_array($value)) {
             return $this->sanitize($value, $depth);
         }
         if (\is_object($value)) {
-            return $value instanceof Stringable ? $this->redact((string) $value) : $value::class;
+            return $value instanceof \Stringable ? $this->redact((string) $value) : $value::class;
         }
         if (\is_string($value)) {
             return $this->redact($value);
@@ -178,7 +176,7 @@ final class StructuredLogger implements LoggerInterface
     }
 
     /** @return array<string, mixed> */
-    private function throwable(Throwable $throwable): array
+    private function throwable(\Throwable $throwable): array
     {
         $previous = $throwable->getPrevious();
 

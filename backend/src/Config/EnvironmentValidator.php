@@ -10,16 +10,15 @@ namespace App\Config;
  * It reports variable *names* and problems only: no value is ever included in a
  * message, so the result is safe to print in a build log or startup error.
  *
- * Requirements are environment-aware on purpose. A missing OIDC client must not
- * stop a console command or a local test run, but it must stop a production
- * deployment from warming its cache with a configuration that cannot sign
- * anyone in.
+ * Requirements are environment-aware on purpose. A missing mailer must not stop
+ * a console command or a local test run, but it must stop a production
+ * deployment from warming its cache with a configuration that cannot deliver a
+ * verification or password-reset link.
  */
 final class EnvironmentValidator
 {
     private const PLACEHOLDERS = [
         'replace-with',
-        'your-logto-tenant',
         'changeme',
         'example.test',
         'ci-only',
@@ -66,42 +65,29 @@ final class EnvironmentValidator
             $errors[] = 'DEFAULT_URI must use https in production.';
         }
 
-        // Collected first because the severity depends on the environment:
-        // OIDC is optional for console work locally, mandatory in production.
-        $oidcFindings = [];
-        $oidc = [];
-        foreach (['OIDC_ISSUER', 'OIDC_WELL_KNOWN_URL', 'OIDC_CLIENT_ID', 'OIDC_CLIENT_SECRET'] as $name) {
-            $oidc[$name] = $this->value($configuration, $name);
-            if ('' === $oidc[$name]) {
-                $oidcFindings[] = sprintf('%s is not set; browser sign-in will be unavailable.', $name);
-            } elseif ($this->isPlaceholder($oidc[$name])) {
-                $oidcFindings[] = sprintf('%s still contains a placeholder value.', $name);
-            }
+        // Verification and reset links point at the SPA; a malformed origin
+        // would send users to a URL that does not exist.
+        $frontendUrl = $this->value($configuration, 'FRONTEND_URL');
+        if ('' === $frontendUrl) {
+            $this->report($errors, $warnings, $production, 'FRONTEND_URL is not set; verification and reset links cannot be built.');
+        } elseif (1 !== preg_match('#^https?://#i', $frontendUrl)) {
+            $errors[] = 'FRONTEND_URL must be an absolute http(s) URL.';
+        } elseif ($production && !str_starts_with(strtolower($frontendUrl), 'https://')) {
+            $errors[] = 'FRONTEND_URL must use https in production.';
         }
 
-        if ('' !== $oidc['OIDC_ISSUER'] && 1 !== preg_match('#^https?://#i', $oidc['OIDC_ISSUER'])) {
-            $oidcFindings[] = 'OIDC_ISSUER must be an absolute http(s) URL.';
-        } elseif ($production && '' !== $oidc['OIDC_ISSUER'] && !str_starts_with(strtolower($oidc['OIDC_ISSUER']), 'https://')) {
-            $errors[] = 'OIDC_ISSUER must use https in production.';
-        }
-
-        foreach ($oidcFindings as $finding) {
-            if ($production) {
-                $errors[] = $finding;
-            } else {
-                $warnings[] = $finding;
-            }
-        }
-
-        if ('' !== $oidc['OIDC_ISSUER'] && '' !== $oidc['OIDC_WELL_KNOWN_URL'] && !str_starts_with($oidc['OIDC_WELL_KNOWN_URL'], $oidc['OIDC_ISSUER'])) {
-            $warnings[] = 'OIDC_WELL_KNOWN_URL does not start with OIDC_ISSUER; confirm the provider metadata URL.';
+        // Without a transport, registration cannot deliver the verification
+        // link, so a production instance would create accounts nobody can use.
+        $mailerDsn = $this->value($configuration, 'MAILER_DSN');
+        if ('' === $mailerDsn) {
+            $this->report($errors, $warnings, $production, 'MAILER_DSN is not set; verification and reset emails cannot be sent.');
+        } elseif ($production && str_starts_with(strtolower($mailerDsn), 'null://')) {
+            $errors[] = 'MAILER_DSN must not use the null transport in production.';
         }
 
         $trustedHosts = $this->value($configuration, 'TRUSTED_HOSTS');
-        if ('' === $trustedHosts) {
-            if ($production) {
-                $errors[] = 'TRUSTED_HOSTS is not set; production must not answer arbitrary Host headers.';
-            }
+        if ('' === $trustedHosts && $production) {
+            $errors[] = 'TRUSTED_HOSTS is not set; production must not answer arbitrary Host headers.';
         }
 
         $trustedProxies = $this->value($configuration, 'TRUSTED_PROXIES');
@@ -115,6 +101,22 @@ final class EnvironmentValidator
         }
 
         return ['errors' => $errors, 'warnings' => $warnings];
+    }
+
+    /**
+     * Missing mail or frontend configuration blocks sign-in but not console
+     * work, so it is fatal only where the application serves users.
+     *
+     * @param list<string> $errors
+     * @param list<string> $warnings
+     */
+    private function report(array &$errors, array &$warnings, bool $production, string $finding): void
+    {
+        if ($production) {
+            $errors[] = $finding;
+        } else {
+            $warnings[] = $finding;
+        }
     }
 
     /** @param array<string, mixed> $configuration */
