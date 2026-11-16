@@ -16,6 +16,7 @@ use App\Repository\InvoiceAuditEventRepository;
 use App\Repository\InvoiceRepository;
 use App\Repository\OrganizationRepository;
 use App\Security\InvoiceVoter;
+use App\Service\InvoiceAuditLogger;
 use App\Service\InvoiceCalculator;
 use App\Service\InvoiceInput;
 use App\Service\InvoiceSerializer;
@@ -48,6 +49,7 @@ final class InvoiceApiController extends AbstractController
         private readonly InvoiceRepository $invoices,
         private readonly InvoiceAuditEventRepository $auditEvents,
         private readonly InvoiceCalculator $calculator,
+        private readonly InvoiceAuditLogger $audits,
         private readonly InvoiceInput $invoiceInput,
         private readonly InvoiceSerializer $serializer,
         private readonly TransactionBoundary $transactions,
@@ -462,9 +464,13 @@ final class InvoiceApiController extends AbstractController
         }
     }
 
+    /**
+     * Every audit row goes through the shared logger, which the fixture loader
+     * also uses, so seeded and real trails cannot drift apart in shape.
+     */
     private function audit(Organization $organization, Principal $principal, string $action, ?string $invoiceId = null, ?string $customerId = null): void
     {
-        $this->entityManager->persist(new InvoiceAuditEvent($organization, $invoiceId, $customerId, $action, $principal->getId()));
+        $this->audits->record($organization, $principal, $action, $invoiceId, $customerId);
     }
 
     /** @return array<string, mixed> */
