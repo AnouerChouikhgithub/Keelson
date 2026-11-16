@@ -46,6 +46,7 @@ export const nav = {
   settings: 'Settings',
   account: 'My account',
   notifications: 'Notifications',
+  notificationsWithCount: (count: number) => `Notifications (${count} unread)`,
   toggleNav: 'Toggle navigation',
   closeNav: 'Close navigation',
   currentOrg: (name: string) => `Current organization: ${name}`,
@@ -143,14 +144,6 @@ export const notFound = {
   title: 'This page does not exist',
   body: 'The address may be mistyped, or the record was removed. Choose a workspace from the switcher to continue.',
   backToDashboard: 'Go to the dashboard',
-}
-
-/** Copy for a surface whose backend endpoint does not exist in this build. */
-export const gate = {
-  eyebrow: 'NOT CONNECTED',
-  endpointLabel: 'Missing endpoint',
-  sourceNote: 'No demo records are shown for this screen.',
-  backToDashboard: 'Back to the dashboard',
 }
 
 export const toast = {

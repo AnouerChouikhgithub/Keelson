@@ -11,6 +11,7 @@ import { Skeleton } from '../components/Skeleton'
 import { ThemeControl } from '../components/ThemeControl'
 import { useToast } from '../components/ToastContext'
 import { useI18n } from '../i18n/I18nContext'
+import { useUnreadNotifications } from '../hooks/useUnreadNotifications'
 import { buildSearchResults, searchShortcutLabel } from '../search/search'
 import { useAuth } from '../session/AuthContext'
 import { initialsOf } from '../utils/initials'
@@ -127,6 +128,7 @@ export function AppShell() {
     () => buildSearchResults({ m, organizations: memberships, organizationId: orgId }),
     [m, memberships, orgId],
   )
+  const unreadNotifications = useUnreadNotifications(orgId)
 
   useEffect(() => {
     function handleShortcut(event: KeyboardEvent) {
@@ -233,8 +235,17 @@ export function AppShell() {
                 <kbd>{searchShortcutLabel()}</kbd>
               </button>
               {orgId !== null && (
-                <Link className="icon-button notification-button" aria-label={m.nav.notifications} to={`/o/${orgId}/notifications`}>
+                <Link
+                  className="icon-button notification-button"
+                  aria-label={unreadNotifications > 0 ? m.nav.notificationsWithCount(unreadNotifications) : m.nav.notifications}
+                  to={`/o/${orgId}/notifications`}
+                >
                   <Icon name="bell" />
+                  {unreadNotifications > 0 && (
+                    <span className="notification-badge" aria-hidden="true">
+                      {unreadNotifications > 99 ? '99+' : unreadNotifications}
+                    </span>
+                  )}
                 </Link>
               )}
               <span className="topbar-divider" role="presentation" />

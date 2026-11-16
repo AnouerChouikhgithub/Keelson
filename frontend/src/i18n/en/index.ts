@@ -1,6 +1,6 @@
 import { acceptInvitation, auth } from './auth'
 import { account, onboarding, settings } from './settings'
-import { common, errors, gate, nav, notFound, page, profile, roles, search, session, status, theme, toast, api } from './common'
+import { common, errors, nav, notFound, page, profile, roles, search, session, status, theme, toast, api } from './common'
 import { customers } from './customers'
 import { dashboard } from './dashboard'
 import { invoices } from './invoices'
@@ -21,8 +21,7 @@ export const en = {
   profile,
   session,
   status,
-  roles,
-  gate,
+  roles,
   toast,
   errors,
   notFound,

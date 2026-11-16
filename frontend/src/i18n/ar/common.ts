@@ -42,6 +42,7 @@ export const nav = {
   settings: 'الإعدادات',
   account: 'حسابي',
   notifications: 'الإشعارات',
+  notificationsWithCount: (count: number) => `الإشعارات (${count} غير مقروءة)`,
   toggleNav: 'إظهار أو إخفاء التنقل',
   closeNav: 'إغلاق التنقل',
   currentOrg: (name: string) => `المؤسسة الحالية: ${name}`,
@@ -139,13 +140,6 @@ export const notFound = {
   title: 'هذه الصفحة غير موجودة',
   body: 'قد يكون العنوان خاطئًا أو تم حذف السجل. اختر مساحة عمل من المبدّل للمتابعة.',
   backToDashboard: 'الانتقال إلى لوحة التحكم',
-}
-
-export const gate = {
-  eyebrow: 'غير متصل',
-  endpointLabel: 'نقطة النهاية المفقودة',
-  sourceNote: 'لا تُعرض أي سجلات تجريبية في هذه الشاشة.',
-  backToDashboard: 'العودة إلى لوحة التحكم',
 }
 
 export const toast = {
