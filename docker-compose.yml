@@ -3,8 +3,7 @@
 # volume clearly namespaced as `keelson`.
 #
 # The credentials below are development placeholders and are also the defaults
-# in backend/.env.example. Production must supply its own values externally;
-# see docs/ENVIRONMENT_CONFIGURATION.md and docs/DEPLOYMENT_GUIDE.md.
+# in backend/.env.example. Production must supply its own values externally.
 #
 # Ports are published on 127.0.0.1 only: a development database with a known
 # password must not be reachable from the network. Override a port with the
@@ -27,18 +26,6 @@ services:
       timeout: 3s
       retries: 20
       start_period: 10s
-    restart: unless-stopped
-
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "127.0.0.1:${REDIS_PORT:-6380}:6379"
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 3s
-      retries: 5
-    # Not wired into the application yet (no cache or session pool uses it).
     restart: unless-stopped
 
   mailpit:
