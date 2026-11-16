@@ -1,7 +1,8 @@
 import type { ReactNode } from 'react'
 import { useI18n } from '../../i18n/I18nContext'
-import { locales, messages } from '../../i18n/messages'
-import type { Locale } from '../../i18n/messages'
+import { locales, messages } from '../../i18n'
+import type { Locale } from '../../i18n'
+import './auth.css'
 
 /**
  * The frame every public screen shares: a centred card on the app background,
@@ -31,7 +32,7 @@ export function AuthLayout({ title, subtitle, children }: { title: string; subti
             onChange={(event) => setLocale(event.target.value as Locale)}
           >
             {locales.map((value) => (
-              <option key={value} value={value}>{messages[value].languageName}</option>
+              <option key={value} value={value}>{messages[value].common.languageName}</option>
             ))}
           </select>
         </div>
