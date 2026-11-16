@@ -13,78 +13,6 @@ parameters:
 			path: src/Entity/Customer.php
 
 		-
-			message: '#^Property App\\Entity\\Invitation\:\:\$acceptedAt \(DateTimeImmutable\|null\) is never assigned DateTimeImmutable so it can be removed from the property type\.$#'
-			identifier: property.unusedType
-			count: 1
-			path: src/Entity/Invitation.php
-
-		-
-			message: '#^Property App\\Entity\\Invitation\:\:\$acceptedAt is never read, only written\.$#'
-			identifier: property.onlyWritten
-			count: 1
-			path: src/Entity/Invitation.php
-
-		-
-			message: '#^Property App\\Entity\\Invitation\:\:\$createdAt is never read, only written\.$#'
-			identifier: property.onlyWritten
-			count: 1
-			path: src/Entity/Invitation.php
-
-		-
-			message: '#^Property App\\Entity\\Invitation\:\:\$email is never read, only written\.$#'
-			identifier: property.onlyWritten
-			count: 1
-			path: src/Entity/Invitation.php
-
-		-
-			message: '#^Property App\\Entity\\Invitation\:\:\$expiresAt is never read, only written\.$#'
-			identifier: property.onlyWritten
-			count: 1
-			path: src/Entity/Invitation.php
-
-		-
-			message: '#^Property App\\Entity\\Invitation\:\:\$id is unused\.$#'
-			identifier: property.unused
-			count: 1
-			path: src/Entity/Invitation.php
-
-		-
-			message: '#^Property App\\Entity\\Invitation\:\:\$invitedBy is never read, only written\.$#'
-			identifier: property.onlyWritten
-			count: 1
-			path: src/Entity/Invitation.php
-
-		-
-			message: '#^Property App\\Entity\\Invitation\:\:\$organization is never read, only written\.$#'
-			identifier: property.onlyWritten
-			count: 1
-			path: src/Entity/Invitation.php
-
-		-
-			message: '#^Property App\\Entity\\Invitation\:\:\$revokedAt \(DateTimeImmutable\|null\) is never assigned DateTimeImmutable so it can be removed from the property type\.$#'
-			identifier: property.unusedType
-			count: 1
-			path: src/Entity/Invitation.php
-
-		-
-			message: '#^Property App\\Entity\\Invitation\:\:\$revokedAt is never read, only written\.$#'
-			identifier: property.onlyWritten
-			count: 1
-			path: src/Entity/Invitation.php
-
-		-
-			message: '#^Property App\\Entity\\Invitation\:\:\$role is never read, only written\.$#'
-			identifier: property.onlyWritten
-			count: 1
-			path: src/Entity/Invitation.php
-
-		-
-			message: '#^Property App\\Entity\\Invitation\:\:\$status is never read, only written\.$#'
-			identifier: property.onlyWritten
-			count: 1
-			path: src/Entity/Invitation.php
-
-		-
 			message: '#^Property App\\Entity\\Invitation\:\:\$tokenHash is never read, only written\.$#'
 			identifier: property.onlyWritten
 			count: 1
@@ -121,22 +49,10 @@ parameters:
 			path: src/Entity/Membership.php
 
 		-
-			message: '#^Property App\\Entity\\Membership\:\:\$principal is never read, only written\.$#'
-			identifier: property.onlyWritten
-			count: 1
-			path: src/Entity/Membership.php
-
-		-
 			message: '#^Property App\\Entity\\Membership\:\:\$updatedAt is never read, only written\.$#'
 			identifier: property.onlyWritten
 			count: 1
 			path: src/Entity/Membership.php
-
-		-
-			message: '#^Property App\\Entity\\Organization\:\:\$createdAt is never read, only written\.$#'
-			identifier: property.onlyWritten
-			count: 1
-			path: src/Entity/Organization.php
 
 		-
 			message: '#^Property App\\Entity\\Organization\:\:\$id is never written, only read\.$#'

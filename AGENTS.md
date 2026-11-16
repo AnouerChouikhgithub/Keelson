@@ -9,11 +9,14 @@ limits and an admin panel. Demo product on top: invoicing.
   and PostgreSQL 16, with a first-party email+password session (no external
   identity provider). Implemented: registration with its first organization,
   email verification, password reset, membership-based authorization voters,
-  tenant-scoped organization/membership/invitation **repository reads** (no HTTP
-  endpoints), and a tenant-scoped customer/invoice/audit HTTP API. The HTTP routes
-  are `/api/auth/{register,login,verify-email,logout,forgot-password,reset-password}`,
-  `/healthz`, `/readyz`, `/api/session`, `/api/me/organizations` and
-  `/api/organizations/{organizationId}/…` customers, invoices and audit events.
+  organization administration (create/rename/soft-delete, members, invitations),
+  the dashboard aggregates, notifications, profile/password, and a tenant-scoped
+  customer/invoice/audit HTTP API with `q` search and cursor pagination. The HTTP
+  routes are `/api/auth/{register,login,verify-email,logout,forgot-password,reset-password,accept-invitation}`,
+  `/healthz`, `/readyz`, `/api/session`, `/api/invitations/{token}`,
+  `/api/me`, `/api/me/password`, `/api/me/organizations`, `/api/notifications…` and
+  `/api/organizations/…` (settings, members, invitations, dashboard, customers,
+  invoices, audit events) — 44 routes in total.
 - `frontend/` — React + Vite + TypeScript single-page dashboard shell. Session,
   organization/role, customers and invoices are **real API data** (`src/api/`);
   organization switching is a client-side selection the server re-authorizes on
@@ -53,7 +56,7 @@ installed. Keep the UI clean, modern and accessible (WCAG AA contrast).
   identity-provider bundle and no JWT library. API Platform, Stripe and Messenger
   are **not** declared.
 - Tests: `php bin/phpunit` against the disposable `backend/bin/test-db.sh`
-  PostgreSQL 16 container gives **157 tests / 721 assertions, exit 0**. Coverage
+  PostgreSQL 16 container gives **199 tests / 1139 assertions, exit 0**. Coverage
   includes registration, verification, login (throttling, unverified-address
   ordering), logout, password reset, CSRF, request-shape errors and the token
   service, alongside the invoice API and concurrency suites.
@@ -94,7 +97,7 @@ installed. Keep the UI clean, modern and accessible (WCAG AA contrast).
 - Backend checks that need no database: `composer validate --no-check-publish`,
   `php bin/console lint:yaml config --env=test`,
   `php bin/console lint:container --env=test`,
-  `php bin/console debug:router --env=test` (20 routes),
+  `php bin/console debug:router --env=test` (44 routes),
   `composer audit`, `./vendor/bin/phpstan analyse`.
 - Full suite: `bash bin/test-db.sh start && php bin/phpunit && bash bin/test-db.sh stop`
   (from `backend/`).
