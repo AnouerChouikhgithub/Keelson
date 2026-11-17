@@ -75,3 +75,16 @@ framework:
             policy: 'fixed_window'
             limit: 20
             interval: '15 minutes'
+
+        # AI calls spend the tenant's money and a provider's quota. The principal
+        # bucket stops one tab or one script from looping; the organization bucket is
+        # wider, so a team of active users does not throttle itself, but a single
+        # tenant still cannot drain its budget in a burst.
+        ai_principal:
+            policy: 'fixed_window'
+            limit: 20
+            interval: '5 minutes'
+        ai_organization:
+            policy: 'fixed_window'
+            limit: 200
+            interval: '5 minutes'

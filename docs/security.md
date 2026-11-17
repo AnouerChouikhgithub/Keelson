@@ -120,7 +120,8 @@ before the request.
 - Structured JSON logs redact tokens and password material; a request id
   correlates entries.
 - `security_events` records `login_success`, `login_failure`,
-  `password_changed` and `invitation_accepted` with IP, truncated user agent,
+  `password_changed`, `invitation_accepted` and `ai_enabled` (the moment a tenant
+  starts sending data to an AI provider) with IP, truncated user agent,
   request id and a small data map. A failed sign-in stores a 16-hex fingerprint of
   the address, never the address; a test scans the table for passwords and tokens.
 - Invoice audit events are append-only at the database level (a trigger refuses
