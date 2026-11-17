@@ -20,7 +20,7 @@ import { ApiError, errorCode, errorFields, serverMessage } from './errors'
  */
 
 export type RequestOptions = {
-  method?: 'GET' | 'POST' | 'PATCH' | 'DELETE'
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
   body?: unknown
   signal?: AbortSignal
   /** Overrides the request deadline; a hung backend must not spin forever. */
