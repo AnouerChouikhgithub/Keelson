@@ -1193,6 +1193,44 @@ paths:
           $ref: '#/components/responses/Unauthenticated'
         '404':
           $ref: '#/components/responses/NotFound'
+  /api/organizations/{organizationId}/onboarding:
+    parameters:
+      - $ref: '#/components/parameters/OrganizationId'
+    get:
+      tags: [Dashboard]
+      summary: The getting-started checklist, computed from database counts.
+      description: |
+        Every step is a count, never a stored flag, so the checklist survives a reload and
+        agrees with what the organization actually contains. Any active member may read it;
+        the step ids are stable and the client translates them.
+      responses:
+        '200':
+          description: The five steps and how many are done.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [steps, completed, total]
+                properties:
+                  steps:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, done]
+                      properties:
+                        id:
+                          type: string
+                          enum: [invite_team, add_customer, create_invoice, send_invoice, record_payment]
+                        done:
+                          type: boolean
+                  completed:
+                    type: integer
+                  total:
+                    type: integer
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /api/notifications:
     get:
       tags: [Notifications]
