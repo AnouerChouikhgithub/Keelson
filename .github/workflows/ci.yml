@@ -244,9 +244,24 @@ jobs:
       - name: Install Chromium
         working-directory: e2e
         run: pnpm exec playwright install --with-deps chromium
+      # `backend/.env` names the local Compose database (port 5433); CI's
+      # PostgreSQL is a service on 5432. .env.local is the documented
+      # per-environment override and is git-ignored. It is written here rather
+      # than relying on the job environment because the API server Playwright
+      # starts read `.env` instead (the journeys then failed against a database
+      # that does not exist in CI).
       - name: Prepare the database
         working-directory: backend
         run: |
+          cat > .env.local <<'DOTENV'
+          APP_ENV=dev
+          APP_SECRET=ci-only-not-a-secret
+          DATABASE_URL="postgresql://keelson:keelson@127.0.0.1:5432/keelson_e2e_test?serverVersion=16&charset=utf8"
+          MAILER_DSN="smtp://127.0.0.1:1025"
+          FRONTEND_URL="http://localhost:5173"
+          DEFAULT_URI="http://localhost:5173"
+          REQUIRE_VERIFIED_EMAIL=true
+          DOTENV
           php bin/console doctrine:migrations:migrate --no-interaction
           php bin/console app:fixtures:load --force
       # Playwright starts its own API and SPA, and refuses to reuse a port that
