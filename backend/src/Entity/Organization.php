@@ -78,11 +78,6 @@ class Organization
         return $this->status;
     }
 
-    public function isActive(): bool
-    {
-        return 'active' === $this->status;
-    }
-
     public function rename(string $name, ?\DateTimeImmutable $now = null): void
     {
         $name = trim($name);
@@ -116,10 +111,5 @@ class Organization
     private function touch(?\DateTimeImmutable $now = null): void
     {
         $this->updatedAt = $now ?? new \DateTimeImmutable();
-    }
-
-    public function getUpdatedAt(): \DateTimeImmutable
-    {
-        return $this->updatedAt;
     }
 }

@@ -112,34 +112,9 @@ class Principal implements UserInterface, PasswordAuthenticatedUserInterface
         return $this->displayName;
     }
 
-    public function getPasswordHash(): ?string
-    {
-        return $this->passwordHash;
-    }
-
-    public function getEmailVerifiedAt(): ?\DateTimeImmutable
-    {
-        return $this->emailVerifiedAt;
-    }
-
     public function isEmailVerified(): bool
     {
         return null !== $this->emailVerifiedAt;
-    }
-
-    public function getLastLoginAt(): ?\DateTimeImmutable
-    {
-        return $this->lastLoginAt;
-    }
-
-    public function getCreatedAt(): \DateTimeImmutable
-    {
-        return $this->createdAt;
-    }
-
-    public function getUpdatedAt(): \DateTimeImmutable
-    {
-        return $this->updatedAt;
     }
 
     public function setPasswordHash(string $passwordHash, ?\DateTimeImmutable $now = null): void
@@ -194,5 +169,16 @@ class Principal implements UserInterface, PasswordAuthenticatedUserInterface
     private function touch(?\DateTimeImmutable $now = null): void
     {
         $this->updatedAt = $now ?? new \DateTimeImmutable();
+    }
+
+    /**
+     * The stored hash, read by the integration test that asserts registration
+     * hashes the password and that a password change rewrites it. It is not exposed
+     * to the API and not serialised.
+     */
+    // @phpstan-ignore shipmonk.deadMethod (read by tests/Integration/RegistrationFlowTest)
+    public function getPasswordHash(): ?string
+    {
+        return $this->passwordHash;
     }
 }

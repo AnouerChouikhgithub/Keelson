@@ -98,12 +98,6 @@ class Membership
         $this->updatedAt = $now ?? new \DateTimeImmutable();
     }
 
-    public function suspend(?\DateTimeImmutable $now = null): void
-    {
-        $this->status = 'suspended';
-        $this->touch($now);
-    }
-
     public function canAdminister(): bool
     {
         return $this->isActive() && in_array($this->role, ['Owner', 'Admin'], true);
@@ -114,8 +108,15 @@ class Membership
         return $this->isActive() && 'Owner' === $this->role;
     }
 
-    public function getUpdatedAt(): \DateTimeImmutable
+    /**
+     * Suspends the membership. No HTTP route suspends a member yet: the operation
+     * exists because the integration tests drive the "suspended membership" states
+     * the voters and the organization list must reject.
+     */
+    // @phpstan-ignore shipmonk.deadMethod (used by tests/Integration/*Suspended* fixtures)
+    public function suspend(?\DateTimeImmutable $now = null): void
     {
-        return $this->updatedAt;
+        $this->status = 'suspended';
+        $this->touch($now);
     }
 }

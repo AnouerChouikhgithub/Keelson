@@ -26,9 +26,6 @@ class SecurityEvent
     public const LOGIN_SUCCESS = 'login_success';
     public const LOGIN_FAILURE = 'login_failure';
     public const PASSWORD_CHANGED = 'password_changed';
-    public const PASSWORD_RESET = 'password_reset';
-    public const ROLE_CHANGED = 'role_changed';
-    public const MEMBER_REMOVED = 'member_removed';
     public const INVITATION_ACCEPTED = 'invitation_accepted';
 
     #[ORM\Id]
@@ -81,41 +78,5 @@ class SecurityEvent
     public function getId(): string
     {
         return $this->id;
-    }
-
-    public function getPrincipalId(): ?string
-    {
-        return $this->principalId;
-    }
-
-    public function getType(): string
-    {
-        return $this->type;
-    }
-
-    public function getIp(): ?string
-    {
-        return $this->ip;
-    }
-
-    public function getUserAgent(): ?string
-    {
-        return $this->userAgent;
-    }
-
-    public function getRequestId(): ?string
-    {
-        return $this->requestId;
-    }
-
-    /** @return array<string, scalar|null> */
-    public function getData(): array
-    {
-        return $this->data;
-    }
-
-    public function getCreatedAt(): \DateTimeImmutable
-    {
-        return $this->createdAt;
     }
 }

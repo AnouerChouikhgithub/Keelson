@@ -17,14 +17,4 @@ final class SecurityEventRepository extends ServiceEntityRepository
     {
         parent::__construct($registry, SecurityEvent::class);
     }
-
-    /** @return list<SecurityEvent> */
-    public function findRecent(int $limit = 50): array
-    {
-        return $this->createQueryBuilder('event')
-            ->orderBy('event.createdAt', 'DESC')
-            ->setMaxResults(max(1, min(500, $limit)))
-            ->getQuery()
-            ->getResult();
-    }
 }

@@ -82,11 +82,6 @@ class Notification
         return $this->id;
     }
 
-    public function getPrincipal(): Principal
-    {
-        return $this->principal;
-    }
-
     public function getOrganization(): ?Organization
     {
         return $this->organization;

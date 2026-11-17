@@ -1,8 +1,41 @@
 # Static analysis for application code at the strictest level this codebase can
 # hold today. There is deliberately no baseline: a finding is fixed, not hidden.
+#
+# The dead-code detector is loaded here rather than behind a separate command so
+# an unused class, method, constant or property fails the same `composer stan`
+# gate as a type error. Its Symfony support needs the compiled container: every
+# service, controller, command, listener and voter it wires is an entry point, so
+# a method called only by the framework is not reported.
+includes:
+    - vendor/shipmonk/dead-code-detector/rules.neon
+
 parameters:
     level: 8
     paths:
         - src
     excludePaths:
         - var
+    ignoreErrors:
+        # Doctrine maps these columns, so the ORM writes them in SQL while nothing in
+        # PHP reads them yet: created_at/updated_at timestamps, last_login_at and the
+        # security_event audit columns. The columns are wanted (they are the record),
+        # and removing them would be a schema change, so "only written" is the wrong
+        # question for a persisted property. The dead-code detector's own never-read
+        # check is disabled for the same reason; this entry covers PHPStan's core
+        # rule, which reads the mapping as ordinary PHP.
+        -
+            identifier: property.onlyWritten
+            paths:
+                - src/Entity/*
+    shipmonkDeadCode:
+        detect:
+            # A persisted property is read by the database — by SQL, by an operator,
+            # by next quarter's report — not by PHP. The audit columns below are
+            # written now and read later, which "never read" cannot see, so only
+            # "never written" is enforced for properties.
+            deadProperties:
+                neverRead: false
+        usageProviders:
+            symfony:
+                containerXmlPaths:
+                    - var/cache/dev/App_KernelDevDebugContainer.xml

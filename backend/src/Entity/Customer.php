@@ -135,9 +135,4 @@ class Customer
         $this->phone = null === $phone ? null : trim($phone);
         $this->billingAddress = $billingAddress;
     }
-
-    public function getUpdatedAt(): \DateTimeImmutable
-    {
-        return $this->updatedAt;
-    }
 }
