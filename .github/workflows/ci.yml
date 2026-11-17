@@ -118,11 +118,14 @@ jobs:
           php bin/console lint:container --env=test
           php bin/console debug:router --env=test
       # The dead-code detector reads the compiled container to know which
-      # services and controllers are entry points. CI runs with APP_ENV=test, so
-      # the dev container it used to expect never exists here; warm the test one
-      # and let phpstan.neon.dist list both paths.
-      - name: Warm the compiled container for static analysis
-        run: php bin/console cache:warmup --env=test
+      # services and controllers are entry points. It loads every path listed in
+      # phpstan.neon.dist and fails when one is missing, so both kernels are
+      # warmed here: the test one for this job and the dev one a developer shell
+      # usually has, which the configuration also lists.
+      - name: Warm the compiled containers for static analysis
+        run: |
+          php bin/console cache:warmup --env=test
+          php bin/console cache:warmup --env=dev
       - name: Doctrine mapping validation
         run: php bin/console doctrine:schema:validate --skip-sync --env=test
       - name: PHPStan (level 8, no baseline)
