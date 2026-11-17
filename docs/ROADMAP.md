@@ -17,9 +17,9 @@ verified in this repository; they are not marketing claims.
 
 ## Where 1.0.0 stands
 
-- Backend: 214 tests / 1192 assertions against a disposable PostgreSQL 16, PHPStan
+- Backend: the suite runs against a disposable PostgreSQL 16 (counts: `bash bin/test-counts.sh`), PHPStan
   level 8 with the dead-code detector reporting nothing, php-cs-fixer clean.
-- Frontend: 98 tests in 15 files (node and jsdom projects), `tsc -b`, ESLint,
+- Frontend: node and jsdom projects, `tsc -b`, ESLint,
   `vite build`, a bundle budget, `knip` and the dictionary scan all clean.
 - Browser: seven Playwright journeys over the real stack pass locally.
 - Packaging: both images build and the compose stack serves the app with HSTS only
