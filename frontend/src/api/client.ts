@@ -3,20 +3,21 @@ import { ApiError, errorCode, errorFields, serverMessage } from './errors'
 /**
  * Single HTTP entry point for the SPA.
  *
- * Requests are same-origin by default (Vite proxies `/api` in development), so
- * the Symfony session cookie travels with `credentials: 'same-origin'`. Every
- * unsafe request also carries the CSRF token the session handed out, in the
- * `X-CSRF-Token` header the backend's mutation guard requires.
+ * Requests are same-origin: the SPA is served from the same origin as the API
+ * (Vite proxies `/api` in development, the reverse proxy routes it in
+ * production), so the Symfony session cookie travels with
+ * `credentials: 'same-origin'` and no CORS negotiation is involved. A
+ * cross-origin deployment is deliberately not supported — the backend sends no
+ * `Access-Control-Allow-*` headers, and inventing a client-side base URL would
+ * only produce requests the browser refuses. See `docs/adr/0006`.
  *
- * `VITE_API_BASE_URL` exists for deployments that serve the API from another
- * origin (which then needs an explicit CORS allow-list). It must never contain
- * a secret: Vite inlines every `VITE_*` value into the public bundle.
+ * Every unsafe request also carries the CSRF token the session handed out, in
+ * the `X-CSRF-Token` header the backend's mutation guard requires.
  *
  * Failure messages on `ApiError` are stable machine codes, never prose: the UI
  * localizes from `kind`/`status`/`code` in `presentError`, so no English string
  * from this file can reach a screen.
  */
-const configuredBaseUrl = (import.meta.env.VITE_API_BASE_URL ?? '').trim().replace(/\/+$/, '')
 
 export type RequestOptions = {
   method?: 'GET' | 'POST' | 'PATCH' | 'DELETE'
@@ -43,12 +44,19 @@ let csrfToken: string | null = null
 /** Re-reads the session and returns its (possibly rotated) token, or null. */
 let sessionRefresher: (() => Promise<string | null>) | null = null
 
+/** Called once per request the server refused with 401, so the provider can re-read. */
+let unauthorizedHandler: (() => void) | null = null
+
 export function setCsrfToken(token: string | null): void {
   csrfToken = token
 }
 
 export function setSessionRefresher(refresher: (() => Promise<string | null>) | null): void {
   sessionRefresher = refresher
+}
+
+export function setUnauthorizedHandler(handler: (() => void) | null): void {
+  unauthorizedHandler = handler
 }
 
 /**
@@ -63,6 +71,10 @@ export function setSessionRefresher(refresher: (() => Promise<string | null>) | 
  * recoverable: re-read the session once, then replay the request once. The
  * `csrfRetried` flag bounds it, so a server that keeps refusing cannot turn one
  * click into a request loop.
+ *
+ * A `401` means the cookie is gone or expired; the provider is told once and
+ * decides from the server's answer, rather than the client inventing a
+ * signed-out state.
  */
 export async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const { method = 'GET', body, signal: callerSignal, timeoutMs = DEFAULT_TIMEOUT_MS, csrfRetried = false } = options
@@ -76,7 +88,7 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
 
   let response: Response
   try {
-    response = await fetch(`${configuredBaseUrl}${path}`, {
+    response = await fetch(path, {
       method,
       signal,
       credentials: 'same-origin',
@@ -114,6 +126,8 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
       errorCode(payload),
       errorFields(payload),
     )
+
+    if (response.status === 401) unauthorizedHandler?.()
 
     if (failure.code === 'csrf_invalid' && !csrfRetried && UNSAFE_METHODS.has(method) && sessionRefresher !== null) {
       const renewed = await sessionRefresher()
