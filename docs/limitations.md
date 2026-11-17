@@ -80,3 +80,27 @@ it means for whoever deploys Keelson.
 - **No CI for Windows.** The workflows run on Ubuntu; the local scripts
   (`backend/bin/dev-reset.ps1`, `bin/test-db.sh`) cover Windows, but nothing
   verifies them automatically.
+
+## Verification
+
+What the release checks did and did not cover, so nobody reads more into them
+than they show:
+
+- **Coverage was not measured locally.** PHPUnit needs `pcov` or `xdebug` and this
+  checkout has neither, so `bin/coverage-check.php` and the 80% per-directory rule
+  in `phpunit.dist.xml` were **not run**. CI measures them on the `pcov` job.
+- **The GitHub workflows were never executed.** The repository has not been
+  pushed, so CI has not run once; `.github/workflows/ci.yml` is syntax-checked by
+  reading it, nothing more.
+- **No visual review.** The Playwright journeys drive the screens and assert on
+  behaviour, but no screenshots were taken or reviewed in this release: how the
+  light and dark themes and the 360 px and 1280 px layouts actually look is
+  unverified.
+- **The production proof ran on Docker Desktop for Windows**, on a fresh database
+  with `APP_ENV=prod APP_DEBUG=0`, not on the eventual host. It covered
+  registration, the verification mail through Mailpit, sign-in, a customer, an
+  invoice, the send transition and the dashboard — but not TLS itself: HSTS was
+  checked by sending `X-Forwarded-Proto: https` from a trusted proxy, since the
+  stack has no certificate.
+- **The 100 ms p95 target is unmet locally** (see Operations above) and no
+  comparison against a production-sized dataset was made.
