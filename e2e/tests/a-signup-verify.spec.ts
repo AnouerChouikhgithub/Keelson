@@ -40,7 +40,9 @@ test('sign up, verify by email, sign in, create a customer and sign out', async 
   await page.getByLabel('Name', { exact: false }).fill('E2E Signup Client')
   await page.getByLabel('Email', { exact: false }).fill('client@example.test')
   await page.getByRole('button', { name: 'Create customer' }).click()
-  await expect(page.getByText('E2E Signup Client')).toBeVisible()
+  // Assert the table row, not any text containing the name: the toast says
+  // "E2E Signup Client created." as well, and strict mode needs a single match.
+  await expect(page.getByRole('cell', { name: 'E2E Signup Client' })).toBeVisible()
 
   await signOut(page)
 })
