@@ -13,6 +13,7 @@ use App\Input\RegisterInput;
 use App\Input\ResendVerificationInput;
 use App\Input\ResetPasswordInput;
 use App\Input\VerifyEmailInput;
+use App\Mail\DeferredMailer;
 use App\Repository\PrincipalRepository;
 use App\Service\AuthTokenService;
 use App\Service\MailFactory;
@@ -21,7 +22,6 @@ use App\Service\SessionPayloadFactory;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
-use Symfony\Component\Mailer\MailerInterface;
 use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Security\Core\Authentication\Token\Storage\TokenStorageInterface;
@@ -43,6 +43,11 @@ use Symfony\Component\Security\Core\Authentication\Token\Storage\TokenStorageInt
  * Both token flows redeem through {@see AuthTokenService::redeem()}, which makes
  * the token single-use under concurrency and rolls the "used" mark back if the
  * account mutation fails.
+ *
+ * Mail that these endpoints send is queued on {@see DeferredMailer} and leaves at
+ * `kernel.terminate`: a known address does the same amount of work as an unknown
+ * one before the response exists, and a slow or broken transport cannot turn the
+ * answer into a different status or a different latency.
  */
 final class AuthController
 {
@@ -52,7 +57,7 @@ final class AuthController
         private readonly AuthTokenService $tokens,
         private readonly PrincipalRepository $principals,
         private readonly UserPasswordHasherInterface $passwordHasher,
-        private readonly MailerInterface $mailer,
+        private readonly DeferredMailer $mailer,
         private readonly MailFactory $mails,
         private readonly SessionPayloadFactory $payloads,
         private readonly TokenStorageInterface $tokenStorage,
