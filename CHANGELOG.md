@@ -4,6 +4,67 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] — 2026-11-17
+
+A hardening release on top of 1.0.0. No API shape changed except the new
+`subdomain_unavailable` error (below); every fix has a regression test.
+
+### Fixed
+
+- **Token redemption was not atomic.** Verification and reset links were read and
+  then marked used in two statements, so two concurrent requests could both
+  succeed. Redemption is now one `UPDATE ... WHERE used_at IS NULL AND
+  expires_at > now() RETURNING principal_id`, in the same transaction as the
+  account change; a failed change rolls the consumption back.
+- **The last-owner check could race.** Two Owners demoting or removing each other
+  could leave an organization ownerless. Owner-sensitive member changes now take
+  a per-organization advisory lock inside a transaction and re-read the roster
+  before counting Owners.
+- **Registration treated every unique violation as "address exists".** A losing
+  subdomain race answered `201 verification_sent` for an account that was rolled
+  back. Duplicate addresses still answer identically (enumeration safety), but a
+  subdomain collision is now an explicit `409 subdomain_unavailable`, and the
+  failed attempt leaves no principal, organization or token behind.
+- **`doctrine:schema:validate` aborted on introspection.** PostgreSQL folded the
+  uppercase index name DBAL generates for `invoices.customer_id`, so the index
+  was seen twice. Migration `Version20261117180000` renames it to
+  `idx_invoices_customer`; the check reports a diff (runtime-only objects such as
+  `sessions` and GIN/partial indexes have no ORM mapping) instead of crashing, and
+  `--skip-sync` — the CI gate — passes.
+- **CI could not pass three jobs.** The static analysis read a dev container that
+  CI never builds; the e2e database was named `keelson`, which the fixture guard
+  correctly refuses; and the audit job ran `composer audit` without installed
+  packages. The workflow now warms the test container and reads both XML paths,
+  uses `keelson_e2e_test`, and runs `composer audit --locked` alongside both pnpm
+  audits — all still blocking.
+
+### Added
+
+- **Cross-tab session synchronisation.** `BroadcastChannel` (with a `storage`
+  fallback) tells the other tabs that the session changed; each tab re-reads
+  `GET /api/session`, and a changed principal clears cached tenant reads. A tab
+  revalidates when it becomes active again, and a `401` triggers a re-read rather
+  than a guessed state.
+- **Backup and restore scripts** (`backend/bin/db-backup.sh`,
+  `backend/bin/db-restore.sh`) with archive verification, retention, an in-place
+  restore guard and a single-transaction restore; both were exercised against a
+  disposable PostgreSQL 16.
+- **Regression suites:** token redemption (replay, expiry, rollback, two
+  connections), last-owner protection (demotion, removal, admin boundary, lock),
+  registration constraints (suffix allocation, exhausted subdomains), cross-tab
+  session behaviour and the session signal codec.
+
+### Changed
+
+- **Same-origin only.** `VITE_API_BASE_URL` and the matching Docker build
+  argument were removed: no CORS exists on the API, so advertising a cross-origin
+  build produced requests the browser always refused (ADR 0006).
+- **CI is stricter**: `composer validate --strict`, Doctrine mapping validation,
+  a migration up-to-date check, a pre-flight API health check for the e2e job, and
+  an audit job that fails if any of the three audits reports a problem.
+- `composer.json` gained a name and description so `composer validate --strict`
+  passes; no dependency changed.
+
 ## [1.0.0] — 2026-11-17
 
 The first release. Everything below arrived across nine sprints; the list is

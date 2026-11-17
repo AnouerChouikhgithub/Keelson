@@ -11,6 +11,12 @@ the API, the frontend) with every secret read from the environment. Copy it to
 `docker-compose.prod.yml`, write a `.env` next to it, and use it as-is or as the
 reference for your own orchestrator.
 
+The SPA and the API **must** share one origin. The session cookie is first-party
+and the CSRF listener compares `Origin` with the request's own scheme and host, so
+a SPA served from another host would need a deliberately built CORS + CSRF
+feature that does not exist (ADR 0006). Serve both from this stack and put TLS in
+front of it.
+
 ## 1. Build
 
 ```sh
@@ -21,14 +27,11 @@ docker build -t keelson-web ./frontend
 Both are multi-stage builds: the backend image carries only the production
 autoloader, a warmed `prod` cache and the `pdo_pgsql`/`intl`/`opcache` extensions;
 the frontend image carries only `dist/` and the nginx configuration. Expected
-sizes: ~180 MB for the API, ~25 MB for the web image.
+sizes: roughly 180 MB for the API and 25 MB for the web image.
 
-The SPA talks to its own origin by default. Only set a build argument when the API
-lives elsewhere:
-
-```sh
-docker build -t keelson-web --build-arg VITE_API_BASE_URL=https://api.example.com ./frontend
-```
+There is no build argument to configure: the SPA calls its own origin. Set
+`KEELSON_BACKEND_ORIGIN` only for the **development** Vite proxy (default
+`http://127.0.0.1:8000`); it never reaches the production bundle.
 
 ## 2. Environment
 
@@ -87,7 +90,7 @@ php bin/console doctrine:migrations:status
 One migration creates the `pg_trgm` extension, so the owner role needs the right to
 `CREATE EXTENSION` (the bootstrap superuser in the official image has it). If your
 provider forbids that, enable `pg_trgm` out of band and mark the migration as
-migrated with `--no-interaction` after checking it ran the indexes.
+migrated after checking it ran the indexes.
 
 ## 4. Serve
 
@@ -135,30 +138,51 @@ add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" alway
 ## 5. Back up and restore
 
 Back up the database, not the volume. A logical dump is portable across PostgreSQL
-versions and is what a restore is tested against.
+versions and is what a restore is tested against. Two scripts implement the
+procedure; both read connection details from the standard libpq variables, so no
+password appears in the process list or in the output.
 
 ```sh
-# nightly, keep 14 days
-docker exec -e PGPASSWORD="$POSTGRES_PASSWORD" db \
-  pg_dump --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" --format=custom \
-  > "/backups/keelson-$(date +%F).dump"
-find /backups -name 'keelson-*.dump' -mtime +14 -delete
+# Nightly backup, keeping 14 days (KEELSON_BACKUP_KEEP_DAYS overrides).
+# Local PostgreSQL client:
+PGHOST=127.0.0.1 PGPORT=5433 PGUSER=app PGPASSWORD=*** PGDATABASE=keelson \
+  bash backend/bin/db-backup.sh /var/backups/keelson
+
+# Or, against the Compose database, using the container's own client tools:
+KEELSON_PG_CONTAINER=keelson-db-1 PGUSER=app PGPASSWORD=*** PGDATABASE=keelson \
+  bash backend/bin/db-backup.sh /var/backups/keelson
 ```
 
-Restore into a fresh database, then point the API at it:
+The script writes `keelson-<UTC timestamp>.dump` in custom format
+(`pg_restore`-readable, compressed), verifies the archive with `pg_restore --list`
+before reporting success, prints its size and SHA-256, and applies retention to
+the files it names in that directory.
+
+Restore into a **separate** database, verify it, then point the API at it:
 
 ```sh
-docker exec -i -e PGPASSWORD="$POSTGRES_PASSWORD" db \
-  pg_restore --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" --clean --if-exists --no-owner \
-  < /backups/keelson-2026-11-17.dump
+PGUSER=app PGPASSWORD=*** PGDATABASE=keelson KEELSON_PG_CONTAINER=keelson-db-1 \
+  bash backend/bin/db-restore.sh /var/backups/keelson/keelson-2026-11-17T020000Z.dump \
+  keelson_restore_check
 ```
 
-`--no-owner` matters: the restore may run as a different role than the dump did, and
-ownership is not what makes the application work — grants are. Re-run the migration
-command afterwards: it is idempotent and re-applies anything the dump predates.
+The restore refuses to target the database `PGDATABASE` points at, refuses an
+existing target unless `--replace` is passed, and runs
+`pg_restore --single-transaction --exit-on-error`, so a failure leaves the target
+untouched. Afterwards, run the migrations again — they are idempotent and apply
+anything the dump predates — then start the API and check `GET /readyz`.
 
-Sessions live in the same database, so a restore signs everyone out. That is the
-safe direction.
+`--no-owner` matters: the restore may run as a different role than the dump did,
+and grants, not ownership, are what make the application work. Sessions live in the
+same database, so a restore signs everyone out; that is the safe direction.
+
+**What was verified in this repository (2026-11-17):** a backup of a disposable
+PostgreSQL 16 database (`pg_dump` custom format, 35 846 bytes) was restored into a
+separate database with the same 12 tables, 48 indexes and 8 recorded migrations,
+and a real row (an account with its display name) was present in the restored
+copy. The in-place guard refused `keelson_test_test` as a target. Off-host
+retention, encryption and a restore into the production host were **not**
+exercised here.
 
 ## 6. Roll back
 
@@ -167,9 +191,9 @@ safe direction.
    docker compose -f docker-compose.prod.yml up -d --no-deps --build backend frontend
    ```
    with the previous image tags, or `docker tag` the last good pair back.
-2. **Schema changed too**: restore the dump taken before the deploy, then start the
-   previous image. Migrations in this repository are forward-only; a `down()` that
-   drops data is not a rollback plan.
+2. **Schema changed too**: restore the dump taken before the deploy into a fresh
+   database and point the previous image at it. Migrations in this repository are
+   forward-only; a `down()` that drops data is not a rollback plan.
 3. Keep `APP_SECRET` stable across a rollback: changing it invalidates every
    session and every CSRF token in flight.
 
@@ -209,8 +233,12 @@ Both are public and exempt from CSRF (they are `GET`). They return JSON.
 
 ## 9. What is not covered
 
-- No TLS termination in the images: put a proxy in front.
+- No TLS termination in the images: put a proxy in front. HSTS is emitted by the
+  API only when the request arrived over HTTPS.
+- Cross-origin SPA hosting is not supported (ADR 0006).
 - No log shipping, metrics or tracing exporter (see [limitations.md](limitations.md)).
 - No zero-downtime migration strategy: a migration that rewrites a large table
   locks it. Run such migrations in a window, or split them into expand/contract
   steps.
+- Email delivery to a real SMTP provider was not verified here; Mailpit is the only
+  transport that was exercised.

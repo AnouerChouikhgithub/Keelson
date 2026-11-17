@@ -15,6 +15,10 @@ use Doctrine\ORM\Mapping as ORM;
  * into a working link. "Used" and "expired" are separate columns rather than a
  * deleted row: the record is the audit trail of the flow, and consuming marks
  * it instead of destroying the evidence.
+ *
+ * Consumption is a conditional UPDATE in {@see AuthTokenRepository}, not a
+ * setter here: the row has to decide for itself which of two concurrent
+ * requests wins, and object state cannot express a compare-and-set.
  */
 #[ORM\Entity(repositoryClass: AuthTokenRepository::class)]
 #[ORM\Table(name: 'auth_tokens')]
@@ -40,7 +44,7 @@ class AuthToken
 
     // CHAR(64), not VARCHAR: every digest is exactly 64 hex characters.
     #[ORM\Column(name: 'token_hash', length: 64, options: ['fixed' => true])]
-    // Compared by the repository's query; PHP never reads the digest.
+    // Compared and written by SQL; PHP never reads the digest.
     protected string $tokenHash;
 
     #[ORM\Column(name: 'expires_at', type: 'datetimetz_immutable')]
@@ -78,19 +82,5 @@ class AuthToken
     public function getId(): string
     {
         return $this->id;
-    }
-
-    public function getPrincipal(): Principal
-    {
-        return $this->principal;
-    }
-
-    public function markUsed(\DateTimeImmutable $now): void
-    {
-        if (null !== $this->usedAt) {
-            throw new \InvalidArgumentException('Auth token was already used.');
-        }
-
-        $this->usedAt = $now;
     }
 }

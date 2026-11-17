@@ -17,10 +17,10 @@ RUN pnpm install --frozen-lockfile
 
 COPY . .
 
-# The SPA talks to its own origin by default (the nginx server block forwards
-# /api), so the base URL is only set when the API lives elsewhere.
-ARG VITE_API_BASE_URL=
-ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
+# The SPA is same-origin only: the nginx server block in this image forwards
+# /api, /healthz and /readyz to php-fpm, so there is no API base URL to configure.
+# A cross-origin deployment is not supported (no CORS on the API); the build
+# therefore has no VITE_API_BASE_URL argument to set.
 RUN pnpm run build
 
 

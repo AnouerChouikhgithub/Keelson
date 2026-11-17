@@ -27,6 +27,15 @@ parameters:
             identifier: property.onlyWritten
             paths:
                 - src/Entity/*
+        # `auth_tokens.used_at` is written by a conditional UPDATE in
+        # AuthTokenRepository, never assigned from PHP: the compare-and-set has to
+        # happen in the database, which is what makes redemption atomic. The
+        # column is real, mapped and read by operators, so it stays; PHPStan only
+        # sees "declared, never assigned".
+        -
+            identifier: property.unusedType
+            paths:
+                - src/Entity/AuthToken.php
     shipmonkDeadCode:
         detect:
             # A persisted property is read by the database — by SQL, by an operator,
@@ -37,5 +46,10 @@ parameters:
                 neverRead: false
         usageProviders:
             symfony:
+                # Both kernels are listed because the check that runs `composer stan`
+                # may have warmed either one: CI exports APP_ENV=test, while a
+                # developer shell often has the dev cache. Pointing at a single
+                # path made CI fail on a container that is simply not built there.
                 containerXmlPaths:
                     - var/cache/dev/App_KernelDevDebugContainer.xml
+                    - var/cache/test/App_KernelTestDebugContainer.xml

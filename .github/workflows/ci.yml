@@ -109,7 +109,7 @@ jobs:
       - name: Install PHP dependencies
         run: composer install --no-interaction --prefer-dist --no-progress
       - name: Validate Composer metadata
-        run: composer validate --no-check-publish
+        run: composer validate --strict
       - name: Check platform requirements
         run: composer check-platform-reqs
       - name: Lint YAML, container and routes
@@ -117,6 +117,17 @@ jobs:
           php bin/console lint:yaml config --env=test
           php bin/console lint:container --env=test
           php bin/console debug:router --env=test
+      # The dead-code detector reads the compiled container to know which
+      # services and controllers are entry points. It loads every path listed in
+      # phpstan.neon.dist and fails when one is missing, so both kernels are
+      # warmed here: the test one for this job and the dev one a developer shell
+      # usually has, which the configuration also lists.
+      - name: Warm the compiled containers for static analysis
+        run: |
+          php bin/console cache:warmup --env=test
+          php bin/console cache:warmup --env=dev
+      - name: Doctrine mapping validation
+        run: php bin/console doctrine:schema:validate --skip-sync --env=test
       - name: PHPStan (level 8, no baseline)
         run: composer stan
       - name: php-cs-fixer (dry run)
@@ -135,6 +146,8 @@ jobs:
           SQL
       - name: Migrate the test database as the owner role
         run: DATABASE_URL="$DATABASE_OWNER_URL" php bin/console doctrine:migrations:migrate --env=test --no-interaction
+      - name: Migration consistency (nothing pending)
+        run: DATABASE_URL="$DATABASE_OWNER_URL" php bin/console doctrine:migrations:up-to-date --env=test
       - name: Grant the application role access to the migrated schema
         env:
           PGPASSWORD: keelson_owner
@@ -143,7 +156,13 @@ jobs:
           GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO keelson_app;
           GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO keelson_app;
           SQL
+      # The integration suite installs triggers and exercises schema-level
+      # behaviour (a failing audit insert must roll the customer back), which the
+      # application role deliberately cannot do. Tests run as the owner role; the
+      # application role's narrower privileges are what production uses.
       - name: PHPUnit with coverage
+        env:
+          DATABASE_URL: ${{ env.DATABASE_OWNER_URL }}
         run: php bin/phpunit --coverage-clover var/coverage/clover.xml --coverage-filter src
       - name: Coverage gate (80% for Service, Security and Controller)
         run: php bin/coverage-check.php var/coverage/clover.xml --threshold=80
@@ -165,13 +184,17 @@ jobs:
       postgres:
         image: postgres:16-alpine
         env:
+          # The fixture loader refuses a database whose name does not look local
+          # (it must contain test/dev/fixture). `keelson` is the production name,
+          # so the e2e stack uses an explicitly test-named database instead of
+          # bypassing the guard.
           POSTGRES_USER: keelson
           POSTGRES_PASSWORD: keelson
-          POSTGRES_DB: keelson
+          POSTGRES_DB: keelson_e2e_test
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U keelson -d keelson"
+          --health-cmd "pg_isready -U keelson -d keelson_e2e_test"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 20
@@ -183,7 +206,7 @@ jobs:
     env:
       APP_ENV: dev
       APP_SECRET: ci-only-not-a-secret
-      DATABASE_URL: postgresql://keelson:keelson@127.0.0.1:5432/keelson?serverVersion=16&charset=utf8
+      DATABASE_URL: postgresql://keelson:keelson@127.0.0.1:5432/keelson_e2e_test?serverVersion=16&charset=utf8
       MAILER_DSN: smtp://127.0.0.1:1025
       FRONTEND_URL: http://localhost:5173
       REQUIRE_VERIFIED_EMAIL: 'true'
@@ -221,11 +244,46 @@ jobs:
       - name: Install Chromium
         working-directory: e2e
         run: pnpm exec playwright install --with-deps chromium
+      # `backend/.env` names the local Compose database (port 5433); CI's
+      # PostgreSQL is a service on 5432. .env.local is the documented
+      # per-environment override and is git-ignored. It is written here rather
+      # than relying on the job environment because the API server Playwright
+      # starts read `.env` instead (the journeys then failed against a database
+      # that does not exist in CI).
       - name: Prepare the database
         working-directory: backend
         run: |
+          cat > .env.local <<'DOTENV'
+          APP_ENV=dev
+          APP_SECRET=ci-only-not-a-secret
+          DATABASE_URL="postgresql://keelson:keelson@127.0.0.1:5432/keelson_e2e_test?serverVersion=16&charset=utf8"
+          MAILER_DSN="smtp://127.0.0.1:1025"
+          FRONTEND_URL="http://localhost:5173"
+          DEFAULT_URI="http://localhost:5173"
+          REQUIRE_VERIFIED_EMAIL=true
+          DOTENV
           php bin/console doctrine:migrations:migrate --no-interaction
           php bin/console app:fixtures:load --force
+      # Playwright starts its own API and SPA, and refuses to reuse a port that
+      # already answers (reuseExistingServer is off in CI). This probe proves the
+      # application boots with the job's environment, then stops the server it
+      # started so the journeys can bind the port themselves.
+      - name: Verify the API boots before the browser does
+        run: |
+          php -S 127.0.0.1:8000 -t backend/public backend/public/index.php > /tmp/api.log 2>&1 &
+          api=$!
+          healthy=0
+          for _ in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8000/healthz > /dev/null; then healthy=1; break; fi
+            sleep 1
+          done
+          kill "$api" 2>/dev/null || true
+          wait "$api" 2>/dev/null || true
+          if [ "$healthy" -ne 1 ]; then
+            echo 'The API did not become healthy:' >&2
+            cat /tmp/api.log >&2
+            exit 1
+          fi
       - name: Run the journeys
         working-directory: e2e
         run: pnpm test
@@ -252,11 +310,15 @@ jobs:
           php-version: ${{ env.PHP_VERSION }}
           coverage: none
           tools: composer:v2
-      - name: Composer audit
+      - name: Composer audit (lock file only, no install)
+        id: composer-audit
         working-directory: backend
-        # Blocking: a new advisory must be triaged (upgrade, or a documented
-        # exception in this file) before merging.
-        run: composer audit --format=plain
+        # `--locked` audits composer.lock without vendor/, which is what an
+        # audit job has: it previously ran `composer audit` against a checkout
+        # with no installed packages. Blocking: a new advisory must be triaged
+        # (upgrade, or a documented exception) before merging.
+        continue-on-error: true
+        run: composer audit --locked --format=plain
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.4.0
         with:
           version: ${{ env.PNPM_VERSION }}
@@ -264,8 +326,32 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
       - name: pnpm audit (frontend)
+        id: pnpm-frontend
+        if: always()
         working-directory: frontend
+        continue-on-error: true
         run: pnpm audit --audit-level high
       - name: pnpm audit (e2e)
+        id: pnpm-e2e
+        if: always()
         working-directory: e2e
+        continue-on-error: true
         run: pnpm audit --audit-level high
+      # The individual steps are non-blocking so that a PHP advisory cannot hide
+      # a JavaScript one; this step restores the blocking behaviour for the job.
+      - name: Fail when any audit reported a problem
+        if: always()
+        run: |
+          failed=0
+          for check in composer-audit pnpm-frontend pnpm-e2e; do
+            case "$check" in
+              composer-audit) outcome='${{ steps.composer-audit.outcome }}' ;;
+              pnpm-frontend) outcome='${{ steps.pnpm-frontend.outcome }}' ;;
+              pnpm-e2e) outcome='${{ steps.pnpm-e2e.outcome }}' ;;
+            esac
+            if [ "$outcome" != "success" ]; then
+              echo "::error::$check reported a problem (outcome: $outcome)"
+              failed=1
+            fi
+          done
+          exit "$failed"

@@ -18,7 +18,6 @@ use App\Service\AuthTokenService;
 use App\Service\MailFactory;
 use App\Service\RegistrationService;
 use App\Service\SessionPayloadFactory;
-use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -38,6 +37,10 @@ use Symfony\Component\Security\Core\Authentication\Token\Storage\TokenStorageInt
  *    A client cannot use these endpoints to discover accounts.
  *  - Redeeming a token proves control of the address, so both the verification
  *    and the reset flow can mark the address verified.
+ *
+ * Both token flows redeem through {@see AuthTokenService::redeem()}, which makes
+ * the token single-use under concurrency and rolls the "used" mark back if the
+ * account mutation fails.
  */
 final class AuthController
 {
@@ -45,7 +48,6 @@ final class AuthController
         private readonly InputHydrator $hydrator,
         private readonly RegistrationService $registration,
         private readonly AuthTokenService $tokens,
-        private readonly EntityManagerInterface $entityManager,
         private readonly PrincipalRepository $principals,
         private readonly UserPasswordHasherInterface $passwordHasher,
         private readonly MailerInterface $mailer,
@@ -60,7 +62,8 @@ final class AuthController
     {
         $input = $this->hydrator->hydrate(RegisterInput::class, JsonBody::decode($request));
 
-        // Returns silently when the address already exists.
+        // Returns silently when the address already exists; a subdomain
+        // collision that survives allocation is an explicit 409.
         $this->registration->register($input);
 
         return new JsonResponse(['status' => 'verification_sent'], Response::HTTP_CREATED, ['Cache-Control' => 'no-store']);
@@ -88,9 +91,9 @@ final class AuthController
     {
         $input = $this->hydrator->hydrate(VerifyEmailInput::class, JsonBody::decode($request));
 
-        $principal = $this->tokens->consume($input->token, AuthToken::TYPE_VERIFY);
-        $principal->markEmailVerified();
-        $this->entityManager->flush();
+        $this->tokens->redeem($input->token, AuthToken::TYPE_VERIFY, static function (Principal $principal): void {
+            $principal->markEmailVerified();
+        });
 
         return new Response(null, Response::HTTP_NO_CONTENT);
     }
@@ -156,11 +159,11 @@ final class AuthController
     {
         $input = $this->hydrator->hydrate(ResetPasswordInput::class, JsonBody::decode($request));
 
-        $principal = $this->tokens->consume($input->token, AuthToken::TYPE_RESET);
-        $principal->setPasswordHash($this->passwordHasher->hashPassword($principal, $input->password));
-        // Receiving the link is proof the address is reachable.
-        $principal->markEmailVerified();
-        $this->entityManager->flush();
+        $this->tokens->redeem($input->token, AuthToken::TYPE_RESET, function (Principal $principal) use ($input): void {
+            $principal->setPasswordHash($this->passwordHasher->hashPassword($principal, $input->password));
+            // Receiving the link is proof the address is reachable.
+            $principal->markEmailVerified();
+        });
 
         // The stored session token carries the previous hash; Symfony's
         // ContextListener compares it on the next request and signs other

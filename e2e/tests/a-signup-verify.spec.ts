@@ -32,12 +32,17 @@ test('sign up, verify by email, sign in, create a customer and sign out', async 
   await page.getByRole('link', { name: 'Customers', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Customers', exact: true })).toBeVisible()
 
-  await page.getByRole('button', { name: 'Add customer' }).click()
+  // A brand-new organization shows two actions with this label: the page header
+  // button and the empty-state one. Both open the same dialog, so take the first
+  // rather than letting strict mode fail on an otherwise correct screen.
+  await page.getByRole('button', { name: 'Add customer' }).first().click()
   // `Field` appends its required marker to the label, so match by prefix.
   await page.getByLabel('Name', { exact: false }).fill('E2E Signup Client')
   await page.getByLabel('Email', { exact: false }).fill('client@example.test')
   await page.getByRole('button', { name: 'Create customer' }).click()
-  await expect(page.getByText('E2E Signup Client')).toBeVisible()
+  // Assert the table row, not any text containing the name: the toast says
+  // "E2E Signup Client created." as well, and strict mode needs a single match.
+  await expect(page.getByRole('cell', { name: 'E2E Signup Client' })).toBeVisible()
 
   await signOut(page)
 })
