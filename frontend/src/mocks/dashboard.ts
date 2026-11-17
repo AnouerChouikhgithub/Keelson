@@ -1,3 +1,5 @@
+import type { InvoiceStatus } from '../api/types'
+
 export type MetricId = 'revenue' | 'outstanding' | 'overdue' | 'paidRate'
 
 export type DashboardMetric = {
@@ -9,8 +11,6 @@ export type DashboardMetric = {
   series: number[]
   tone: 'teal' | 'amber' | 'rose' | 'blue'
 }
-
-export type InvoiceStatus = 'paid' | 'sent' | 'overdue' | 'draft'
 
 export type InvoiceRow = {
   number: string

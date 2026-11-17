@@ -34,9 +34,7 @@ final class TransactionBoundary
 
             return $result;
         } catch (\Throwable $exception) {
-            if ($connection->isTransactionActive()) {
-                $this->entityManager->rollback();
-            }
+            $this->entityManager->rollback();
             throw $exception;
         }
     }

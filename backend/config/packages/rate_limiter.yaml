@@ -1,0 +1,77 @@
+framework:
+    rate_limiter:
+        # Failed sign-in attempts for one address. Five per minute is the
+        # product policy; the sixth is answered 429 with Retry-After.
+        login_email:
+            policy: 'fixed_window'
+            limit: 5
+            interval: '1 minute'
+
+        # A wider bucket per client address so a single host cannot grind
+        # through many accounts. Deliberately loose: offices and test suites
+        # sign in from one address, and the per-address rule is what stops a
+        # single account from being guessed.
+        login_ip:
+            policy: 'fixed_window'
+            limit: 100
+            interval: '1 minute'
+
+        # Verification mail is a send loop and a token-replay surface, so it gets
+        # the same per-address budget as sign-in, in its own buckets: exhausting
+        # these must never lock the account out of signing in once it is verified.
+        resend_email:
+            policy: 'fixed_window'
+            limit: 5
+            interval: '1 minute'
+
+        resend_ip:
+            policy: 'fixed_window'
+            limit: 100
+            interval: '1 minute'
+
+        # The subdomain check runs while someone types in the create form, so it
+        # gets a larger budget than a mail sender, but not an unlimited one: it is
+        # the only unauthenticated-adjacent read that touches another tenant's
+        # existence (it answers "taken" for any subdomain).
+        subdomain_availability:
+            policy: 'fixed_window'
+            limit: 60
+            interval: '1 minute'
+
+        # Resending sends mail. Five per invitation per minute stops a link from
+        # being used as a mail relay while leaving room for a genuine retry.
+        invitation_resend:
+            policy: 'fixed_window'
+            limit: 5
+            interval: '1 minute'
+
+        # Account creation writes a principal, an organization and a membership
+        # and sends a mail, so the bucket is per client address and deliberately
+        # small: a legitimate person needs one or two attempts.
+        register_ip:
+            policy: 'fixed_window'
+            limit: 100
+            interval: '1 hour'
+
+        # A reset mail is an outbound send and an account-existence oracle.
+        forgot_password_email:
+            policy: 'fixed_window'
+            limit: 5
+            interval: '15 minutes'
+        forgot_password_ip:
+            policy: 'fixed_window'
+            limit: 300
+            interval: '15 minutes'
+
+        # Accepting consumes a single-use token, so replay is already handled;
+        # this only bounds one host trying many tokens.
+        accept_invitation_ip:
+            policy: 'fixed_window'
+            limit: 100
+            interval: '10 minutes'
+
+        # Changing a password rehashes and rewrites every session token.
+        change_password_principal:
+            policy: 'fixed_window'
+            limit: 20
+            interval: '15 minutes'

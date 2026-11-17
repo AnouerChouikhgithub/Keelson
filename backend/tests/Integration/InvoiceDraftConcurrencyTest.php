@@ -9,6 +9,7 @@ use App\Entity\Invoice;
 use App\Entity\Membership;
 use App\Entity\Organization;
 use App\Entity\Principal;
+use App\Tests\Support\IssuesCsrfTokens;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Exception\LockWaitTimeoutException;
 use Doctrine\ORM\EntityManagerInterface;
@@ -23,6 +24,8 @@ use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
  */
 final class InvoiceDraftConcurrencyTest extends WebTestCase
 {
+    use IssuesCsrfTokens;
+
     private EntityManagerInterface $entityManager;
     private KernelBrowser $client;
     private string $suffix;
@@ -38,9 +41,7 @@ final class InvoiceDraftConcurrencyTest extends WebTestCase
         $this->entityManager = self::getContainer()->get('doctrine')->getManager();
         self::assertStringContainsString('PostgreSQL', $this->entityManager->getConnection()->getDatabasePlatform()::class);
         $this->suffix = bin2hex(random_bytes(6));
-        $issuer = $_SERVER['OIDC_ISSUER'] ?? $_ENV['OIDC_ISSUER'] ?? null;
-        self::assertNotNull($issuer, 'OIDC_ISSUER must be configured for the HTTP test user provider.');
-        $this->principal = new Principal($issuer, 'race-'.$this->suffix);
+        $this->principal = new Principal('race-'.$this->suffix.'@example.test');
         $this->organization = new Organization('Race Tenant '.$this->suffix, 'race-'.$this->suffix);
         $this->entityManager->persist($this->principal);
         $this->entityManager->persist($this->organization);
@@ -109,7 +110,7 @@ final class InvoiceDraftConcurrencyTest extends WebTestCase
         $invoice->send();
         $this->entityManager->flush();
 
-        $this->client->request('DELETE', $this->invoicePath($invoice), server: ['HTTP_ORIGIN' => 'http://localhost']);
+        $this->client->request('DELETE', $this->invoicePath($invoice), server: ['HTTP_ORIGIN' => 'http://localhost', 'HTTP_X_CSRF_TOKEN' => $this->csrfToken($this->client)]);
 
         self::assertResponseStatusCodeSame(409);
         self::assertSame(1, (int) $this->entityManager->getConnection()->fetchOne(
@@ -122,20 +123,20 @@ final class InvoiceDraftConcurrencyTest extends WebTestCase
     {
         $invoice = $this->draftInvoice();
 
-        $this->client->request('POST', $this->invoicePath($invoice).'/send', server: ['HTTP_ORIGIN' => 'http://localhost']);
+        $this->client->request('POST', $this->invoicePath($invoice).'/send', server: ['HTTP_ORIGIN' => 'http://localhost', 'HTTP_X_CSRF_TOKEN' => $this->csrfToken($this->client)]);
         self::assertResponseIsSuccessful();
         self::assertSame('sent', json_decode((string) $this->client->getResponse()->getContent(), true, 512, JSON_THROW_ON_ERROR)['invoice']['status']);
 
-        $this->client->request('POST', $this->invoicePath($invoice).'/mark-paid', server: ['HTTP_ORIGIN' => 'http://localhost']);
+        $this->client->request('POST', $this->invoicePath($invoice).'/mark-paid', server: ['HTTP_ORIGIN' => 'http://localhost', 'HTTP_X_CSRF_TOKEN' => $this->csrfToken($this->client)]);
         self::assertResponseIsSuccessful();
         self::assertSame('paid', json_decode((string) $this->client->getResponse()->getContent(), true, 512, JSON_THROW_ON_ERROR)['invoice']['status']);
         self::assertSame('paid', $this->column($invoice, 'status'));
 
         // Retrying completed transitions is a no-op and must not append a
         // duplicate status event.
-        $this->client->request('POST', $this->invoicePath($invoice).'/send', server: ['HTTP_ORIGIN' => 'http://localhost']);
+        $this->client->request('POST', $this->invoicePath($invoice).'/send', server: ['HTTP_ORIGIN' => 'http://localhost', 'HTTP_X_CSRF_TOKEN' => $this->csrfToken($this->client)]);
         self::assertResponseIsSuccessful();
-        $this->client->request('POST', $this->invoicePath($invoice).'/mark-paid', server: ['HTTP_ORIGIN' => 'http://localhost']);
+        $this->client->request('POST', $this->invoicePath($invoice).'/mark-paid', server: ['HTTP_ORIGIN' => 'http://localhost', 'HTTP_X_CSRF_TOKEN' => $this->csrfToken($this->client)]);
         self::assertResponseIsSuccessful();
         self::assertSame(1, (int) $this->entityManager->getConnection()->fetchOne(
             "SELECT COUNT(*) FROM invoice_audit_events WHERE organization_id = ? AND invoice_id = ? AND action = 'invoice.sent'",
@@ -223,7 +224,7 @@ final class InvoiceDraftConcurrencyTest extends WebTestCase
 
         try {
             $connection->executeStatement('UPDATE customers SET name = ? WHERE id = ?', ['Outer marker', $this->id($this->customer)]);
-            $this->client->request('POST', $this->invoicePath($invoice).'/send', server: ['HTTP_ORIGIN' => 'http://localhost']);
+            $this->client->request('POST', $this->invoicePath($invoice).'/send', server: ['HTTP_ORIGIN' => 'http://localhost', 'HTTP_X_CSRF_TOKEN' => $this->csrfToken($this->client)]);
 
             self::assertResponseIsSuccessful();
             self::assertTrue($connection->isTransactionActive(), 'The idempotent send committed a transaction it did not open.');
@@ -263,7 +264,7 @@ final class InvoiceDraftConcurrencyTest extends WebTestCase
     /** @return array<string, string> */
     private function jsonServer(): array
     {
-        return ['CONTENT_TYPE' => 'application/json', 'HTTP_ORIGIN' => 'http://localhost'];
+        return ['CONTENT_TYPE' => 'application/json', 'HTTP_ORIGIN' => 'http://localhost', 'HTTP_X_CSRF_TOKEN' => $this->csrfToken($this->client)];
     }
 
     private function invoicePath(Invoice $invoice): string

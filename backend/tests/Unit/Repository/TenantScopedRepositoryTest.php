@@ -27,9 +27,8 @@ final class TenantScopedRepositoryTest extends KernelTestCase
         self::assertStringContainsString('PostgreSQL', $this->entityManager->getConnection()->getDatabasePlatform()::class);
 
         $this->suffix = bin2hex(random_bytes(6));
-        $issuer = 'https://identity.example/tenant-tests/'.$this->suffix;
-        $this->principalA = new Principal($issuer, 'principal-a');
-        $this->principalB = new Principal($issuer, 'principal-b');
+        $this->principalA = new Principal('principal-a-'.$this->suffix.'@example.test');
+        $this->principalB = new Principal('principal-b-'.$this->suffix.'@example.test');
         $this->organizationA = new Organization('Tenant A '.$this->suffix, 'tenant-a-'.$this->suffix);
         $this->organizationB = new Organization('Tenant B '.$this->suffix, 'tenant-b-'.$this->suffix);
 
@@ -73,12 +72,16 @@ final class TenantScopedRepositoryTest extends KernelTestCase
         $organizations = $this->entityManager->getRepository(Organization::class);
         $memberships = $this->entityManager->getRepository(Membership::class);
 
-        self::assertEquals([$this->organizationA], $organizations->findForPrincipal($this->entityId($this->principalA)));
-        self::assertEqualsCanonicalizing(
-            [$this->organizationA, $this->organizationB],
-            $organizations->findForPrincipal($this->entityId($this->principalB)),
+        self::assertSame(
+            $this->organizationA,
+            $organizations->findActiveForPrincipalInOrganization($this->entityId($this->organizationA), $this->entityId($this->principalA)),
         );
-        self::assertSame([], $organizations->findForPrincipal('00000000-0000-4000-8000-000000000000'));
+        self::assertSame(
+            $this->organizationA,
+            $organizations->findActiveForPrincipalInOrganization($this->entityId($this->organizationA), $this->entityId($this->principalB)),
+        );
+        self::assertNull($organizations->findActiveForPrincipalInOrganization($this->entityId($this->organizationB), $this->entityId($this->principalA)));
+        self::assertNull($organizations->findActiveForPrincipalInOrganization($this->entityId($this->organizationA), '00000000-0000-4000-8000-000000000000'));
         self::assertNotNull($memberships->findForOrganizationAndPrincipal($this->entityId($this->organizationA), $this->entityId($this->principalA)));
         self::assertNull($memberships->findForOrganizationAndPrincipal($this->entityId($this->organizationB), $this->entityId($this->principalA)));
         self::assertCount(2, $memberships->findForOrganization($this->entityId($this->organizationA), $this->entityId($this->principalA)));
@@ -125,7 +128,10 @@ final class TenantScopedRepositoryTest extends KernelTestCase
         $this->entityManager->flush();
 
         self::assertSame([], $this->entityManager->getRepository(Membership::class)->findActiveForPrincipal($this->entityId($this->principalA)));
-        self::assertSame([], $this->entityManager->getRepository(Organization::class)->findForPrincipal($this->entityId($this->principalA)));
+        self::assertNull($this->entityManager->getRepository(Organization::class)->findActiveForPrincipalInOrganization(
+            $this->entityId($this->organizationA),
+            $this->entityId($this->principalA),
+        ));
     }
 
     private function entityId(object $entity): string

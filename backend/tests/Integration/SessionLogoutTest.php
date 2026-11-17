@@ -5,12 +5,21 @@ declare(strict_types=1);
 namespace App\Tests\Integration;
 
 use App\Entity\Principal;
+use App\Tests\Support\IssuesCsrfTokens;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 
+/**
+ * Signing out is a state change, so it is CSRF-protected like every other
+ * authenticated write, and it must leave the client holding a dead session.
+ */
 final class SessionLogoutTest extends WebTestCase
 {
+    use IssuesCsrfTokens;
+
+    private const UNSAFE_ORIGIN = ['HTTP_ORIGIN' => 'http://localhost'];
+
     private EntityManagerInterface $entityManager;
     private KernelBrowser $client;
     private Principal $principal;
@@ -23,10 +32,7 @@ final class SessionLogoutTest extends WebTestCase
         $this->entityManager = self::getContainer()->get('doctrine')->getManager();
         self::assertStringContainsString('PostgreSQL', $this->entityManager->getConnection()->getDatabasePlatform()::class);
 
-        $issuer = $_SERVER['OIDC_ISSUER'] ?? $_ENV['OIDC_ISSUER'] ?? null;
-        self::assertNotNull($issuer, 'OIDC_ISSUER must be configured for the test session user.');
-        $this->principal = new Principal($issuer, 'logout-test-'.bin2hex(random_bytes(8)));
-        $this->principal->updateProfile('Logout Test User', 'logout@example.test', true);
+        $this->principal = new Principal('logout-test-'.bin2hex(random_bytes(8)).'@example.test', 'Logout Test User');
         $this->entityManager->persist($this->principal);
         $this->entityManager->flush();
 
@@ -39,10 +45,10 @@ final class SessionLogoutTest extends WebTestCase
     {
         try {
             if (isset($this->entityManager) && $this->entityManager->isOpen() && isset($this->principal)) {
-                // loginUser() serializes the Principal into the test
-                // session; after the request cycle the original ORM object
-                // may be detached. Delete only this test's unique row by its
-                // generated UUID instead of asking the UnitOfWork to remove it.
+                // loginUser() serializes the Principal into the test session;
+                // after the request cycle the original ORM object may be
+                // detached. Delete only this test's unique row by its generated
+                // UUID instead of asking the UnitOfWork to remove it.
                 $this->entityManager->getConnection()->executeStatement(
                     'DELETE FROM principals WHERE id = ?',
                     [$this->principal->getId()],
@@ -54,49 +60,58 @@ final class SessionLogoutTest extends WebTestCase
         }
     }
 
-    public function testLogoutWithSessionProbeTokenInvalidatesTheAuthenticatedSession(): void
+    public function testTheSessionProbeReturnsTheCallersIdentityAndCsrfToken(): void
     {
         $this->client->request('GET', '/api/session');
-        self::assertResponseIsSuccessful();
 
-        $session = json_decode((string) $this->client->getResponse()->getContent(), true, 512, JSON_THROW_ON_ERROR);
+        self::assertResponseIsSuccessful();
+        self::assertStringContainsString('no-store', (string) $this->client->getResponse()->headers->get('Cache-Control'));
         self::assertSame([
             'authenticated' => true,
             'user' => [
                 'id' => $this->principal->getId(),
-                'email' => 'logout@example.test',
+                'email' => $this->principal->getEmail(),
                 'displayName' => 'Logout Test User',
             ],
-        ], array_intersect_key($session, array_flip(['authenticated', 'user'])));
-        self::assertIsArray($session['logout'] ?? null);
-        self::assertSame('/logout', $session['logout']['url'] ?? null);
-        self::assertNotSame('', $session['logout']['csrfToken'] ?? '');
-        $csrfToken = $session['logout']['csrfToken'];
+        ], array_intersect_key($this->payload(), array_flip(['authenticated', 'user'])));
+        self::assertNotSame('', $this->payload()['csrfToken'] ?? '');
+    }
 
-        // A forged token must not end the authenticated session.
-        $this->client->request('POST', '/logout', ['_csrf_token' => 'invalid-token']);
+    public function testLogoutRefusesAForgedCsrfTokenAndAcceptsTheIssuedOne(): void
+    {
+        $token = $this->csrfToken($this->client);
+
+        $this->client->request('POST', '/api/auth/logout', server: self::UNSAFE_ORIGIN + ['HTTP_X_CSRF_TOKEN' => 'forged-token']);
         self::assertResponseStatusCodeSame(403);
-        $this->client->request('GET', '/api/session');
-        self::assertResponseIsSuccessful();
-        $session = json_decode((string) $this->client->getResponse()->getContent(), true, 512, JSON_THROW_ON_ERROR);
-        self::assertTrue($session['authenticated'] ?? false, 'An invalid CSRF token ended the session.');
-        $csrfToken = $session['logout']['csrfToken'];
-
-        // BrowserKit retains the session cookie between these requests. The
-        // token comes from the endpoint under test, not a generated test value.
-        $this->client->request('POST', '/logout', ['_csrf_token' => $csrfToken]);
-        self::assertResponseRedirects('/');
+        self::assertSame(['error' => ['code' => 'csrf_invalid', 'message' => 'A valid CSRF token is required for this request.']], $this->payload());
 
         $this->client->request('GET', '/api/session');
-        self::assertResponseIsSuccessful();
-        self::assertSame([
-            'authenticated' => false,
-            'user' => null,
-            'logout' => null,
-        ], json_decode((string) $this->client->getResponse()->getContent(), true, 512, JSON_THROW_ON_ERROR));
+        self::assertTrue($this->payload()['authenticated'] ?? false, 'A forged token ended the session.');
 
-        // Also prove the same client no longer reaches a protected route.
-        $this->client->request('GET', '/api/organizations/11111111-1111-4111-8111-111111111111/customers');
-        self::assertResponseRedirects('/login');
+        // BrowserKit retains the session cookie between these requests, and the
+        // token comes from the endpoint under test rather than a test helper.
+        $this->client->request('POST', '/api/auth/logout', server: self::UNSAFE_ORIGIN + ['HTTP_X_CSRF_TOKEN' => $token]);
+        self::assertResponseStatusCodeSame(204);
+
+        $this->client->request('GET', '/api/session');
+        self::assertSame(
+            ['authenticated' => false, 'user' => null, 'csrfToken' => null],
+            $this->payload(),
+        );
+
+        // The same cookie jar can no longer reach a protected route, and the
+        // answer is JSON rather than a redirect to a login page.
+        $this->client->request('GET', '/api/me/organizations');
+        self::assertResponseStatusCodeSame(401);
+        self::assertSame('unauthenticated', $this->payload()['error']['code'] ?? null);
+    }
+
+    /** @return array<string, mixed> */
+    private function payload(): array
+    {
+        $decoded = json_decode((string) $this->client->getResponse()->getContent(), true, 512, \JSON_THROW_ON_ERROR);
+        self::assertIsArray($decoded);
+
+        return $decoded;
     }
 }

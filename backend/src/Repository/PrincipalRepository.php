@@ -15,8 +15,15 @@ class PrincipalRepository extends ServiceEntityRepository
         parent::__construct($registry, Principal::class);
     }
 
-    public function findByIssuerAndSubject(string $issuer, string $subject): ?Principal
+    /**
+     * Looks a principal up by its normalized address.
+     *
+     * The caller must pass an address that already went through
+     * {@see Principal::normalizeEmail()}: the stored column is lower-cased, and
+     * comparing a raw address would silently miss `A@b.test`.
+     */
+    public function findOneByEmail(string $email): ?Principal
     {
-        return $this->findOneBy(['issuer' => $issuer, 'subject' => $subject]);
+        return $this->findOneBy(['email' => $email]);
     }
 }

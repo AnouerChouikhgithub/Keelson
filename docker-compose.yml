@@ -3,20 +3,25 @@
 # volume clearly namespaced as `keelson`.
 #
 # The credentials below are development placeholders and are also the defaults
-# in backend/.env.example. Production must supply its own values externally;
-# see docs/ENVIRONMENT_CONFIGURATION.md and docs/DEPLOYMENT_GUIDE.md.
+# in backend/.env.example. Production must supply its own values externally.
 #
 # Ports are published on 127.0.0.1 only: a development database with a known
 # password must not be reachable from the network. Override a port with the
 # matching *_PORT variable in the shell or a root .env file.
 name: keelson
 services:
+# The development database is `keelson_dev`, never `keelson`: production uses the
+# bare name, and the fixture loader's guard refuses anything that is not obviously
+# local. POSTGRES_DB only applies to a *fresh* volume — an existing db_data volume
+# keeps its old database name. Create the new one there once with:
+#   cd backend && php bin/console doctrine:database:create
+# (`backend/bin/dev-reset.sh` does that as part of its drop/create/migrate/seed.)
   db:
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-app}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-app}
-      POSTGRES_DB: ${POSTGRES_DB:-keelson}
+      POSTGRES_DB: ${POSTGRES_DB:-keelson_dev}
     ports:
       - "127.0.0.1:${POSTGRES_PORT:-5433}:5432"
     volumes:
@@ -27,18 +32,6 @@ services:
       timeout: 3s
       retries: 20
       start_period: 10s
-    restart: unless-stopped
-
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "127.0.0.1:${REDIS_PORT:-6380}:6379"
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 3s
-      retries: 5
-    # Not wired into the application yet (no cache or session pool uses it).
     restart: unless-stopped
 
   mailpit:

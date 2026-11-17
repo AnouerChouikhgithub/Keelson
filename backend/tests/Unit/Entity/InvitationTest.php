@@ -46,7 +46,7 @@ final class InvitationTest extends TestCase
             $email,
             $role,
             $tokenHash,
-            new Principal('https://issuer.example', 'subject-1'),
+            new Principal('subject-1@example.test'),
             $expiresAt ?? new \DateTimeImmutable('+72 hours'),
         );
     }

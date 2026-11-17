@@ -9,6 +9,7 @@ use App\Entity\Invoice;
 use App\Entity\Membership;
 use App\Entity\Organization;
 use App\Entity\Principal;
+use App\Tests\Support\IssuesCsrfTokens;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
@@ -22,6 +23,8 @@ use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
  */
 final class InvoiceAuthorizationMatrixTest extends WebTestCase
 {
+    use IssuesCsrfTokens;
+
     private EntityManagerInterface $entityManager;
     private KernelBrowser $client;
     private string $suffix;
@@ -45,12 +48,10 @@ final class InvoiceAuthorizationMatrixTest extends WebTestCase
         $this->entityManager = self::getContainer()->get('doctrine')->getManager();
         self::assertStringContainsString('PostgreSQL', $this->entityManager->getConnection()->getDatabasePlatform()::class);
         $this->suffix = bin2hex(random_bytes(6));
-        $issuer = $_SERVER['OIDC_ISSUER'] ?? $_ENV['OIDC_ISSUER'] ?? null;
-        self::assertNotNull($issuer, 'OIDC_ISSUER must be configured for the HTTP test user provider.');
         $this->organization = new Organization('Matrix Tenant '.$this->suffix, 'matrix-'.$this->suffix);
         $this->entityManager->persist($this->organization);
         foreach (['Owner', 'Admin', 'Member', 'Viewer'] as $role) {
-            $principal = new Principal($issuer, 'matrix-'.strtolower($role).'-'.$this->suffix);
+            $principal = new Principal('matrix-'.strtolower($role).'-'.$this->suffix.'@example.test');
             $this->entityManager->persist($principal);
             $this->principals[$role] = $principal;
         }
@@ -133,13 +134,13 @@ final class InvoiceAuthorizationMatrixTest extends WebTestCase
 
         $this->client->request('GET', $path);
         self::assertResponseIsSuccessful();
-        $this->client->request('PATCH', $path, server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ORIGIN' => 'http://localhost'], content: json_encode([
+        $this->client->request('PATCH', $path, server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ORIGIN' => 'http://localhost', 'HTTP_X_CSRF_TOKEN' => $this->csrfToken($this->client)], content: json_encode([
             'lineItems' => [['description' => 'Forbidden', 'quantity' => '1.000', 'unitPrice' => '999.000']],
         ], JSON_THROW_ON_ERROR));
         self::assertResponseStatusCodeSame(404);
-        $this->client->request('POST', $path.'/send', server: ['HTTP_ORIGIN' => 'http://localhost']);
+        $this->client->request('POST', $path.'/send', server: ['HTTP_ORIGIN' => 'http://localhost', 'HTTP_X_CSRF_TOKEN' => $this->csrfToken($this->client)]);
         self::assertResponseStatusCodeSame(404);
-        $this->client->request('POST', $path.'/mark-paid', server: ['HTTP_ORIGIN' => 'http://localhost']);
+        $this->client->request('POST', $path.'/mark-paid', server: ['HTTP_ORIGIN' => 'http://localhost', 'HTTP_X_CSRF_TOKEN' => $this->csrfToken($this->client)]);
         self::assertResponseStatusCodeSame(404);
         self::assertSame('draft', (string) $this->entityManager->getConnection()->fetchOne('SELECT status FROM invoices WHERE id = ?', [$this->id($this->draftInvoice)]));
         self::assertSame('10.000', (string) $this->entityManager->getConnection()->fetchOne('SELECT subtotal FROM invoices WHERE id = ?', [$this->id($this->draftInvoice)]));
@@ -174,15 +175,15 @@ final class InvoiceAuthorizationMatrixTest extends WebTestCase
         $this->client->request('GET', $this->customersPath());
         self::assertResponseIsSuccessful(sprintf('%s must be able to read.', $role));
 
-        $this->client->request('POST', $this->customersPath(), server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ORIGIN' => 'http://localhost'], content: json_encode([
+        $this->client->request('POST', $this->customersPath(), server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ORIGIN' => 'http://localhost', 'HTTP_X_CSRF_TOKEN' => $this->csrfToken($this->client)], content: json_encode([
             'name' => 'Created by '.$role.' '.$this->suffix,
         ], JSON_THROW_ON_ERROR));
         self::assertResponseStatusCodeSame($canWrite ? 201 : 404);
 
-        $this->client->request('DELETE', $this->customersPath().'/'.$this->id($this->deletableCustomer), server: ['HTTP_ORIGIN' => 'http://localhost']);
+        $this->client->request('DELETE', $this->customersPath().'/'.$this->id($this->deletableCustomer), server: ['HTTP_ORIGIN' => 'http://localhost', 'HTTP_X_CSRF_TOKEN' => $this->csrfToken($this->client)]);
         self::assertResponseStatusCodeSame($canDelete ? 204 : 404);
 
-        $this->client->request('DELETE', $this->invoicePath(), server: ['HTTP_ORIGIN' => 'http://localhost']);
+        $this->client->request('DELETE', $this->invoicePath(), server: ['HTTP_ORIGIN' => 'http://localhost', 'HTTP_X_CSRF_TOKEN' => $this->csrfToken($this->client)]);
         self::assertResponseStatusCodeSame($canDelete ? 204 : 404);
     }
 

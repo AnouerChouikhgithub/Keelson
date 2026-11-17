@@ -28,7 +28,6 @@
 .nav-link:hover { color: var(--color-text); background: var(--color-background); }
 .nav-link.active { color: var(--color-primary); background: var(--color-primary-soft); font-weight: 650; }
 .nav-link > span:nth-child(2) { flex: 1; }
-.nav-count { min-width: 22px; padding: 1px 6px; color: var(--color-text-muted); background: var(--color-background); border-radius: 20px; font-size: 10px; text-align: center; }
 .sidebar-spacer { flex: 1; }
 .sidebar-help { display: flex; align-items: center; margin-bottom: 14px; padding: 12px 9px; gap: 10px; background: var(--color-background); border: 1px solid var(--color-border); border-radius: 10px; }
 .help-icon { display: grid; width: 32px; height: 32px; flex: 0 0 32px; place-items: center; color: var(--color-primary); background: var(--color-primary-soft); border-radius: 8px; }
@@ -257,11 +256,39 @@ tbody tr:hover { background: color-mix(in srgb, var(--color-background) 56%, tra
 .profile-menu-logout { margin-block-start: 4px; padding-block-start: 0; border-block-start: 1px solid var(--color-border); border-start-start-radius: 0; border-start-end-radius: 0; color: var(--color-text-secondary); }
 [dir='rtl'] .profile-menu-logout .icon { transform: scaleX(-1); }
 
-.signed-out-screen { display: grid; min-height: 100vh; place-items: center; padding: 24px; background: var(--color-background); }
-.signed-out-card { display: grid; width: min(420px, 100%); justify-items: start; gap: 10px; padding: 26px; }
-.signed-out-card img { margin-block-end: 4px; }
-.signed-out-card h1 { margin: 0; color: var(--color-text); font-size: 20px; font-weight: 660; letter-spacing: -.02em; }
-.signed-out-card p { margin: 0 0 6px; color: var(--color-text-secondary); font-size: 12px; line-height: 1.55; }
+/* --- Authentication screens (also used by the session/API gate) --- */
+.auth-screen { display: grid; min-height: 100vh; place-items: center; padding: 24px; background: var(--color-background); }
+.auth-card { display: grid; width: min(430px, 100%); gap: 0; padding: 26px; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-card); box-shadow: 0 12px 32px color-mix(in srgb, var(--color-text) 8%, transparent); }
+.auth-brand { display: flex; align-items: center; gap: 8px; margin-block-end: 16px; color: var(--color-primary); font-size: 16px; font-weight: 700; letter-spacing: -.02em; }
+.auth-card h1 { margin: 0; color: var(--color-text); font-size: 22px; line-height: 30px; font-weight: 660; letter-spacing: -.03em; }
+.auth-subtitle { margin: 6px 0 0; color: var(--color-text-secondary); font-size: 13px; line-height: 1.55; }
+.auth-form { display: grid; margin-block-start: 18px; }
+.auth-submit { margin-block-start: 20px; inline-size: 100%; }
+a.auth-submit { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 0 14px; color: var(--color-primary-contrast); background: var(--color-primary); border-radius: 9px; font-size: 11px; font-weight: 650; text-decoration: none; }
+.field-control { display: flex; align-items: center; gap: 6px; }
+.field-control input { flex: 1; min-inline-size: 0; }
+.password-toggle { display: inline-grid; inline-size: 44px; block-size: 44px; flex: 0 0 44px; place-items: center; color: var(--color-text-secondary); background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-control); cursor: pointer; }
+.password-toggle:hover { color: var(--color-text); background: var(--color-background); }
+.password-toggle[aria-pressed='true'] { color: var(--color-primary); border-color: var(--color-primary); }
+.field-hint { margin: 0; color: var(--color-text-muted); font-size: 11px; font-weight: 500; line-height: 1.5; }
+.auth-alert { margin: 0 0 4px; padding: 10px 12px; border-radius: var(--radius-control); font-size: 12px; line-height: 1.5; }
+.auth-alert-error, .inline-feedback-error { color: var(--color-text); background: var(--color-danger-soft); border: 1px solid color-mix(in srgb, var(--color-danger) 32%, var(--color-border)); }
+.auth-alert-success { color: var(--color-text); background: var(--color-success-soft); border: 1px solid color-mix(in srgb, var(--color-success) 32%, var(--color-border)); }
+.auth-inline-action { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-block-start: 12px; color: var(--color-text-secondary); font-size: 12px; }
+.auth-actions { display: grid; justify-items: start; gap: 8px; margin-block-start: 18px; }
+.auth-links { margin: 14px 0 0; color: var(--color-text-secondary); font-size: 12px; text-align: center; }
+.auth-links a { color: var(--color-primary); font-weight: 600; }
+.auth-progress { margin: 18px 0 0; color: var(--color-text-secondary); font-size: 12px; }
+.auth-locale { display: flex; justify-content: center; margin-block-start: 18px; padding-block-start: 14px; border-block-start: 1px solid var(--color-border); }
+.auth-locale select { min-block-size: 36px; padding: 6px 10px; color: var(--color-text-secondary); background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-control); font: inherit; font-size: 12px; }
+
+/* At 360 px the card keeps the toggle beside the input: it is 44 px and the
+   input is allowed to shrink, so nothing has to wrap. */
+@media (max-width: 420px) {
+  .auth-screen { padding: 12px; }
+  .auth-card { padding: 20px 16px; }
+  .auth-card h1 { font-size: 20px; line-height: 27px; }
+}
 .notification-badge { position: absolute; top: 2px; inset-inline-end: 2px; display: grid; min-width: 15px; height: 15px; padding: 0 3px; place-items: center; color: var(--color-primary-contrast); background: var(--color-danger); border: 1px solid var(--color-surface); border-radius: 20px; font-size: 8px; font-weight: 700; }
 
 .page-intro { display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 20px; gap: 16px; }
@@ -384,7 +411,6 @@ tbody tr:hover { background: color-mix(in srgb, var(--color-background) 56%, tra
 .filter-tab { display: inline-flex; align-items: center; gap: 6px; border: 1px solid transparent; border-radius: 999px; background: transparent; color: var(--color-text-secondary); font: inherit; font-size: 13px; padding: 7px 12px; min-block-size: 36px; cursor: pointer; }
 .filter-tab:hover { background: var(--color-primary-soft); color: var(--color-text); }
 .filter-tab.active { background: var(--color-primary-soft); border-color: var(--color-primary); color: var(--color-text); font-weight: 600; }
-.filter-count { font-variant-numeric: tabular-nums; font-size: 11px; color: var(--color-text-muted); }
 .bulk-bar { display: flex; align-items: center; gap: 12px; padding: 10px 22px; background: var(--color-primary-soft); border-block-end: 1px solid var(--color-border); font-size: 13px; font-weight: 600; }
 .bulk-bar .button { min-block-size: 36px; }
 .check-cell { inline-size: 36px; }
@@ -426,9 +452,6 @@ tbody tr:hover { background: color-mix(in srgb, var(--color-background) 56%, tra
 .detail-list div { display: flex; justify-content: space-between; gap: 16px; padding-block-end: 10px; border-block-end: 1px solid var(--color-border); }
 .detail-list dt { color: var(--color-text-secondary); font-size: 13px; }
 .detail-list dd { margin: 0; font-size: 13px; text-align: end; }
-.drawer-activity { padding: 14px; border-radius: var(--radius-card); background: var(--color-surface-elevated); }
-.drawer-activity h3 { margin: 0 0 4px; font-size: 14px; }
-.drawer-activity p { margin: 0; color: var(--color-text-secondary); font-size: 13px; }
 .modal-card { position: relative; margin: auto; inline-size: min(460px, calc(100% - 32px)); background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-sheet); padding: 20px; }
 .drawer-layer .modal-card { align-self: center; justify-self: center; }
 .modal-card p { color: var(--color-text-secondary); font-size: 14px; }

@@ -1,80 +1,61 @@
 import { describe, expect, it } from 'vitest'
-import { parseLogoutTarget, parseSessionPayload } from './session'
+import { parseSessionPayload } from './session'
 
 const token = 'csrf-token-value'
 
-describe('parseLogoutTarget', () => {
-  it('accepts the same-origin logout endpoint', () => {
-    expect(parseLogoutTarget({ url: '/logout', csrfToken: token })).toEqual({
-      url: '/logout',
-      csrfToken: token,
-    })
-  })
-
-  it.each([
-    ['protocol-relative host', '//evil.example/logout'],
-    ['backslash-normalized host', '/\\evil.example/logout'],
-    ['absolute http URL', 'http://evil.example/logout'],
-    ['absolute https URL', 'https://evil.example/logout'],
-    ['query string', '/logout?next=https://evil.example'],
-    ['fragment', '/logout#https://evil.example'],
-    ['trailing slash', '/logout/'],
-    ['different case', '/Logout'],
-    ['different path', '/api/logout'],
-    ['plain path without a leading slash', 'logout'],
-    ['empty string', ''],
-  ])('rejects a %s target', (_label, url) => {
-    expect(parseLogoutTarget({ url, csrfToken: token })).toBeNull()
-  })
-
-  it('rejects a missing or empty CSRF token', () => {
-    expect(parseLogoutTarget({ url: '/logout' })).toBeNull()
-    expect(parseLogoutTarget({ url: '/logout', csrfToken: '' })).toBeNull()
-    expect(parseLogoutTarget({ url: '/logout', csrfToken: 42 })).toBeNull()
-  })
-
-  it('rejects a non-object payload', () => {
-    expect(parseLogoutTarget(null)).toBeNull()
-    expect(parseLogoutTarget('/logout')).toBeNull()
-  })
-})
-
 describe('parseSessionPayload', () => {
-  it('reports an anonymous session without a logout target', () => {
-    expect(parseSessionPayload({ authenticated: false, user: null, logout: null })).toEqual({
+  it('reports an anonymous session without a user or token', () => {
+    expect(parseSessionPayload({ authenticated: false, user: null, csrfToken: null })).toEqual({
       status: 'anonymous',
     })
   })
 
-  it('accepts an authenticated session with the expected fields', () => {
+  it('accepts an authenticated session with its in-memory CSRF token', () => {
     expect(
       parseSessionPayload({
         authenticated: true,
         user: { id: 'principal-1', email: 'owner@example.test', displayName: 'Owner' },
-        logout: { url: '/logout', csrfToken: token },
+        csrfToken: token,
       }),
     ).toEqual({
       status: 'authenticated',
       user: { id: 'principal-1', email: 'owner@example.test', displayName: 'Owner' },
-      logout: { url: '/logout', csrfToken: token },
+      csrfToken: token,
     })
   })
 
-  it('treats an authenticated session with a hostile logout target as unusable', () => {
-    const payload = {
-      authenticated: true,
-      user: { id: 'principal-1', email: null, displayName: null },
-      logout: { url: '//evil.example/logout', csrfToken: token },
-    }
-    // Null (not authenticated) so the UI never offers a sign-out that would
-    // send the CSRF token to another origin.
-    expect(parseSessionPayload(payload)).toBeNull()
+  it('keeps a missing email and display name as null', () => {
+    expect(
+      parseSessionPayload({
+        authenticated: true,
+        user: { id: 'principal-1', email: null, displayName: null },
+        csrfToken: token,
+      }),
+    ).toEqual({ status: 'authenticated', user: { id: 'principal-1', email: null, displayName: null }, csrfToken: token })
+  })
+
+  it.each([
+    ['null', null],
+    ['an empty string', ''],
+    ['a number', 42],
+    ['a missing field', undefined],
+  ])('treats an authenticated payload with %s as its token as unusable', (_label, csrfToken) => {
+    // Unusable, not signed in: without a token every save and delete would fail.
+    expect(
+      parseSessionPayload({
+        authenticated: true,
+        user: { id: 'principal-1', email: 'owner@example.test', displayName: null },
+        csrfToken,
+      }),
+    ).toBeNull()
   })
 
   it('rejects unknown shapes instead of guessing', () => {
     expect(parseSessionPayload(null)).toBeNull()
     expect(parseSessionPayload({})).toBeNull()
-    expect(parseSessionPayload({ authenticated: true, user: null })).toBeNull()
-    expect(parseSessionPayload({ authenticated: true, user: { id: '' } })).toBeNull()
+    expect(parseSessionPayload({ authenticated: 'yes' })).toBeNull()
+    expect(parseSessionPayload({ authenticated: true, user: null, csrfToken: token })).toBeNull()
+    expect(parseSessionPayload({ authenticated: true, user: { id: '' }, csrfToken: token })).toBeNull()
+    expect(parseSessionPayload({ authenticated: true, user: { id: 7 }, csrfToken: token })).toBeNull()
   })
 })

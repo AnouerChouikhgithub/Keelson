@@ -8,6 +8,7 @@ use App\Entity\Customer;
 use App\Entity\Membership;
 use App\Entity\Organization;
 use App\Entity\Principal;
+use App\Tests\Support\IssuesCsrfTokens;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Exception\LockWaitTimeoutException;
 use Doctrine\ORM\EntityManagerInterface;
@@ -23,6 +24,8 @@ use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
  */
 final class InvoiceNumberAllocationTest extends WebTestCase
 {
+    use IssuesCsrfTokens;
+
     private EntityManagerInterface $entityManager;
     private KernelBrowser $client;
     private string $suffix;
@@ -40,9 +43,7 @@ final class InvoiceNumberAllocationTest extends WebTestCase
         $this->entityManager = self::getContainer()->get('doctrine')->getManager();
         self::assertStringContainsString('PostgreSQL', $this->entityManager->getConnection()->getDatabasePlatform()::class);
         $this->suffix = bin2hex(random_bytes(6));
-        $issuer = $_SERVER['OIDC_ISSUER'] ?? $_ENV['OIDC_ISSUER'] ?? null;
-        self::assertNotNull($issuer, 'OIDC_ISSUER must be configured for the HTTP test user provider.');
-        $this->principal = new Principal($issuer, 'numbering-'.$this->suffix);
+        $this->principal = new Principal('numbering-'.$this->suffix.'@example.test');
         $this->organization = new Organization('Numbering Tenant '.$this->suffix, 'numbering-'.$this->suffix);
         $this->otherOrganization = new Organization('Numbering Other '.$this->suffix, 'numbering-b-'.$this->suffix);
         $this->entityManager->persist($this->principal);
@@ -169,7 +170,7 @@ final class InvoiceNumberAllocationTest extends WebTestCase
     /** @return array<string, string> */
     private function jsonServer(): array
     {
-        return ['CONTENT_TYPE' => 'application/json', 'HTTP_ORIGIN' => 'http://localhost'];
+        return ['CONTENT_TYPE' => 'application/json', 'HTTP_ORIGIN' => 'http://localhost', 'HTTP_X_CSRF_TOKEN' => $this->csrfToken($this->client)];
     }
 
     private function invoicesPath(Organization $organization): string

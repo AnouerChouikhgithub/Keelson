@@ -33,9 +33,8 @@ final class InvoiceApiTest extends KernelTestCase
         $this->entityManager = self::getContainer()->get('doctrine')->getManager();
         self::assertStringContainsString('PostgreSQL', $this->entityManager->getConnection()->getDatabasePlatform()::class);
         $this->suffix = bin2hex(random_bytes(6));
-        $issuer = 'https://identity.example/invoice-tests/'.$this->suffix;
-        $this->principalA = new Principal($issuer, 'principal-a');
-        $this->principalB = new Principal($issuer, 'principal-b');
+        $this->principalA = new Principal('principal-a-'.$this->suffix.'@example.test');
+        $this->principalB = new Principal('principal-b-'.$this->suffix.'@example.test');
         $this->organizationA = new Organization('Invoice Tenant A '.$this->suffix, 'invoice-a-'.$this->suffix);
         $this->organizationB = new Organization('Invoice Tenant B '.$this->suffix, 'invoice-b-'.$this->suffix);
         foreach ([$this->principalA, $this->principalB, $this->organizationA, $this->organizationB] as $entity) {

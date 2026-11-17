@@ -9,6 +9,7 @@ use App\Entity\Invoice;
 use App\Entity\Membership;
 use App\Entity\Organization;
 use App\Entity\Principal;
+use App\Tests\Support\IssuesCsrfTokens;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Exception\LockWaitTimeoutException;
 use Doctrine\ORM\EntityManagerInterface;
@@ -26,6 +27,8 @@ use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
  */
 final class CustomerDeletionConcurrencyTest extends WebTestCase
 {
+    use IssuesCsrfTokens;
+
     private EntityManagerInterface $entityManager;
     private KernelBrowser $client;
     private string $suffix;
@@ -42,9 +45,7 @@ final class CustomerDeletionConcurrencyTest extends WebTestCase
         $this->entityManager = self::getContainer()->get('doctrine')->getManager();
         self::assertStringContainsString('PostgreSQL', $this->entityManager->getConnection()->getDatabasePlatform()::class);
         $this->suffix = bin2hex(random_bytes(6));
-        $issuer = $_SERVER['OIDC_ISSUER'] ?? $_ENV['OIDC_ISSUER'] ?? null;
-        self::assertNotNull($issuer, 'OIDC_ISSUER must be configured for the HTTP test user provider.');
-        $this->principal = new Principal($issuer, 'customer-delete-'.$this->suffix);
+        $this->principal = new Principal('customer-delete-'.$this->suffix.'@example.test');
         $this->organization = new Organization('Delete Tenant '.$this->suffix, 'delete-'.$this->suffix);
         $this->entityManager->persist($this->principal);
         $this->entityManager->persist($this->organization);
@@ -88,7 +89,7 @@ final class CustomerDeletionConcurrencyTest extends WebTestCase
     {
         $this->draftInvoice();
 
-        $this->client->request('DELETE', $this->customerPath(), server: ['HTTP_ORIGIN' => 'http://localhost']);
+        $this->client->request('DELETE', $this->customerPath(), server: ['HTTP_ORIGIN' => 'http://localhost', 'HTTP_X_CSRF_TOKEN' => $this->csrfToken($this->client)]);
 
         self::assertResponseStatusCodeSame(409);
         self::assertSame(1, $this->rowCount('customers', 'id', $this->customerId));
@@ -97,7 +98,7 @@ final class CustomerDeletionConcurrencyTest extends WebTestCase
 
     public function testDeleteSucceedsAndWritesTheAuditEvent(): void
     {
-        $this->client->request('DELETE', $this->customerPath(), server: ['HTTP_ORIGIN' => 'http://localhost']);
+        $this->client->request('DELETE', $this->customerPath(), server: ['HTTP_ORIGIN' => 'http://localhost', 'HTTP_X_CSRF_TOKEN' => $this->csrfToken($this->client)]);
 
         self::assertResponseStatusCodeSame(204);
         self::assertSame(0, $this->rowCount('customers', 'id', $this->customerId));
@@ -125,7 +126,7 @@ final class CustomerDeletionConcurrencyTest extends WebTestCase
         $this->client->catchExceptions(false);
 
         try {
-            $this->client->request('DELETE', $this->customerPath(), server: ['HTTP_ORIGIN' => 'http://localhost']);
+            $this->client->request('DELETE', $this->customerPath(), server: ['HTTP_ORIGIN' => 'http://localhost', 'HTTP_X_CSRF_TOKEN' => $this->csrfToken($this->client)]);
             self::fail('The delete should wait on the concurrent invoice insert instead of racing it.');
         } catch (\Throwable $exception) {
             // A lock timeout here proves the handler asks for the row lock. It

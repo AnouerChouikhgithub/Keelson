@@ -1,0 +1,5 @@
+doctrine:
+    dbal:
+        # Test-only: counts statements so the "no N+1" assertions can state the
+        # cost of a request. See App\Tests\Support\CountingConnection.
+        wrapper_class: App\Tests\Support\CountingConnection

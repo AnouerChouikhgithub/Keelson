@@ -1,40 +1,38 @@
 # Frontend (React + Vite + TypeScript)
 
-The web app is the Keelson dashboard shell. Since the Sprint 2 integration it is connected to the
-Symfony API for everything that has a backend:
+The Keelson dashboard shell. It is connected to the Symfony API for everything
+that has a backend:
 
-- the **session** (`GET /api/session`), including the signed-out and unavailable states;
+- the **session** (`GET /api/session`), including the signed-out and unavailable
+  states;
 - the caller's **organizations and role** (`GET /api/me/organizations`);
-- **customers** — list, read, create, update, delete, including the `409` raised when invoices
-  reference a customer;
-- **invoices** — list with the server status filter, read, create draft, update draft, send,
-  mark paid, delete draft, with `409` conflict handling and server-returned totals.
+- **customers** — list, read, create, update, delete, including the `409` raised
+  when invoices reference a customer;
+- **invoices** — list with the server status filter, read, create draft, update
+  draft, send, mark paid, delete draft, with `409` handling and server-returned
+  totals.
 
-Still mock, clearly labelled, and never mixed into an API-backed list: dashboard metrics,
-onboarding and invitations, team, billing, pricing and notifications. Nothing on those screens is
-sent to a server except local preferences and notification read state.
+Still mock, clearly labelled, and never mixed into an API-backed list: dashboard
+metrics, onboarding and invitations, team, billing, pricing and notifications.
+Nothing on those screens leaves the browser except local preferences and
+notification read state.
 
-The verified request/response contract is [`../docs/api-contract.md`](../docs/api-contract.md).
+The verified request/response contract is
+[`../docs/api-contract.md`](../docs/api-contract.md).
 
-## Stack (from `package.json` / `pnpm-lock.yaml`)
+## Stack
 
 - React 19.3.1, React DOM 19.3.1
 - Vite 8.3.4, `@vitejs/plugin-react` 6.1.2
-- TypeScript 6.0.3 — deliberately pinned below 6.1 because `typescript-eslint` 8.71.2 supports
-  `>=4.8.4 <6.1.0` and rejects TypeScript 7. Move back to TypeScript 7 only once typescript-eslint
-  ships support.
+- TypeScript 6.0.3 — pinned below 6.1 because `typescript-eslint` 8.71.2 supports
+  `>=4.8.4 <6.1.0`
 - ESLint 10.13.0 with `typescript-eslint` 8.71.2, `eslint-plugin-react-hooks`,
   `eslint-plugin-react-refresh`
 - Vitest 5.1.0 (Node environment — no `jsdom`, no Testing Library)
 
-No routing, i18n or UI component library is installed; navigation, translations and styles are local
-code. The API layer is hand-written because the backend has no OpenAPI document yet.
-
-## Prerequisites
-
-- Node.js `^20.19.0 || >=22.12.0` (verified on v22.13.0)
-- pnpm 12.14.0
-- A running backend for anything past the signed-out screen (see `../how-to-run.md`)
+No routing, i18n or UI component library is installed; navigation, translations
+and styles are local code. The API layer is hand-written because the backend has
+no OpenAPI document yet.
 
 ## Commands
 
@@ -42,65 +40,71 @@ Run from `frontend/`:
 
 ```sh
 pnpm install --frozen-lockfile   # install exactly what the lockfile pins
-npm start                        # Vite on 127.0.0.1:5173
-pnpm dev                         # Vite dev server (http://localhost:5173)
+pnpm start                       # Vite on 127.0.0.1:5173
 pnpm run build                   # tsc -b && vite build → dist/
 pnpm run lint                    # eslint .
-pnpm test                        # vitest run (56 tests, Node environment)
-pnpm preview                     # serve the production build
+pnpm test                        # vitest run, Node environment
 ```
 
-`npm start` is a script alias for `vite --host 127.0.0.1`.
+`pnpm start` is a script alias for `vite --host 127.0.0.1`; plain `pnpm dev` binds
+only the IPv6 loopback. A running backend is needed for anything past the sign-in
+screen — see [`../README.md`](../README.md).
 
 ## Configuration
 
 | Variable | Where | Meaning |
 | --- | --- | --- |
-| `VITE_API_BASE_URL` | build/runtime env, optional | Absolute API origin for a deployment where the API is not same-origin. Empty by default. **Never** put a secret here: Vite inlines every `VITE_*` value into the public bundle. |
-| `KEELSON_BACKEND_ORIGIN` | dev-server env, optional | Proxy target for `/api`, `/login`, `/login_check` and `/logout`. Defaults to `http://127.0.0.1:8000`. |
+| `VITE_API_BASE_URL` | build/runtime env, optional | Absolute API origin when the API is not same-origin. Empty by default. **Never** a secret: Vite inlines every `VITE_*` value into the public bundle. |
+| `KEELSON_BACKEND_ORIGIN` | dev-server env, optional | Proxy target for `/api` (the only proxied prefix). Defaults to `http://127.0.0.1:8000`. |
 
-The dev proxy uses `changeOrigin: false` on purpose: the Symfony session cookie must stay
+The dev proxy uses `changeOrigin: false` on purpose: the session cookie must stay
 same-origin, and the API's mutation guard compares the request `Origin` with
-`getSchemeAndHttpHost()`. Do not add permissive CORS to work around a proxy misconfiguration.
+`getSchemeAndHttpHost()`. Do not add permissive CORS to work around a proxy
+misconfiguration.
 
-## API architecture (`src/api/`)
+## API layer (`src/api/`)
 
 | File | Responsibility |
 | --- | --- |
-| `client.ts` | The only `fetch` call site. Same-origin credentials, `cache: 'no-store'`, JSON in/out, `204` and empty bodies, non-JSON error pages, network failures, abort passthrough, and an HTML success body on an API path mapped to `401` (an expired session is redirected to the provider's sign-in page, which `fetch` follows). No retries, no CSRF header invention. |
-| `errors.ts` | `ApiError` with `kind: 'http' \| 'network' \| 'parse'`, `status` and a sanitized `serverMessage`. |
-| `types.ts` | Types mirroring the verified responses (customer, invoice, membership, draft input). |
-| `organizations.ts` | `listOrganizations`, plus `canWriteInvoiceResources` / `canDeleteInvoiceResources`, which mirror `InvoiceVoter` only to hide actions that the server would reject. |
-| `customers.ts`, `invoices.ts` | One function per endpoint, building paths and payloads; nothing else in the app calls `fetch`. |
-| `useApiResource.ts` | Loads one resource, aborts on unmount or loader change, discards stale responses, and derives `loading` instead of synchronizing it in an effect. |
-| `presentError.ts` | Maps `ApiError` to localized copy (401/403/404/409/429/5xx, network, unexpected) and exposes `isConflict`. Server `detail` is shown only for validation failures. |
+| `client.ts` | The only `fetch` call site. Same-origin credentials, `cache: 'no-store'`, JSON in/out, `204` and empty bodies, non-JSON error pages, network failures, abort passthrough, an HTML success body reported as a misrouted request, the `X-CSRF-Token` header on unsafe methods, and exactly one session re-read plus one replay after `403 csrf_invalid`. |
+| `auth.ts` | One function per `/api/auth/*` endpoint (`login`, `register`, `verifyEmail`, `resendVerification`, `forgotPassword`, `resetPassword`, `logout`); `login` returns the parsed session or throws. |
+| `errors.ts` | `ApiError` with `kind: 'http' \| 'network' \| 'parse'`, `status`, the server `code`, the per-field `fields` and a sanitized `serverMessage`. |
+| `types.ts` | Types mirroring the verified responses, plus the invoice status enum and the shared organization/team shapes. |
+| `organizations.ts` | `listOrganizations`, plus `canWriteInvoiceResources` / `canDeleteInvoiceResources`, which mirror `InvoiceVoter` only to hide actions the server would reject. |
+| `customers.ts`, `invoices.ts` | One function per endpoint, building paths and payloads. |
+| `useApiResource.ts` | Loads one resource, aborts on unmount or loader change, discards stale responses, derives `loading` instead of synchronizing it in an effect. |
+| `presentError.ts` | Maps `ApiError` to localized copy, `presentAuthError` for the auth screens (code → sentence, field → local rule) and `isConflict`. |
 
-Session and logout live in `src/session/session.ts` (the established place, already covered by
-tests) rather than a duplicate `api/session.ts`. It parses `/api/session`, validates the logout
-target, and performs sign-out as a real top-level form POST so the browser follows the provider's
-end-session redirect.
+Session state lives in `src/session/`: `session.ts` parses `/api/session`,
+`AuthProvider.tsx` owns `{status, user, csrfToken}` plus `signIn`/`signOut`/`refresh`,
+and `AuthContext.ts` exposes it through `useAuth()`. The CSRF token is kept in
+memory only — never in `localStorage`, `sessionStorage` or a cookie of our own —
+and is handed to `api/client.ts` through `setCsrfToken`, which also installs the
+re-read the client uses after a `403 csrf_invalid`. Sign-out is a JSON call to
+`POST /api/auth/logout`; there is no provider redirect and no hidden form.
 
 ### Session and tenant rules
 
-- The shell renders nothing but a gate until `/api/session` answers: loading, signed-out, or
-  "session unavailable" with a retry.
-- The authenticated name/email come from the session; the organization list and role come from
-  `/api/me/organizations`. There is no demo identity anywhere in that path.
-- The selected organization is a **client-side selection**. It is not authorization: every request
-  carries the organization in its path and is re-authorized by the server. Switching organizations
-  remounts the organization-scoped screens, so no data from the previous tenant survives, and the
-  open draft is cleared.
+- `src/AppRouter.tsx` renders a gate until `/api/session` answers (loading, or a
+  retryable failure when the API is unreachable), sends an anonymous visitor to
+  `/sign-in`, and keeps a signed-in user off the five public auth routes.
+- The display name and email come from the session; the organization list and role
+  come from `/api/me/organizations`. There is no demo identity in that path.
+- The selected organization is a **client-side selection**, not authorization:
+  every request carries it in the path and the server re-authorizes it. Switching
+  organizations remounts the organization-scoped screens and clears the open
+  draft.
 - A membership the server no longer reports cannot be selected.
 
 ### Error behaviour
 
 | Status | Shown as |
 | --- | --- |
-| `400`/`422` | the server's message at form level (field messages are not exposed per field by the API) |
-| `401` (client-mapped) | session ended — the next shell load shows the signed-out screen |
+| `400`/`422` | the server's message at form level |
+| `401` | for sign-in, "the email address or password is incorrect"; elsewhere, a session that ended — the next session read sends the visitor to `/sign-in` |
 | `403` | permission denied (the mutation origin/CSRF guard) |
 | `404` | "not found" — also what a foreign tenant returns |
-| `409` | conflict explanation and a refetch, never a silent overwrite or an automatic retry |
+| `409` | conflict explanation and a refetch, never a silent overwrite |
 | `429` | rate-limited message |
 | `5xx` | generic server error; internals are never rendered |
 | network | connection message with retry |
@@ -108,84 +112,87 @@ end-session redirect.
 
 ## Localization, account and notifications
 
-- **Languages**: English, French and Arabic, with `lang`/`dir` set on `<html>` and Arabic rendered
-  right-to-left. Choice persists in `localStorage` under `keelson-locale`.
-- **Dictionaries**: `src/i18n/messages.ts` defines a typed English dictionary; French and Arabic are
-  typed as `Messages`, so a missing or renamed key is a TypeScript error. Labels that interpolate
-  values are functions with typed parameters.
-- **Formatting**: `src/i18n/format.ts` formats dates, numbers, percentages and TND currency with
-  `Intl` for the active locale. API amounts arrive as decimal strings and are formatted for display,
+- **Languages**: English, French and Arabic, with `lang`/`dir` on `<html>` and
+  Arabic rendered right-to-left. Persisted under `keelson-locale`.
+- **Dictionaries**: `src/i18n/messages.ts` defines a typed English dictionary;
+  French and Arabic are typed as `Messages`, so a missing or renamed key is a
+  TypeScript error.
+- **Formatting**: `src/i18n/format.ts` formats dates, numbers, percentages and TND
+  currency with `Intl`. API amounts are decimal strings, formatted for display and
   never re-summed as authoritative totals.
-- **Account menu**: the profile row's overflow button opens a keyboard-accessible menu (`Escape`,
-  arrow keys, `Home`/`End`, outside click) with My account, Notifications and Settings.
-- **Account screen**: shows the real session identity, the active organization and the caller's role;
-  it is read-only because the backend has no profile write endpoint.
-- **Notifications**: All/Unread filters, mark-one/mark-all, empty state, bell badge. Read ids persist
-  under `keelson-notifications-read`; the notifications themselves are typed mock data.
-- **Settings**: appearance reuses `ThemeProvider` (light/dark/system), language applies instantly,
-  notification preferences persist under `keelson-notification-prefs`. Labelled as local.
-- **Search**: `src/components/SearchDialog.tsx` is an accessible modal over pages, organizations and
-  notifications, opened from the top bar or `Ctrl+K`/`Meta+K`, with arrow keys/Enter/Escape, focus
-  trapping and restoration, and localized labels. Invoice/customer results were removed: only the
-  loaded API page is known locally, so offering them would have implied a search the backend does not
-  have.
-- **Storage safety**: JSON read back from `localStorage` is validated; invalid or corrupt values fall
-  back to defaults, and storage failures never break the session.
+- **Account menu**: keyboard-accessible (`Escape`, arrows, `Home`/`End`, outside
+  click) with My account, Notifications and Settings.
+- **Account screen**: real session identity, active organization and role;
+  read-only because there is no profile write endpoint.
+- **Notifications**: All/Unread filters, mark-one/mark-all, empty state, bell
+  badge. Read ids persist under `keelson-notifications-read`; the records
+  themselves are mock data.
+- **Settings**: appearance reuses `ThemeProvider` (light/dark/system), language
+  applies instantly, notification preferences persist under
+  `keelson-notification-prefs`.
+- **Search**: `src/components/SearchDialog.tsx` covers pages, organizations and
+  notifications, from the top bar or `Ctrl+K`/`Meta+K`, with focus trapping and
+  restoration. Invoice/customer results were removed: only the loaded API page is
+  known locally.
+- **Storage safety**: JSON read back from `localStorage` is validated; invalid or
+  corrupt values fall back to defaults.
 
-Layout uses CSS logical properties, with a few `[dir='rtl']` rules for directional icons and the
-mobile sidebar. Colors come from `src/theme/tokens.css` only (`#0F766E` primary).
+Layout uses CSS logical properties, with a few `[dir='rtl']` rules for directional
+icons and the mobile sidebar. Colors come from `src/theme/tokens.css` only
+(`#0F766E` primary).
 
 ## Source layout
 
-- `src/App.tsx` — shell: session gate, sidebar navigation, topbar, real organization switcher, page
-  switch, editor route state and theme control.
-- `src/api/` — the API layer described above (with its tests).
-- `src/session/session.ts` — session probe parsing, logout-target validation, form-POST sign-out.
-- `src/pages.ts` — shared `PageId`/`NavPageId` types.
-- `src/screens/` — `Dashboard`, `InvoicesScreen`, `InvoiceEditorScreen`, `CustomersScreen`,
-  `TeamScreen`, `BillingScreen`, `PricingScreen`, `Onboarding`, `NotificationsScreen`,
-  `AccountScreen`, `SettingsScreen`, `SignedOutScreen` and `Placeholder`.
-- `src/components/` — shared `StatusBadge`, `PersonCell`, `SearchField`, `EmptyState`,
-  `OverlaySurface`, `Icon`, `SearchDialog`, `ProfileMenu`, `ThemeControl`, `SessionCard`.
-- `src/mocks/` — the remaining mock surfaces: dashboard metrics, organization/invitation demo data,
-  billing catalog, notifications.
-- `src/search/search.ts` — local search index and filtering.
-- `src/i18n/`, `src/notifications/`, `src/settings/`, `src/theme/`, `src/utils/initials.ts`.
+- `src/AppRouter.tsx` — routes: the five public auth paths, the retryable gate, and
+  the shell for everything else. `src/components/StatusGate.tsx` renders loading and
+  the "cannot reach the API" retry.
+- `src/App.tsx` — shell: sidebar navigation, topbar, organization switcher, page
+  switch, editor route state, theme control. It reads the session from `useAuth`.
+- `src/api/` — the API layer above, with its tests.
+- `src/session/` — `session.ts` (payload parsing), `AuthProvider.tsx` (state machine
+  and the CSRF hand-off to the client), `AuthContext.ts` (`useAuth`).
+- `src/pages.ts` — `PageId`/`NavPageId`.
+- `src/screens/auth/` — `SignInScreen`, `SignUpScreen`, `VerifyEmailScreen`,
+  `ForgotPasswordScreen`, `ResetPasswordScreen`, plus the shared `AuthLayout`,
+  `PasswordField` and `useFieldFocus`.
+- `src/screens/` — `Dashboard`, `InvoicesScreen`, `InvoiceEditorScreen`,
+  `CustomersScreen`, `TeamScreen`, `BillingScreen`, `PricingScreen`, `Onboarding`,
+  `NotificationsScreen`, `AccountScreen`, `SettingsScreen`.
+- `src/components/` — shared `StatusBadge`, `PersonCell`, `SearchField`,
+  `EmptyState`, `OverlaySurface`, `Icon`, `SearchDialog`, `ProfileMenu`,
+  `ThemeControl`, `SessionCard`.
+- `src/mocks/` — the remaining mock surfaces: dashboard metrics,
+  organization/invitation demo data, billing catalog, notifications.
+- `src/search/search.ts`, `src/i18n/`, `src/notifications/`, `src/settings/`,
+  `src/theme/`, `src/utils/initials.ts`.
 
-## Tests (2026-11-15)
+## Tests
 
-`pnpm test` — **56 tests, exit 0**:
+`pnpm test` — **61 tests in 6 files**, all in the Node environment:
 
 | File | Covers |
 | --- | --- |
-| `src/session/session.test.ts` (18) | session parsing, logout-target validation and rejection of unsafe targets |
-| `src/api/client.test.ts` (12) | JSON success, 204, credentials/headers, validation error, non-JSON error, network failure, abort passthrough, HTML-success-as-`401`, non-JSON success |
-| `src/api/customers.test.ts` (7) | list path/limit/cursor, read, create payload, patch subset, delete `204`, delete `409` |
-| `src/api/invoices.test.ts` (9) | status filter, cursor, read, draft create, draft patch, send/mark-paid routes, delete, `409`, `422` |
+| `src/session/session.test.ts` (8) | session parsing, anonymous shape, rejection of an authenticated payload without a usable CSRF token |
+| `src/api/auth.test.ts` (8) | one request shape per auth endpoint, sign-in session parsing, `email_not_verified` code, per-field `422` messages, CSRF header on sign-out |
+| `src/api/client.test.ts` (19) | JSON success, `204`, credentials/headers, validation error, non-JSON error, network failure, abort passthrough, HTML body, CSRF header on unsafe methods only, one replay after `csrf_invalid` with no retry loop |
+| `src/api/customers.test.ts` (7) | list path/limit/cursor, read, create, patch subset, delete `204`, delete `409` |
+| `src/api/invoices.test.ts` (9) | status filter, cursor, read, draft create/patch, send/mark-paid, delete, `409`, `422` |
 | `src/api/organizations.test.ts` (10) | membership shape filtering, capability helpers, `presentError` mapping, `isConflict` |
 
-There are **no component/DOM tests**: the project has no `jsdom` or Testing Library dependency, and
-adding one needs owner approval. Screens are therefore verified by type-checking, lint, the backend
-functional tests and the manual check below.
+There are **no component/DOM tests**: the project has no `jsdom` or Testing
+Library dependency, and adding one needs owner approval.
 
-## Verified checks
+## Not verified here
 
-- 2026-11-15: `tsc -b` exit 0; `pnpm run lint` exit 0 (0 findings); `pnpm run build` exit 0
-  (`dist/assets/index-*.js` 370.64 kB / 108.62 kB gzip); `pnpm test` 56/56 pass.
-- 2026-11-15 live: SPA served on `127.0.0.1:5175` through the dev proxy to an API on
-  `127.0.0.1:8001`. `GET /api/session` returned `500` (no `backend/.env.local`, so no OIDC client),
-  and the shell showed the session-unavailable gate with a retry button and no demo identity
-  (`../docs/screenshots/session-unavailable.png`); console showed only the two expected 500s.
-- 2026-11-13 (historical, mock-only build): five screens rendered in EN/FR/AR across light/dark/system,
-  search, profile menu, Arabic RTL, 430 px viewport, storage persistence and favicon verified manually.
+The auth screens and the authenticated shell were exercised manually in Sprint 3
+over `pnpm start` + `php -S`: sign-up, Mailpit verification link, sign-in, customer
+and invoice-draft creation (which proves the CSRF header reaches the API), sign-out,
+wrong password, forgot/reset, and the sign-in screen in French and Arabic. That run
+is evidence, not an automated test: no component/DOM test covers it yet.
 
-**Not verified in a browser:** the authenticated shell, customer CRUD and the invoice lifecycle,
-because this checkout has no Logto credentials. Those flows are covered by
-`backend/tests/Integration/InvoiceHttpApiTest.php` (HTTP contract), the authorization matrix, and the
-frontend API tests — not by a real sign-in round trip.
+## Not implemented
 
-## Not implemented here
-
-Billing/subscription screens against a real API, the organization-settings danger zone, the
-platform-admin console, profile editing, server-side search/sort for customers and invoices (the UI
-loads up to 100 rows and says when more exist), component/DOM tests, and real-provider sign-in.
+Billing and subscription screens against a real API, the organization-settings
+danger zone, the platform-admin console, profile editing, server-side search/sort
+(the UI loads up to 100 rows and says when more exist), component/DOM tests, and
+real provider sign-in.

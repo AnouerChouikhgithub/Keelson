@@ -11,6 +11,7 @@ use App\Entity\Membership;
 use App\Entity\Organization;
 use App\Entity\Principal;
 use App\Service\InvoiceOverdueService;
+use App\Tests\Support\IssuesCsrfTokens;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Exception\LockWaitTimeoutException;
 use Doctrine\ORM\EntityManagerInterface;
@@ -26,6 +27,8 @@ use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
  */
 final class InvoiceOverdueTest extends WebTestCase
 {
+    use IssuesCsrfTokens;
+
     private EntityManagerInterface $entityManager;
     private KernelBrowser $client;
     private string $suffix;
@@ -41,9 +44,7 @@ final class InvoiceOverdueTest extends WebTestCase
         $this->entityManager = self::getContainer()->get('doctrine')->getManager();
         self::assertStringContainsString('PostgreSQL', $this->entityManager->getConnection()->getDatabasePlatform()::class);
         $this->suffix = bin2hex(random_bytes(6));
-        $issuer = $_SERVER['OIDC_ISSUER'] ?? $_ENV['OIDC_ISSUER'] ?? null;
-        self::assertNotNull($issuer, 'OIDC_ISSUER must be configured for the HTTP test user provider.');
-        $this->principal = new Principal($issuer, 'overdue-'.$this->suffix);
+        $this->principal = new Principal('overdue-'.$this->suffix.'@example.test');
         $this->organization = new Organization('Overdue Tenant '.$this->suffix, 'overdue-'.$this->suffix);
         $this->entityManager->persist($this->principal);
         $this->entityManager->persist($this->organization);
@@ -149,7 +150,7 @@ final class InvoiceOverdueTest extends WebTestCase
     {
         $invoice = $this->invoice('sent', '-2 days');
 
-        $this->client->request('POST', $this->invoicePath($invoice).'/mark-paid', server: ['HTTP_ORIGIN' => 'http://localhost']);
+        $this->client->request('POST', $this->invoicePath($invoice).'/mark-paid', server: ['HTTP_ORIGIN' => 'http://localhost', 'HTTP_X_CSRF_TOKEN' => $this->csrfToken($this->client)]);
 
         self::assertResponseIsSuccessful();
         self::assertSame('paid', $this->json()['invoice']['status']);

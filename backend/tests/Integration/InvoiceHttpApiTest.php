@@ -9,11 +9,14 @@ use App\Entity\Invoice;
 use App\Entity\Membership;
 use App\Entity\Organization;
 use App\Entity\Principal;
+use App\Tests\Support\IssuesCsrfTokens;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 
 final class InvoiceHttpApiTest extends WebTestCase
 {
+    use IssuesCsrfTokens;
+
     private EntityManagerInterface $entityManager;
     private \Symfony\Bundle\FrameworkBundle\KernelBrowser $client;
     private string $suffix;
@@ -34,11 +37,9 @@ final class InvoiceHttpApiTest extends WebTestCase
         $this->entityManager = self::getContainer()->get('doctrine')->getManager();
         self::assertStringContainsString('PostgreSQL', $this->entityManager->getConnection()->getDatabasePlatform()::class);
         $this->suffix = bin2hex(random_bytes(6));
-        $issuer = $_SERVER['OIDC_ISSUER'] ?? $_ENV['OIDC_ISSUER'] ?? null;
-        self::assertNotNull($issuer, 'OIDC_ISSUER must be configured for the HTTP test user provider.');
-        $this->principalA = new Principal($issuer, 'http-test-a-'.$this->suffix);
-        $this->principalB = new Principal($issuer, 'http-test-b-'.$this->suffix);
-        $this->principalWithoutMembership = new Principal($issuer, 'http-test-none-'.$this->suffix);
+        $this->principalA = new Principal('http-test-a-'.$this->suffix.'@example.test');
+        $this->principalB = new Principal('http-test-b-'.$this->suffix.'@example.test');
+        $this->principalWithoutMembership = new Principal('http-test-none-'.$this->suffix.'@example.test');
         $this->organizationA = new Organization('HTTP Tenant A '.$this->suffix, 'http-a-'.$this->suffix);
         $this->organizationB = new Organization('HTTP Tenant B '.$this->suffix, 'http-b-'.$this->suffix);
         foreach ([$this->principalA, $this->principalB, $this->principalWithoutMembership, $this->organizationA, $this->organizationB] as $entity) {
@@ -97,7 +98,7 @@ final class InvoiceHttpApiTest extends WebTestCase
     {
         $client = $this->client;
         $this->authenticate($client, $this->principalA);
-        $client->request('POST', '/api/organizations/'.$this->id($this->organizationA).'/customers', server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ORIGIN' => 'http://localhost'], content: json_encode([
+        $client->request('POST', '/api/organizations/'.$this->id($this->organizationA).'/customers', server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ORIGIN' => 'http://localhost', 'HTTP_X_CSRF_TOKEN' => $this->csrfToken($this->client)], content: json_encode([
             'name' => 'New Customer '.$this->suffix,
             'email' => 'customer@example.test',
             'billingAddress' => ['street' => '1 Rue Example', 'city' => 'Tunis', 'postalCode' => '1000', 'countryCode' => 'tn'],
@@ -119,7 +120,7 @@ final class InvoiceHttpApiTest extends WebTestCase
         $client->request('GET', '/api/organizations/'.$this->id($this->organizationA).'/customers/'.$this->id($this->customerB));
         self::assertResponseStatusCodeSame(404);
 
-        $client->request('POST', '/api/organizations/'.$this->id($this->organizationA).'/invoices', server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ORIGIN' => 'http://localhost'], content: json_encode([
+        $client->request('POST', '/api/organizations/'.$this->id($this->organizationA).'/invoices', server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ORIGIN' => 'http://localhost', 'HTTP_X_CSRF_TOKEN' => $this->csrfToken($this->client)], content: json_encode([
             'customerId' => $this->id($this->customerB),
             'issueDate' => '2026-10-01',
             'dueDate' => '2026-10-31',
@@ -134,7 +135,7 @@ final class InvoiceHttpApiTest extends WebTestCase
     {
         $client = $this->client;
         $this->authenticate($client, $this->principalA);
-        $client->request('POST', '/api/organizations/'.$this->id($this->organizationA).'/customers', server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ORIGIN' => 'http://localhost'], content: '{"name":" ","email":"bad"}');
+        $client->request('POST', '/api/organizations/'.$this->id($this->organizationA).'/customers', server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ORIGIN' => 'http://localhost', 'HTTP_X_CSRF_TOKEN' => $this->csrfToken($this->client)], content: '{"name":" ","email":"bad"}');
         self::assertResponseStatusCodeSame(422);
         $client->request('GET', '/api/organizations/'.$this->id($this->organizationB).'/customers');
         self::assertResponseStatusCodeSame(404);
@@ -147,9 +148,9 @@ final class InvoiceHttpApiTest extends WebTestCase
 
         $this->client->request('GET', $path);
         self::assertResponseStatusCodeSame(404);
-        $this->client->request('PATCH', $path, server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ORIGIN' => 'http://localhost'], content: '{"name":"Stolen"}');
+        $this->client->request('PATCH', $path, server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ORIGIN' => 'http://localhost', 'HTTP_X_CSRF_TOKEN' => $this->csrfToken($this->client)], content: '{"name":"Stolen"}');
         self::assertResponseStatusCodeSame(404);
-        $this->client->request('DELETE', $path, server: ['HTTP_ORIGIN' => 'http://localhost']);
+        $this->client->request('DELETE', $path, server: ['HTTP_ORIGIN' => 'http://localhost', 'HTTP_X_CSRF_TOKEN' => $this->csrfToken($this->client)]);
         self::assertResponseStatusCodeSame(404);
         self::assertSame('Foreign customer '.$this->suffix, (string) $this->entityManager->getConnection()->fetchOne('SELECT name FROM customers WHERE id = ?', [$this->id($this->customerB)]));
     }
@@ -167,13 +168,13 @@ final class InvoiceHttpApiTest extends WebTestCase
         self::assertResponseStatusCodeSame(404);
         $this->client->request('GET', $ownedPath);
         self::assertResponseStatusCodeSame(404);
-        $this->client->request('PATCH', $ownedPath, server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ORIGIN' => 'http://localhost'], content: '{"lineItems":[{"description":"Stolen","quantity":"1.000","unitPrice":"999.000"}]}');
+        $this->client->request('PATCH', $ownedPath, server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ORIGIN' => 'http://localhost', 'HTTP_X_CSRF_TOKEN' => $this->csrfToken($this->client)], content: '{"lineItems":[{"description":"Stolen","quantity":"1.000","unitPrice":"999.000"}]}');
         self::assertResponseStatusCodeSame(404);
-        $this->client->request('POST', $foreignPath.'/send', server: ['HTTP_ORIGIN' => 'http://localhost']);
+        $this->client->request('POST', $foreignPath.'/send', server: ['HTTP_ORIGIN' => 'http://localhost', 'HTTP_X_CSRF_TOKEN' => $this->csrfToken($this->client)]);
         self::assertResponseStatusCodeSame(404);
-        $this->client->request('POST', $ownedPath.'/mark-paid', server: ['HTTP_ORIGIN' => 'http://localhost']);
+        $this->client->request('POST', $ownedPath.'/mark-paid', server: ['HTTP_ORIGIN' => 'http://localhost', 'HTTP_X_CSRF_TOKEN' => $this->csrfToken($this->client)]);
         self::assertResponseStatusCodeSame(404);
-        $this->client->request('DELETE', $ownedPath, server: ['HTTP_ORIGIN' => 'http://localhost']);
+        $this->client->request('DELETE', $ownedPath, server: ['HTTP_ORIGIN' => 'http://localhost', 'HTTP_X_CSRF_TOKEN' => $this->csrfToken($this->client)]);
         self::assertResponseStatusCodeSame(404);
 
         self::assertSame('draft', (string) $this->entityManager->getConnection()->fetchOne('SELECT status FROM invoices WHERE id = ?', [$this->id($this->invoiceB)]));
@@ -189,7 +190,7 @@ final class InvoiceHttpApiTest extends WebTestCase
         $items = json_decode((string) $this->client->getResponse()->getContent(), true, 512, JSON_THROW_ON_ERROR)['items'];
         self::assertSame([$this->id($this->customerA)], array_column($items, 'id'));
 
-        $this->client->request('POST', '/api/organizations/'.$this->id($this->organizationA).'/invoices', server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ORIGIN' => 'http://localhost'], content: json_encode([
+        $this->client->request('POST', '/api/organizations/'.$this->id($this->organizationA).'/invoices', server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ORIGIN' => 'http://localhost', 'HTTP_X_CSRF_TOKEN' => $this->csrfToken($this->client)], content: json_encode([
             'organizationId' => $this->id($this->organizationB),
             'customerId' => $this->id($this->customerB),
             'issueDate' => '2026-10-01',
@@ -204,7 +205,7 @@ final class InvoiceHttpApiTest extends WebTestCase
     public function testBodyOrganizationIdCannotMoveAnInvoiceOutsideTheRouteTenant(): void
     {
         $this->authenticate($this->client, $this->principalA);
-        $this->client->request('POST', '/api/organizations/'.$this->id($this->organizationA).'/invoices', server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ORIGIN' => 'http://localhost'], content: json_encode([
+        $this->client->request('POST', '/api/organizations/'.$this->id($this->organizationA).'/invoices', server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ORIGIN' => 'http://localhost', 'HTTP_X_CSRF_TOKEN' => $this->csrfToken($this->client)], content: json_encode([
             'organizationId' => $this->id($this->organizationB),
             'customerId' => $this->id($this->customerA),
             'issueDate' => '2026-10-01',
@@ -227,11 +228,13 @@ final class InvoiceHttpApiTest extends WebTestCase
         $this->client->request('GET', '/api/organizations/'.$this->id($this->organizationA).'/invoices');
         self::assertResponseStatusCodeSame(404);
 
-        // Clear this test client's session cookie to verify the configured OIDC
-        // entry-point redirect without booting a second kernel in one test.
+        // Clear this test client's session cookie to verify the JSON entry point
+        // without booting a second kernel in one test.
         $this->client->getCookieJar()->clear();
         $this->client->request('GET', '/api/organizations/'.$this->id($this->organizationA).'/customers');
-        self::assertResponseRedirects('/login');
+        self::assertResponseStatusCodeSame(401);
+        $payload = json_decode((string) $this->client->getResponse()->getContent(), true, 512, JSON_THROW_ON_ERROR);
+        self::assertSame('unauthenticated', $payload['error']['code'] ?? null);
     }
 
     private function authenticate(\Symfony\Bundle\FrameworkBundle\KernelBrowser $client, Principal $principal): void

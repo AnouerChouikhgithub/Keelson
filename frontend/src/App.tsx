@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
+import { useNavigate } from 'react-router'
 import { listOrganizations } from './api/organizations'
 import type { OrganizationMembership } from './api/types'
 import { presentError } from './api/presentError'
@@ -8,6 +9,7 @@ import { Icon } from './components/Icon'
 import type { IconName } from './components/Icon'
 import { ProfileMenu } from './components/ProfileMenu'
 import { SearchDialog } from './components/SearchDialog'
+import { StatusGate } from './components/StatusGate'
 import { ThemeControl } from './components/ThemeControl'
 import { useI18n } from './i18n/I18nContext'
 import { mockInvitations } from './mocks/organizations'
@@ -24,12 +26,9 @@ import { PricingScreen } from './screens/PricingScreen'
 import { TeamScreen } from './screens/TeamScreen'
 import { NotificationsScreen } from './screens/NotificationsScreen'
 import { Onboarding } from './screens/Onboarding'
-import { Placeholder } from './screens/Placeholder'
 import { SettingsScreen } from './screens/SettingsScreen'
-import { SignedOutScreen } from './screens/SignedOutScreen'
 import { buildSearchResults, searchShortcutLabel } from './search/search'
-import { beginEndSession, clearSessionEnded, readSession, readSessionEnded } from './session/session'
-import type { ServerSession } from './session/session'
+import { useAuth } from './session/AuthContext'
 import { initialsOf } from './utils/initials'
 import './App.css'
 
@@ -43,12 +42,6 @@ const navItems: { id: NavPageId; icon: IconName }[] = [
   { id: 'settings', icon: 'settings' },
   { id: 'pricing', icon: 'globe' },
 ]
-
-type SessionState =
-  | { status: 'loading' }
-  | { status: 'anonymous' }
-  | { status: 'error' }
-  | { status: 'authenticated'; session: Extract<ServerSession, { status: 'authenticated' }> }
 
 function OrganizationSwitcher({
   organizations,
@@ -123,69 +116,23 @@ function OrganizationSwitcher({
   )
 }
 
-/**
- * Shown while the session or the caller's memberships cannot be read. It never
- * falls back to demo identity or demo records.
- */
-function StatusGate({ title, message, onRetry }: { title: string; message: string; onRetry: () => void }) {
-  const { m } = useI18n()
-  return (
-    <main className="signed-out-screen">
-      <section className="panel signed-out-card">
-        <img src="/Keelson.svg" alt="" width={34} height={34} />
-        <h1>{title}</h1>
-        <p>{message}</p>
-        <button type="button" className="button button-secondary" onClick={onRetry}>{m.api.reload}</button>
-      </section>
-    </main>
-  )
-}
-
 function App() {
   const { m } = useI18n()
+  const { user, signOut } = useAuth()
+  const navigate = useNavigate()
   const notifications = useNotifications()
   const [activePage, setActivePage] = useState<PageId>('dashboard')
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
-  const [sessionState, setSessionState] = useState<SessionState>({ status: 'loading' })
-  const [sessionAttempt, setSessionAttempt] = useState(0)
   const [activeOrganizationId, setActiveOrganizationId] = useState<string | null>(null)
   const [invitations, setInvitations] = useState<InvitationRecord[]>(mockInvitations)
   const [editorInvoiceId, setEditorInvoiceId] = useState<string | null>(null)
-  // Survives the full-page sign-out navigation, so the returning tab shows the
-  // signed-out screen instead of briefly re-rendering the shell.
-  const [signedOut, setSignedOut] = useState(readSessionEnded)
   const [logoutPending, setLogoutPending] = useState(false)
-  const [logoutNotice, setLogoutNotice] = useState<string | null>(null)
+  const [logoutError, setLogoutError] = useState<string | null>(null)
 
-  useEffect(() => {
-    let cancelled = false
-    void readSession().then((state) => {
-      if (cancelled) return
-      if (state === null) {
-        setSessionState({ status: 'error' })
-        return
-      }
-      if (state.status === 'anonymous') {
-        setSessionState({ status: 'anonymous' })
-        return
-      }
-      clearSessionEnded()
-      setSignedOut(false)
-      setSessionState({ status: 'authenticated', session: state })
-    })
-    return () => { cancelled = true }
-  }, [sessionAttempt])
-
-  const sessionUser = sessionState.status === 'authenticated' ? sessionState.session.user : null
-
-  const loadOrganizations = useCallback(
-    (signal: AbortSignal) => (sessionState.status === 'authenticated'
-      ? listOrganizations(signal)
-      : Promise.resolve([])),
-    // A new session must refetch the memberships.
-    [sessionState.status],
-  )
+  // A new session mounts a new shell, so the memberships are read once per mount
+  // and refreshed explicitly by the resource hook.
+  const loadOrganizations = useCallback((signal: AbortSignal) => listOrganizations(signal), [])
   const organizations = useApiResource(loadOrganizations)
   const membershipList = useMemo(
     () => organizations.state.status === 'ready' ? organizations.state.data : [],
@@ -231,23 +178,22 @@ function App() {
   }
 
   /**
-   * Sign-out goes through the server as a top-level form POST, so the browser
-   * follows the provider's end-session redirect. {@link beginEndSession}
-   * leaves the page; the signed-out screen is shown when the provider returns.
+   * Sign-out asks the API to end the session, then sends the tab to the sign-in
+   * screen. A failed call keeps the shell visible and says why: navigating after
+   * an unconfirmed sign-out would only bounce back here on the next session read.
    */
-  function handleLogout() {
+  async function handleLogout() {
     if (logoutPending) return
-    setLogoutNotice(null)
-    if (sessionState.status === 'loading' || sessionState.status === 'error') {
-      setLogoutNotice(m.session.sessionUnavailable)
-      return
-    }
-    if (sessionState.status === 'anonymous') {
-      setLogoutNotice(m.session.noActiveSession)
-      return
-    }
+    setLogoutError(null)
     setLogoutPending(true)
-    beginEndSession(sessionState.session.logout)
+    try {
+      await signOut()
+      navigate('/sign-in', { replace: true })
+    } catch (error) {
+      setLogoutError(presentError(m, error))
+    } finally {
+      setLogoutPending(false)
+    }
   }
 
   useEffect(() => {
@@ -262,20 +208,9 @@ function App() {
     return () => window.removeEventListener('keydown', handleShortcut)
   }, [searchOpen])
 
-  if (signedOut) return <SignedOutScreen />
-
-  if (sessionState.status === 'loading') {
-    return <StatusGate title={m.session.cardTitle} message={m.api.loading} onRetry={() => setSessionAttempt((attempt) => attempt + 1)} />
-  }
-
-  if (sessionState.status === 'error') {
-    return <StatusGate title={m.session.cardTitle} message={m.session.sessionUnavailable} onRetry={() => setSessionAttempt((attempt) => attempt + 1)} />
-  }
-
-  // No invented identity: an anonymous session shows the real sign-in entry point.
-  if (sessionState.status === 'anonymous') return <SignedOutScreen />
-
-  const displayName = sessionUser?.displayName ?? sessionUser?.email ?? null
+  // The router mounts this shell only for a server-confirmed session, so `user`
+  // is the identity to render. No invented fallback identity is used.
+  const displayName = user?.displayName ?? user?.email ?? null
   const profileName = displayName ?? m.account.unknownIdentity
 
   let pageContent: ReactNode
@@ -334,7 +269,7 @@ function App() {
       pageContent = (
         <AccountScreen
           displayName={displayName}
-          email={sessionUser?.email ?? null}
+          email={user?.email ?? null}
           activeOrganization={activeOrganization}
           role={activeMembership?.role ?? null}
           onLogout={handleLogout}
@@ -357,8 +292,6 @@ function App() {
     case 'settings':
       pageContent = <SettingsScreen onLogout={handleLogout} logoutPending={logoutPending} />
       break
-    default:
-      pageContent = <Placeholder page={activePage} />
   }
 
   return (
@@ -443,7 +376,7 @@ function App() {
           </div>
         </header>
         <main className="main-content">
-          {logoutNotice && <div className="inline-feedback" role="alert">{logoutNotice}</div>}
+          {logoutError !== null && <div className="inline-feedback inline-feedback-error" role="alert">{logoutError}</div>}
           {organizations.state.status === 'error' && (
             <div className="inline-feedback" role="alert">
               <span>{presentError(m, organizations.state.error)}</span>

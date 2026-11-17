@@ -9,6 +9,7 @@ use App\Entity\Invoice;
 use App\Entity\Membership;
 use App\Entity\Organization;
 use App\Entity\Principal;
+use App\Tests\Support\IssuesCsrfTokens;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\ORM\EntityManagerInterface;
@@ -24,6 +25,8 @@ use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
  */
 final class AuditAtomicityTest extends WebTestCase
 {
+    use IssuesCsrfTokens;
+
     private EntityManagerInterface $entityManager;
     private Connection $raw;
     private KernelBrowser $client;
@@ -41,9 +44,7 @@ final class AuditAtomicityTest extends WebTestCase
         self::assertStringContainsString('PostgreSQL', $this->entityManager->getConnection()->getDatabasePlatform()::class);
         $this->raw = DriverManager::getConnection($this->entityManager->getConnection()->getParams());
         $this->suffix = bin2hex(random_bytes(6));
-        $issuer = $_SERVER['OIDC_ISSUER'] ?? $_ENV['OIDC_ISSUER'] ?? null;
-        self::assertNotNull($issuer, 'OIDC_ISSUER must be configured for the HTTP test user provider.');
-        $this->principal = new Principal($issuer, 'atomic-'.$this->suffix);
+        $this->principal = new Principal('atomic-'.$this->suffix.'@example.test');
         $this->organization = new Organization('Atomic Tenant '.$this->suffix, 'atomic-'.$this->suffix);
         $this->entityManager->persist($this->principal);
         $this->entityManager->persist($this->organization);
@@ -126,7 +127,7 @@ final class AuditAtomicityTest extends WebTestCase
     public function testFailedCustomerDeleteAuditRollsBackTheDelete(): void
     {
         $this->blockAuditActions(['customer.deleted']);
-        $this->client->request('DELETE', $this->customerPath(), server: ['HTTP_ORIGIN' => 'http://localhost']);
+        $this->client->request('DELETE', $this->customerPath(), server: ['HTTP_ORIGIN' => 'http://localhost', 'HTTP_X_CSRF_TOKEN' => $this->csrfToken($this->client)]);
 
         self::assertResponseStatusCodeSame(500);
         self::assertSame(1, (int) $this->raw->fetchOne('SELECT COUNT(*) FROM customers WHERE id = ?', [$this->id($this->customer)]));
@@ -150,7 +151,7 @@ final class AuditAtomicityTest extends WebTestCase
     {
         $invoice = $this->createInvoice();
         $this->blockAuditActions(['invoice.sent']);
-        $this->client->request('POST', $this->invoicePath($invoice).'/send', server: ['HTTP_ORIGIN' => 'http://localhost']);
+        $this->client->request('POST', $this->invoicePath($invoice).'/send', server: ['HTTP_ORIGIN' => 'http://localhost', 'HTTP_X_CSRF_TOKEN' => $this->csrfToken($this->client)]);
 
         self::assertResponseStatusCodeSame(500);
         self::assertSame('draft', (string) $this->raw->fetchOne('SELECT status FROM invoices WHERE id = ?', [$this->id($invoice)]));
@@ -163,7 +164,7 @@ final class AuditAtomicityTest extends WebTestCase
         $invoice->send();
         $this->entityManager->flush();
         $this->blockAuditActions(['invoice.paid']);
-        $this->client->request('POST', $this->invoicePath($invoice).'/mark-paid', server: ['HTTP_ORIGIN' => 'http://localhost']);
+        $this->client->request('POST', $this->invoicePath($invoice).'/mark-paid', server: ['HTTP_ORIGIN' => 'http://localhost', 'HTTP_X_CSRF_TOKEN' => $this->csrfToken($this->client)]);
 
         self::assertResponseStatusCodeSame(500);
         self::assertSame('sent', (string) $this->raw->fetchOne('SELECT status FROM invoices WHERE id = ?', [$this->id($invoice)]));
@@ -174,7 +175,7 @@ final class AuditAtomicityTest extends WebTestCase
     {
         $invoice = $this->createInvoice();
         $this->blockAuditActions(['invoice.deleted']);
-        $this->client->request('DELETE', $this->invoicePath($invoice), server: ['HTTP_ORIGIN' => 'http://localhost']);
+        $this->client->request('DELETE', $this->invoicePath($invoice), server: ['HTTP_ORIGIN' => 'http://localhost', 'HTTP_X_CSRF_TOKEN' => $this->csrfToken($this->client)]);
 
         self::assertResponseStatusCodeSame(500);
         self::assertSame(1, (int) $this->raw->fetchOne('SELECT COUNT(*) FROM invoices WHERE id = ?', [$this->id($invoice)]));
@@ -244,7 +245,7 @@ final class AuditAtomicityTest extends WebTestCase
     /** @return array<string, string> */
     private function jsonServer(): array
     {
-        return ['CONTENT_TYPE' => 'application/json', 'HTTP_ORIGIN' => 'http://localhost'];
+        return ['CONTENT_TYPE' => 'application/json', 'HTTP_ORIGIN' => 'http://localhost', 'HTTP_X_CSRF_TOKEN' => $this->csrfToken($this->client)];
     }
 
     private function id(object $entity): string

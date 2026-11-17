@@ -31,7 +31,7 @@ final class ReadinessTest extends WebTestCase
         $client = static::createClient();
         $client->request('GET', '/readyz', server: ['HTTP_ACCEPT' => 'text/html']);
 
-        // A browser-style request must not be redirected to OIDC.
+        // A browser-style request must not be redirected to a sign-in page.
         self::assertResponseStatusCodeSame(200);
     }
 

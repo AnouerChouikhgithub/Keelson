@@ -50,11 +50,21 @@ class MembershipRepository extends ServiceEntityRepository
             ->getResult();
     }
 
-    /** @return list<Membership> */
+    /**
+     * Active members of one organization, with the person and the tenant loaded.
+     *
+     * The principal is fetch-joined so a member list is one query instead of one
+     * per row when each membership is serialized.
+     *
+     * @return list<Membership>
+     */
     public function findForOrganization(string $organizationId, string $principalId): array
     {
         return $this->createQueryBuilder('membership')
             ->innerJoin('membership.organization', 'organization')
+            ->addSelect('organization')
+            ->innerJoin('membership.principal', 'principal')
+            ->addSelect('principal')
             ->innerJoin(
                 Membership::class,
                 'requesterMembership',
@@ -72,5 +82,76 @@ class MembershipRepository extends ServiceEntityRepository
             ->orderBy('membership.createdAt', 'ASC')
             ->getQuery()
             ->getResult();
+    }
+
+    /** @return list<Membership> Owners and Admins, principals loaded */
+    public function findForOrganizationAdmins(string $organizationId): array
+    {
+        return $this->createQueryBuilder('membership')
+            ->innerJoin('membership.organization', 'organization')
+            ->innerJoin('membership.principal', 'principal')
+            ->addSelect('principal')
+            ->andWhere('IDENTITY(membership.organization) = :organizationId')
+            ->andWhere('membership.status = :membershipStatus')
+            ->andWhere('organization.status = :organizationStatus')
+            ->andWhere('membership.role IN (:adminRoles)')
+            ->setParameter('organizationId', $organizationId)
+            ->setParameter('membershipStatus', 'active')
+            ->setParameter('organizationStatus', 'active')
+            ->setParameter('adminRoles', ['Owner', 'Admin'])
+            ->orderBy('membership.createdAt', 'ASC')
+            ->getQuery()
+            ->getResult();
+    }
+
+    /**
+     * One membership of this tenant, only for a caller who belongs to it.
+     *
+     * The requester join is what makes the lookup tenant-scoped: tampering with
+     * the membership id from another organization yields `null`, not a row.
+     */
+    public function findForOrganizationById(string $organizationId, string $membershipId, string $principalId): ?Membership
+    {
+        return $this->createQueryBuilder('membership')
+            ->innerJoin('membership.organization', 'organization')
+            ->addSelect('organization')
+            ->innerJoin('membership.principal', 'principal')
+            ->addSelect('principal')
+            ->innerJoin(
+                Membership::class,
+                'requesterMembership',
+                'WITH',
+                'requesterMembership.organization = organization AND IDENTITY(requesterMembership.principal) = :principalId AND requesterMembership.status = :requesterStatus'
+            )
+            ->andWhere('membership.id = :membershipId')
+            ->andWhere('IDENTITY(membership.organization) = :organizationId')
+            ->andWhere('membership.status = :membershipStatus')
+            ->andWhere('organization.status = :organizationStatus')
+            ->setParameter('membershipId', $membershipId)
+            ->setParameter('organizationId', $organizationId)
+            ->setParameter('principalId', $principalId)
+            ->setParameter('requesterStatus', 'active')
+            ->setParameter('membershipStatus', 'active')
+            ->setParameter('organizationStatus', 'active')
+            ->getQuery()
+            ->getOneOrNullResult();
+    }
+
+    /** Owner count of a tenant, optionally ignoring one membership (the one being changed). */
+    public function countActiveOwners(string $organizationId, ?string $excludeMembershipId = null): int
+    {
+        $builder = $this->createQueryBuilder('membership')
+            ->select('COUNT(membership.id)')
+            ->andWhere('IDENTITY(membership.organization) = :organizationId')
+            ->andWhere('membership.status = :membershipStatus')
+            ->andWhere('membership.role = :ownerRole')
+            ->setParameter('organizationId', $organizationId)
+            ->setParameter('membershipStatus', 'active')
+            ->setParameter('ownerRole', 'Owner');
+        if (null !== $excludeMembershipId) {
+            $builder->andWhere('membership.id <> :excludeId')->setParameter('excludeId', $excludeMembershipId);
+        }
+
+        return (int) $builder->getQuery()->getSingleScalarResult();
     }
 }

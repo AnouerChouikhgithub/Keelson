@@ -12,7 +12,7 @@ use Symfony\Component\HttpKernel\CacheWarmer\CacheWarmerInterface;
  * `cache:warmup` (and therefore `cache:clear`) is a deliberate deployment step;
  * failing there turns a broken environment into a failed deploy instead of a
  * process that accepts traffic and returns 500 for every sign-in. Local and
- * test environments are skipped: they can legitimately run without OIDC.
+ * test environments are skipped: they legitimately run without mail delivery.
  */
 final class ConfigurationCheckWarmer implements CacheWarmerInterface
 {
@@ -42,11 +42,7 @@ final class ConfigurationCheckWarmer implements CacheWarmerInterface
         }
 
         if ([] !== $result['errors']) {
-            throw new \RuntimeException(
-                "Refusing to warm the production cache with incomplete configuration:\n - "
-                .implode("\n - ", $result['errors'])
-                ."\nSee docs/ENVIRONMENT_CONFIGURATION.md.",
-            );
+            throw new \RuntimeException("Refusing to warm the production cache with incomplete configuration:\n - ".implode("\n - ", $result['errors'])."\nSee docs/ENVIRONMENT_CONFIGURATION.md.");
         }
 
         return [];

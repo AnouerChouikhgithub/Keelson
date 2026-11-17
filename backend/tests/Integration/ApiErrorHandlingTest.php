@@ -41,14 +41,15 @@ final class ApiErrorHandlingTest extends WebTestCase
         self::assertStringNotContainsString('vendor', $body);
     }
 
-    public function testHtmlEvidencePagesAreNotRewrittenByTheApiListener(): void
+    public function testNonApiFailuresKeepSymfonyPHtmlErrorPage(): void
     {
         $client = static::createClient();
-        $client->request('GET', '/login');
+        $client->request('GET', '/no-such-page');
 
-        // /login is a public route and redirects to the provider; it must not be
-        // answered with the API JSON envelope.
-        self::assertResponseStatusCodeSame(302);
-        self::assertStringContainsString('https://', (string) $client->getResponse()->headers->get('Location'));
+        // The listener is scoped to /api/; everything else keeps Symfony's own
+        // error handling instead of being rewritten into the API envelope.
+        self::assertResponseStatusCodeSame(404);
+        self::assertStringContainsString('text/html', (string) $client->getResponse()->headers->get('Content-Type'));
+        self::assertStringNotContainsString('"code":"not_found"', (string) $client->getResponse()->getContent());
     }
 }
