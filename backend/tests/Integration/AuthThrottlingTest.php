@@ -138,6 +138,42 @@ final class AuthThrottlingTest extends KernelTestCase
         self::assertNull($this->limiter->consumeLogin($this->from('10.24.0.1'), 'not-an-address'));
     }
 
+    /**
+     * Case and surrounding whitespace are the cheap way to mint a fresh bucket
+     * out of one address; every key goes through Principal::normalizeEmail().
+     */
+    public function testAddressVariantsShareOneBucket(): void
+    {
+        $email = 'Throttle-'.$this->suffix.'-Mixed@Example.Test';
+        $variants = [$email, strtoupper($email), strtolower($email), '  '.$email.'  ', strtolower($email)];
+
+        foreach ($variants as $attempt => $variant) {
+            self::assertNull(
+                $this->limiter->consumeLogin($this->from('10.25.0.1'), $variant),
+                sprintf('Attempt %d uses the same account key.', $attempt + 1),
+            );
+        }
+
+        self::assertNotNull(
+            $this->limiter->consumeLogin($this->from('10.25.0.1'), strtoupper($email)),
+            'A sixth spelling of the same address must find the bucket full.',
+        );
+    }
+
+    /**
+     * The key a budget is stored under is the account key, not an approximation
+     * of it: every address-keyed limiter asks this method.
+     */
+    public function testTheBucketKeyIsTheNormalizedAccountEmail(): void
+    {
+        self::assertSame('owner@example.test', AuthAttemptLimiter::emailKey('  Owner@Example.Test  '));
+        self::assertNull(AuthAttemptLimiter::emailKey('   '));
+        self::assertNull(AuthAttemptLimiter::emailKey(null));
+        // Malformed input still produces a stable key instead of an exception:
+        // the limiters run before validation.
+        self::assertSame('not-an-address', AuthAttemptLimiter::emailKey('Not-An-Address'));
+    }
+
     private function from(string $ip): Request
     {
         return Request::create('/api/auth/login', 'POST', server: ['REMOTE_ADDR' => $ip]);

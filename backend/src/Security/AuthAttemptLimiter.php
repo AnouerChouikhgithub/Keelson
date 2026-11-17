@@ -65,7 +65,7 @@ final class AuthAttemptLimiter
         $client = $request->getClientIp() ?? 'unknown';
         $buckets = [$this->loginByClient->create($client)];
 
-        $account = self::bucketKey($email);
+        $account = self::emailKey($email);
         if (null !== $account) {
             $buckets[] = $this->loginByEmail->create($account.'|'.$client);
             $buckets[] = $this->loginByAccount->create($account);
@@ -83,7 +83,7 @@ final class AuthAttemptLimiter
     {
         $buckets = [$this->resendByClient->create($request->getClientIp() ?? 'unknown')];
 
-        $account = self::bucketKey($email);
+        $account = self::emailKey($email);
         if (null !== $account) {
             $buckets[] = $this->resendByEmail->create($account);
         }
@@ -102,7 +102,7 @@ final class AuthAttemptLimiter
     public function resetFor(Principal $principal): void
     {
         $request = $this->requests->getCurrentRequest();
-        $account = self::bucketKey($principal->getEmail());
+        $account = self::emailKey($principal->getEmail());
         if (null === $request || null === $account) {
             return;
         }
@@ -113,12 +113,28 @@ final class AuthAttemptLimiter
     /**
      * One key per account, whatever case or surrounding whitespace the request
      * used: `A@B.test` and ` a@b.test ` must share the bucket of `a@b.test`.
+     *
+     * The key is {@see Principal::normalizeEmail()}'s output — the same value the
+     * account lookup uses — so a bucket can never disagree with the account it
+     * counts. {@see RateLimitListener} uses this too, so every address-keyed
+     * budget is built the same way.
+     *
+     * That normalization rejects an invalid address, and these limiters run
+     * before validation, so a malformed one falls back to the trimmed input
+     * rather than throwing in front of the firewall.
      */
-    private static function bucketKey(?string $email): ?string
+    public static function emailKey(?string $email): ?string
     {
-        $normalized = null === $email ? '' : mb_strtolower(trim($email));
+        $email = null === $email ? '' : trim($email);
+        if ('' === $email) {
+            return null;
+        }
 
-        return '' === $normalized ? null : $normalized;
+        try {
+            return Principal::normalizeEmail($email);
+        } catch (\InvalidArgumentException) {
+            return mb_strtolower($email);
+        }
     }
 
     /**
