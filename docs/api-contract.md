@@ -583,3 +583,33 @@ partial unique index on pending invitations per `(organization_id, lower(email))
 200 invoices with one short transaction per batch. It is idempotent (each batch re-selects only
 `sent` invoices past their due date), creates the audit event and the `invoice_overdue`
 notifications, and can be run at any frequency. Schedule it once a day; see the README.
+
+## 10. Release hardening (2026-11-17)
+
+Two behaviours changed in ways a client can observe.
+
+**Registration subdomain collision.** Registration still answers
+`201 {"status":"verification_sent"}` for an address that already exists (it must
+not reveal that), but a *generated subdomain* that cannot be allocated is a
+different failure. If all 50 candidate subdomains derived from the organization
+name are taken, the request answers:
+
+```json
+{ "error": { "code": "subdomain_unavailable", "message": "That organization name is in use; choose another and retry." } }
+```
+
+and nothing is created: no principal, no organization, no token, no email. The
+same code is returned if the subdomain insert loses a race with a concurrent
+registration that used the same name. A client may treat it as a validation error
+on `organizationName`.
+
+**Token redemption.** `POST /api/auth/verify-email` and
+`POST /api/auth/reset-password` redeem their token with a single conditional
+`UPDATE ... RETURNING`, inside the same transaction as the account change. A
+second request carrying the same link answers `400 invalid_token`; a failed
+account change rolls the consumption back, so the link remains usable. The
+response shapes are unchanged.
+
+**401 handling.** Any authenticated endpoint may answer `401 unauthenticated`
+when the session has expired. The SPA reacts by re-reading `GET /api/session`
+rather than assuming a signed-out state.

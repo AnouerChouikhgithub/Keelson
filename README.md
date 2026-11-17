@@ -43,6 +43,14 @@ It is two applications and one browser suite:
 - JSON error envelope (`error.code`, `error.message`, field errors) for every
   failure; request-shape and type errors are `422`, never `500`.
 - CSRF and same-origin enforcement on every unsafe request.
+- Single-use verification and reset links: redemption is one conditional
+  `UPDATE ... RETURNING`, so two concurrent requests cannot both use a link, and
+  a failed account change releases it again.
+- The last active Owner of an organization cannot be demoted or removed, even by
+  two Owners acting at the same time (a per-organization lock and a re-check).
+- Tabs share one session safely: a sign-in or sign-out in one tab reaches the
+  others, a changed account drops cached tenant data, and a tab revalidates when
+  it becomes active again.
 - Cursor (keyset) pagination for every list — no page drift while rows are added.
 - English, French and Arabic, with logical CSS properties so Arabic mirrors.
 - Light, dark and system themes from one token file.
@@ -164,11 +172,10 @@ Backend (read from the process environment, then `backend/.env`, then
 | `FIXTURE_PASSWORD` | no | Shared password for the seeded demo accounts (local dev/test only) |
 | `TEST_TOKEN` | test only | Suffixes the test database name so parallel runs do not collide |
 
-Frontend:
-
-| Variable | Required | Purpose |
-| --- | --- | --- |
-| `VITE_API_BASE_URL` | no | Only when the API is served from another origin; empty means same-origin `/api` |
+Frontend: **no build-time configuration.** The SPA calls its own origin (`/api`)
+and the reverse proxy (or Vite, in development) routes it to Symfony. A
+cross-origin SPA is not supported: no CORS is configured — see
+[docs/adr/0006](docs/adr/0006-same-origin-only.md).
 
 Browser suite: `E2E_BASE_URL`, `MAILPIT_URL`, `FIXTURE_PASSWORD` and `CI` — see
 [e2e/README.md](e2e/README.md).
@@ -184,6 +191,8 @@ composer validate --no-check-publish
 php bin/console lint:yaml config --env=test
 php bin/console lint:container --env=test
 php bin/console debug:router --env=test
+php bin/console doctrine:schema:validate --skip-sync --env=test   # mapped schema
+php bin/console doctrine:migrations:up-to-date --env=test          # nothing pending
 composer stan                    # PHPStan level 8 + dead-code detector, no baseline
 composer cs                      # php-cs-fixer, dry run
 bash bin/test-db.sh start        # throwaway PostgreSQL 16, ephemeral port
@@ -241,8 +250,9 @@ docker/postgres/         init script that creates the least-privilege runtime ro
 ## Production
 
 [docs/deployment.md](docs/deployment.md) covers the image build, environment,
-migrations as the owner role, backups with `pg_dump`, rollback, the reverse proxy
-headers and the scheduled overdue job. `docker-compose.prod.example.yml` is a
+migrations as the owner role, verified backups and restores with
+`backend/bin/db-backup.sh` / `backend/bin/db-restore.sh`, rollback, the reverse
+proxy headers and the scheduled overdue job. `docker-compose.prod.example.yml` is a
 working shape of the whole stack — PostgreSQL, a migrate job, the API and the
 static frontend — with every secret taken from the environment and no defaults
 for any of them.
@@ -262,7 +272,10 @@ Read it before promising a feature to a customer.
 - [SECURITY.md](SECURITY.md) — how to report a vulnerability and what is supported.
 - [CHANGELOG.md](CHANGELOG.md) — the 1.0.0 history, sprint by sprint.
 - [docs/ROADMAP.md](docs/ROADMAP.md) — the nine sprints and what each delivered.
-- [docs/adr/](docs/adr/) — the five decisions worth knowing before changing things.
+- [docs/adr/](docs/adr/) — the six decisions worth knowing before changing things
+  (0006 records why the SPA is same-origin only).
+- [docs/release/FINAL-RELEASE-READINESS-REPORT.md](docs/release/FINAL-RELEASE-READINESS-REPORT.md)
+  — the release decision, its evidence and the remaining external dependencies.
 - [docs/openapi.yaml](docs/openapi.yaml) — the API contract, kept in step with the router by a test.
 - [docs/api-contract.md](docs/api-contract.md) — prose annotations the OpenAPI document cannot carry.
 - [docs/performance.md](docs/performance.md) — measured list-endpoint timings and indexes.
