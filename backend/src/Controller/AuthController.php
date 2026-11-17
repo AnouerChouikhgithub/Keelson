@@ -36,7 +36,9 @@ use Symfony\Component\Security\Core\Authentication\Token\Storage\TokenStorageInt
  *    nothing; requesting a reset for an unknown address returns the same `202`.
  *    A client cannot use these endpoints to discover accounts.
  *  - Redeeming a token proves control of the address, so both the verification
- *    and the reset flow can mark the address verified.
+ *    and the reset flow can mark the address verified. Verification also writes
+ *    the password the mailbox owner chooses: the hash stored at registration
+ *    belongs to whoever typed the address, which is not necessarily its owner.
  *
  * Both token flows redeem through {@see AuthTokenService::redeem()}, which makes
  * the token single-use under concurrency and rolls the "used" mark back if the
@@ -91,7 +93,12 @@ final class AuthController
     {
         $input = $this->hydrator->hydrate(VerifyEmailInput::class, JsonBody::decode($request));
 
-        $this->tokens->redeem($input->token, AuthToken::TYPE_VERIFY, static function (Principal $principal): void {
+        $this->tokens->redeem($input->token, AuthToken::TYPE_VERIFY, function (Principal $principal) use ($input): void {
+            // The hash stored at registration was chosen by whoever submitted the
+            // address. The person reading this link owns the mailbox, so their
+            // password replaces it before the account ever becomes usable, and
+            // both writes commit together with the token consumption.
+            $principal->setPasswordHash($this->passwordHasher->hashPassword($principal, $input->password));
             $principal->markEmailVerified();
         });
 

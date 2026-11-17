@@ -92,7 +92,7 @@ describe('the remaining auth endpoints', () => {
   it('sends the documented method, path and body for each call', async () => {
     fetchMock.mockResolvedValue(noContent())
 
-    await verifyEmail('verify-token')
+    await verifyEmail('verify-token', 'New-Horse-42')
     await resendVerification('owner@example.test')
     await forgotPassword('owner@example.test')
     await resetPassword('reset-token', 'New-Horse-42')
@@ -105,7 +105,7 @@ describe('the remaining auth endpoints', () => {
     }))
 
     expect(calls).toEqual([
-      { path: '/api/auth/verify-email', method: 'POST', body: { token: 'verify-token' } },
+      { path: '/api/auth/verify-email', method: 'POST', body: { token: 'verify-token', password: 'New-Horse-42' } },
       { path: '/api/auth/resend-verification', method: 'POST', body: { email: 'owner@example.test' } },
       { path: '/api/auth/forgot-password', method: 'POST', body: { email: 'owner@example.test' } },
       { path: '/api/auth/reset-password', method: 'POST', body: { token: 'reset-token', password: 'New-Horse-42' } },
