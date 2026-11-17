@@ -4,7 +4,6 @@ import { listAuditEvents } from '../api/audit'
 import { deleteInvoiceDraft, markInvoicePaid, readInvoice, sendInvoice } from '../api/invoices'
 import { canDeleteInvoiceResources, canWriteInvoiceResources } from '../api/organizations'
 import { presentError } from '../api/presentError'
-import type { Invoice } from '../api/types'
 import { invalidateResource, useApiResource } from '../api/useApiResource'
 import { useMutation } from '../api/useMutation'
 import { ConfirmDialog } from '../components/ConfirmDialog'
@@ -28,7 +27,6 @@ export default function InvoiceDetail() {
   const toast = useToast()
   const orgId = membership.id
   const [confirmDelete, setConfirmDelete] = useState(false)
-  const [reloadKey, setReloadKey] = useState(0)
 
   const load = useCallback(
     (signal: AbortSignal) => readInvoice(orgId, invoiceId ?? '', signal),
@@ -48,15 +46,6 @@ export default function InvoiceDetail() {
   const markPaid = useMutation(useCallback(() => markInvoicePaid(orgId, invoiceId ?? ''), [orgId, invoiceId]))
   const remove = useMutation(useCallback(() => deleteInvoiceDraft(orgId, invoiceId ?? ''), [orgId, invoiceId]))
 
-  function afterTransition(updated: Invoice) {
-    // The detail and both list keys are now stale; dropping them means the next
-    // visit refetches instead of showing the pre-transition row.
-    invalidateResource(`invoices:${orgId}`)
-    invalidateResource(`dashboard:${orgId}`)
-    setReloadKey((count) => count + 1)
-    toast.success(m.invoices.detail.markedPaid(updated.number))
-  }
-
   async function handleSend() {
     const outcome = await send.run()
     if (!outcome.ok || !invoice) return
@@ -68,8 +57,15 @@ export default function InvoiceDetail() {
 
   async function handleMarkPaid() {
     const outcome = await markPaid.run()
-    if (!outcome.ok || !invoice) return
-    afterTransition(invoice)
+    if (!outcome.ok) return
+    // Reload the detail and the audit trail from the server: the mutation returns
+    // the updated invoice, but the badge, the totals and the new audit row all
+    // come from the resource, and a stale badge is exactly what a reader notices.
+    invalidateResource(`invoices:${orgId}`)
+    invalidateResource(`dashboard:${orgId}`)
+    resource.reload()
+    audit.reload()
+    toast.success(m.invoices.detail.markedPaid(outcome.data.number))
   }
 
   async function handleDelete() {
@@ -103,7 +99,7 @@ export default function InvoiceDetail() {
   const canDelete = canDeleteInvoiceResources(membership.role)
 
   return (
-    <div className="invoice-detail" key={reloadKey}>
+    <div className="invoice-detail">
       <div className="detail-toolbar no-print">
         <Link className="button button-ghost button-sm" to={`/o/${orgId}/invoices`}>
           <Icon name="arrow" size={16} /> {m.invoices.detail.back}
