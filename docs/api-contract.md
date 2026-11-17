@@ -1,8 +1,17 @@
-# Keelson API contract (verified against the Symfony source)
+# Keelson API contract (prose companion)
+
+> **Status at 1.0.0:** the authoritative contract is
+> [`docs/openapi.yaml`](openapi.yaml), and a test
+> (`backend/tests/Unit/Docs/OpenApiContractTest.php`) fails when its paths stop
+> matching the router. This file is the prose behind those shapes — why a status
+> code is what it is, what a denial means, how a flow was verified — and it is kept
+> for that reasoning, not as a second source of truth. Sections written during an
+> earlier sprint keep their own wording; where a number disagreed with the suite it
+> was updated on 2026-11-17 (214 tests / 1192 assertions).
 
 **Verified on 2026-11-16** by reading `backend/src/Controller/`, `backend/src/Repository/`,
 `backend/src/Service/`, `backend/src/Security/` and `config/packages/security.yaml`, by running the
-backend suite (`php bin/phpunit` → 199 tests / 1139 assertions, exit 0) and by exercising every
+backend suite (`php bin/phpunit` → 214 tests / 1192 assertions, exit 0) and by exercising every
 sign-in flow with `curl` against a local server with Mailpit. This document describes **behaviour
 that exists today**, not a target design. Anything the frontend needs but the backend does not
 provide is listed in [Gaps](#gaps-and-how-each-was-classified).
@@ -403,8 +412,8 @@ retries a mutation automatically.
 | No server-side customer/invoice search or sort | Existing endpoint with insufficient capability | Client-side filter/sort over the loaded page, with a visible "partial results" note when `nextCursor` is set |
 | No `billingAddress` in customer list rows | Existing endpoint with insufficient response data | The list shows name/email/phone; the address comes from the read endpoint |
 | No profile write endpoint | Missing backend capability | `AccountScreen` is read-only and says so |
-| Organizations, invitations, team, billing, pricing, dashboard metrics, notifications | Frontend-only demo surfaces with no backend | Left as mock data, clearly labelled, and they never mutate the real workspace list |
-| No component/DOM test runner (no `jsdom`, no Testing Library) | Dependency approval required | Tests stay at the API boundary in the Node environment; component tests deferred |
+| Organizations, invitations, team, dashboard metrics, notifications | Frontend-only demo surfaces with no backend | **Resolved in sprint 5**: all of them now have endpoints and the SPA renders real data. Billing and pricing remain unbuilt — there is no provider integration and no endpoint, and nothing in the SPA pretends otherwise |
+| No component/DOM test runner (no `jsdom`, no Testing Library) | Dependency approval required | **Resolved in sprint 8**: `jsdom` and Testing Library are approved dev dependencies and 15 component/unit files run in two vitest projects |
 
 ## 8. How this document was verified
 
@@ -413,13 +422,14 @@ retries a mutation automatically.
 - Shapes and validation: the controllers, `InputHydrator`, `JsonBody`, `ApiErrorResponse`,
   `InvoiceSerializer`, `InvoiceCalculator`, `InvoiceInput`, `Customer`, `CustomerRepository`,
   `InvoiceRepository`, `InvoiceVoter`, `security.yaml`, `CsrfProtectionListener`.
-- Behaviour: `php bin/phpunit` → **199 tests / 1139 assertions**, exit 0, against the helper's
-  disposable PostgreSQL 16 container (never the Compose database).
+- Behaviour: `php bin/phpunit` → **214 tests / 1192 assertions**, exit 0, against the helper's
+  disposable PostgreSQL 16 container (never the Compose database). At 1.0.0 the same behaviour is
+  also exercised end to end by the seven Playwright journeys in `e2e/tests/`.
 - Manual round trip: register → Mailpit → verify → login → `GET /api/session` → invoice `POST`
   without and with `X-CSRF-Token` → logout → forgot → reset, all with `curl` against
   `php -S 127.0.0.1:8000 -t public public/index.php` and Mailpit on `http://localhost:8026`.
-- Frontend agreement: this document still describes what the SPA **must** do; the SPA itself is
-  updated in Sprint 3 and its current tests still target the removed provider endpoints.
+- Frontend agreement: `frontend/src/api/` consumes exactly these shapes, and the journey suite
+  fails if a screen and the API disagree about one.
 
 ## 9. Sprint 5: organizations, team, invitations
 

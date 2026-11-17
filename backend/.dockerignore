@@ -1,0 +1,22 @@
+# Nothing local travels into an image: dependencies are installed inside it.
+vendor/
+var/
+node_modules/
+
+# Local configuration and secrets. APP_SECRET and DATABASE_URL come from the
+# runtime environment, never from a file baked into the image.
+.env
+.env.local
+.env.*.local
+.env.test.local
+
+# Development and CI leftovers.
+.phpunit.result.cache
+.php-cs-fixer.cache
+coverage/
+tests/
+bin/test-db.sh
+docker-compose*.yml
+Dockerfile
+.dockerignore
+*.log

@@ -1,0 +1,23 @@
+# Dependencies are installed inside the image from the lockfile.
+node_modules/
+
+# Build output and local caches.
+dist/
+coverage/
+.vite/
+*.tsbuildinfo
+
+# Local configuration.
+.env
+.env.local
+.env.*.local
+
+# Tests and tooling that the bundle does not need.
+src/**/*.test.ts
+src/**/*.test.tsx
+src/test/
+playwright-report/
+test-results/
+Dockerfile
+.dockerignore
+*.log
