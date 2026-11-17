@@ -14,7 +14,6 @@ declare(strict_types=1);
  * Only executable statements are counted (`type="stmt"`): a file's "lines" total
  * includes comments and blank lines in some reporters, which inflates the ratio.
  */
-
 const NAMESPACES = ['src/Service/', 'src/Security/', 'src/Controller/'];
 
 $arguments = array_slice($argv, 1);
@@ -60,14 +59,14 @@ foreach ($files as $file) {
         continue;
     }
 
-    $totals[$namespace]['files']++;
+    ++$totals[$namespace]['files'];
     foreach ($file->getElementsByTagName('line') as $line) {
         if ('stmt' !== $line->getAttribute('type')) {
             continue;
         }
-        $totals[$namespace]['total']++;
+        ++$totals[$namespace]['total'];
         if ((int) $line->getAttribute('count') > 0) {
-            $totals[$namespace]['covered']++;
+            ++$totals[$namespace]['covered'];
         }
     }
 }

@@ -16,7 +16,6 @@ declare(strict_types=1);
  * PHP's own startup, so the numbers are pessimistic compared with a tuned FPM
  * worker. They are for comparing one run with the next on the same machine.
  */
-
 $options = getopt('', ['base::', 'email::', 'password::', 'requests::', 'organization::']);
 $base = rtrim((string) ($options['base'] ?? 'http://127.0.0.1:8000'), '/');
 $email = (string) ($options['email'] ?? 'owner@example.test');
