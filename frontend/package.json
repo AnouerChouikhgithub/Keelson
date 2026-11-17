@@ -9,6 +9,7 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "test": "vitest run",
+    "check:bundle": "node scripts/check-bundle-size.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

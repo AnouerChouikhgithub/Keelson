@@ -1,0 +1,60 @@
+version: 2
+
+# Weekly, grouped updates: one pull request per ecosystem instead of a stream of
+# single-package ones. GitHub Actions pins are commit SHAs in the workflow, and
+# Dependabot is what moves them forward.
+updates:
+  - package-ecosystem: composer
+    directory: /backend
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: build
+    groups:
+      composer-minor:
+        patterns: ['*']
+        update-types: [minor, patch]
+
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: build
+    groups:
+      frontend-minor:
+        patterns: ['*']
+        update-types: [minor, patch]
+
+  - package-ecosystem: npm
+    directory: /e2e
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: build
+    groups:
+      e2e-minor:
+        patterns: ['*']
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: ci
+    groups:
+      actions:
+        patterns: ['*']
