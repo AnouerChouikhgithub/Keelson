@@ -3,9 +3,10 @@ vendor/
 var/
 node_modules/
 
-# Local configuration and secrets. APP_SECRET and DATABASE_URL come from the
-# runtime environment, never from a file baked into the image.
-.env
+# Local configuration and secrets. The tracked .env stays in the image: it holds
+# the documented defaults (an empty APP_SECRET, a localhost URL) and Symfony's
+# Dotenv requires the file to exist. Real values always come from the runtime
+# environment, which overrides it.
 .env.local
 .env.*.local
 .env.test.local

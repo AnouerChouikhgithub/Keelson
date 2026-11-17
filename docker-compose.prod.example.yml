@@ -75,7 +75,7 @@ services:
       test:
         [
           'CMD-SHELL',
-          'REQUEST_METHOD=GET SCRIPT_NAME=/index.php SCRIPT_FILENAME=/app/public/index.php PATH_INFO=/healthz REQUEST_URI=/healthz SERVER_NAME=localhost cgi-fcgi -bind -connect 127.0.0.1:9000 | grep -q 200',
+          'REQUEST_METHOD=GET SCRIPT_NAME=/index.php SCRIPT_FILENAME=/app/public/index.php PATH_INFO=/healthz REQUEST_URI=/healthz SERVER_NAME=localhost cgi-fcgi -bind -connect 127.0.0.1:9000 | grep -q "\"status\":\"ok\""',
         ]
       interval: 30s
       timeout: 5s

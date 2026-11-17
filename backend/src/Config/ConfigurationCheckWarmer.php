@@ -42,7 +42,7 @@ final class ConfigurationCheckWarmer implements CacheWarmerInterface
         }
 
         if ([] !== $result['errors']) {
-            throw new \RuntimeException("Refusing to warm the production cache with incomplete configuration:\n - ".implode("\n - ", $result['errors'])."\nSee docs/ENVIRONMENT_CONFIGURATION.md.");
+            throw new \RuntimeException("Refusing to warm the production cache with incomplete configuration:\n - ".implode("\n - ", $result['errors'])."\nSee docs/deployment.md, section 2 (Environment).");
         }
 
         return [];

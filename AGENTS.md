@@ -50,7 +50,7 @@ Keep the UI clean, modern and accessible (WCAG AA contrast).
   TypeScript is deliberately pinned below 6.1 because `typescript-eslint` 8.71.2
   supports `>=4.8.4 <6.1.0`; do not move it back to 7.x until that peer range
   widens. `tsc -b`, `pnpm run lint`, `pnpm test` (98 tests in 15 files: node and
-  jsdom projects), `pnpm run build` and `pnpm run check:bundle` (entry 361.6 kB of a
+  jsdom projects), `pnpm run build` and `pnpm run check:bundle` (entry 358.6 kB of a
   420 kB budget) all pass. `pnpm exec knip` and `node scripts/unused-i18n.mjs`
   report nothing.
 - Backend dependencies: Symfony 7.4, Doctrine ORM/DBAL/Migrations plus the Doctrine

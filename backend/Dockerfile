@@ -12,13 +12,9 @@
 
 FROM php:8.3-fpm-alpine AS vendor
 
-# postgresql-dev and icu-dev are build-time only: pdo_pgsql and intl are compiled
-# into the image, and the -dev packages stay in this stage.
-RUN apk add --no-cache --virtual .build-deps $PHPIZE_DEPS postgresql-dev icu-dev \
-    && docker-php-ext-install -j"$(nproc)" pdo_pgsql intl opcache \
-    && apk del .build-deps \
-    && rm -rf /tmp/pear
-
+# No extensions are compiled here on purpose. This stage only resolves and warms
+# the container, which needs neither PostgreSQL nor ICU; the runtime stage installs
+# them once, into the image that actually serves requests.
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 WORKDIR /app
 
@@ -32,11 +28,20 @@ RUN composer install --no-dev --no-interaction --no-progress --prefer-dist \
 COPY . .
 
 # The production autoloader is authoritative and optimised, and the container is
-# warmed with the production environment so the first request does not compile
-# the container graph. APP_SECRET here is a build-time value for cache:warmup; the
-# real secret is supplied by the runtime environment and must differ.
+# warmed with the production environment so the first request does not compile the
+# container graph. The values below are compile-time placeholders: the container is
+# built with no .env at all, `%env()%` is stored as a reference and resolved at
+# runtime, so nothing here is baked into the image. Every one of them must be
+# supplied by the runtime environment — app:config:check refuses to serve without.
 RUN composer dump-autoload --no-dev --optimize --classmap-authoritative \
-    && APP_ENV=prod APP_DEBUG=0 APP_SECRET=build-time-only \
+    && APP_ENV=prod APP_DEBUG=0 \
+       APP_SECRET='build-time-placeholder-secret-never-used-at-runtime' \
+       DATABASE_URL='postgresql://placeholder:placeholder@127.0.0.1:5432/placeholder?serverVersion=16&charset=utf8' \
+       DEFAULT_URI='https://placeholder.invalid' \
+       FRONTEND_URL='https://placeholder.invalid' \
+       MAILER_DSN='smtp://127.0.0.1:25' \
+       TRUSTED_HOSTS='placeholder.invalid' \
+       REQUIRE_VERIFIED_EMAIL=true \
        php bin/console cache:warmup --no-debug \
     && rm -rf var/cache/prod/*~
 
@@ -72,9 +77,12 @@ EXPOSE 9000
 
 # /healthz is answered by the application itself, so a container that is up but
 # cannot boot the kernel (missing secret, broken cache) is reported unhealthy.
+# php-fpm answers FastCGI, not HTTP, so the check speaks FastCGI to it and looks
+# for the body the health endpoint returns. A container that is up but cannot boot
+# the kernel (missing secret, broken cache) answers with an error page instead.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD REQUEST_METHOD=GET SCRIPT_NAME=/index.php SCRIPT_FILENAME=/app/public/index.php \
         PATH_INFO=/healthz REQUEST_URI=/healthz SERVER_NAME=localhost \
-        cgi-fcgi -bind -connect 127.0.0.1:9000 | grep -q "200"
+        cgi-fcgi -bind -connect 127.0.0.1:9000 | grep -q '"status":"ok"'
 
 CMD ["php-fpm", "--nodaemonize"]
