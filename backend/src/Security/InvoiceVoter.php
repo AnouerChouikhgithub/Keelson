@@ -10,6 +10,7 @@ use App\Repository\MembershipRepository;
 use Symfony\Component\Security\Core\Authentication\Token\TokenInterface;
 use Symfony\Component\Security\Core\Authorization\Voter\Voter;
 
+/** @extends Voter<string, string> */
 final class InvoiceVoter extends Voter
 {
     public const READ = 'INVOICE_READ';

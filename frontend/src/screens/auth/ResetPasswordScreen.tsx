@@ -90,7 +90,6 @@ export function ResetPasswordScreen() {
           inputRef={register('password')}
           error={fields?.password}
           hint={m.auth.passwordRule}
-          disabled={pending}
         />
 
         <PasswordField
@@ -100,7 +99,6 @@ export function ResetPasswordScreen() {
           autoComplete="new-password"
           inputRef={register('confirmPassword')}
           error={fields?.confirmPassword}
-          disabled={pending}
         />
 
         <button type="submit" className="button button-primary auth-submit" disabled={pending} aria-busy={pending || undefined}>

@@ -57,7 +57,8 @@ class Invitation
     private string $status = self::STATUS_PENDING;
 
     #[ORM\Column(name: 'token_hash', length: 255)]
-    private string $tokenHash;
+    // Compared by the repository's query; PHP never reads the digest.
+    protected string $tokenHash;
 
     #[ORM\ManyToOne(targetEntity: Principal::class)]
     #[ORM\JoinColumn(name: 'invited_by_principal_id', referencedColumnName: 'id', nullable: false, onDelete: 'RESTRICT')]
@@ -231,5 +232,10 @@ class Invitation
         $this->status = self::STATUS_REVOKED;
         $this->revokedAt = $now;
         $this->updatedAt = $now;
+    }
+
+    public function getUpdatedAt(): \DateTimeImmutable
+    {
+        return $this->updatedAt;
     }
 }

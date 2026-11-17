@@ -53,6 +53,10 @@ final class DashboardService
             'monthStart' => $monthStart->format('Y-m-d H:i:sP'),
         ]);
 
+        if (false === $aggregates) {
+            throw new \RuntimeException('The dashboard aggregates query returned no row.');
+        }
+
         $revenueRows = $this->connection->fetchAllAssociative(<<<'SQL'
             SELECT to_char(paid_at AT TIME ZONE 'UTC', 'YYYY-MM') AS month,
                    COALESCE(SUM(ROUND(total * 1000)), 0) AS millimes

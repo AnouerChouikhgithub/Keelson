@@ -8,6 +8,7 @@ use App\Entity\Principal;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
 
+/** @extends ServiceEntityRepository<Principal> */
 class PrincipalRepository extends ServiceEntityRepository
 {
     public function __construct(ManagerRegistry $registry)
@@ -24,6 +25,8 @@ class PrincipalRepository extends ServiceEntityRepository
      */
     public function findOneByEmail(string $email): ?Principal
     {
-        return $this->findOneBy(['email' => $email]);
+        $principal = $this->findOneBy(['email' => $email]);
+
+        return $principal instanceof Principal ? $principal : null;
     }
 }

@@ -77,7 +77,7 @@ final class InvoiceApiController extends AbstractController
         );
         $hasMore = count($rows) > $limit;
         $rows = array_slice($rows, 0, $limit);
-        $lastCustomer = $hasMore ? $rows[array_key_last($rows)] : null;
+        $lastCustomer = $hasMore ? ($rows[count($rows) - 1] ?? null) : null;
         $nextCursor = null !== $lastCustomer ? Cursor::encode($lastCustomer->getCreatedAt(), $lastCustomer->getId()) : null;
 
         return $this->json(['items' => array_map(fn (Customer $customer) => $this->serializer->customer($customer, false), $rows), 'nextCursor' => $nextCursor]);
@@ -228,7 +228,7 @@ final class InvoiceApiController extends AbstractController
         $rows = $this->invoices->findForOrganizationList($organizationId, $principal->getId(), $status, $limit, $cursor, $request->query->get('q'));
         $hasMore = count($rows) > $limit;
         $rows = array_slice($rows, 0, $limit);
-        $lastInvoice = $hasMore ? $rows[array_key_last($rows)] : null;
+        $lastInvoice = $hasMore ? ($rows[count($rows) - 1] ?? null) : null;
         $nextCursor = null !== $lastInvoice ? Cursor::encode($lastInvoice->getCreatedAt(), $lastInvoice->getId()) : null;
 
         return $this->json(['items' => array_map($this->serializer->invoice(...), $rows), 'nextCursor' => $nextCursor]);
@@ -417,7 +417,7 @@ final class InvoiceApiController extends AbstractController
         );
         $hasMore = count($events) > $limit;
         $events = array_slice($events, 0, $limit);
-        $lastEvent = $hasMore ? $events[array_key_last($events)] : null;
+        $lastEvent = $hasMore ? ($events[count($events) - 1] ?? null) : null;
 
         return $this->json([
             'items' => array_map(static fn (InvoiceAuditEvent $event) => [

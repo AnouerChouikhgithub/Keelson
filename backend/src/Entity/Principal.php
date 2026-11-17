@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Entity;
 
-use App\Id\UuidGenerator;
 use App\Repository\PrincipalRepository;
+use App\Util\Uuid;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Security\Core\User\PasswordAuthenticatedUserInterface;
 use Symfony\Component\Security\Core\User\UserInterface;
@@ -28,11 +28,10 @@ class Principal implements UserInterface, PasswordAuthenticatedUserInterface
     public const DISPLAY_NAME_MAX_LENGTH = 120;
 
     #[ORM\Id]
-    #[ORM\GeneratedValue(strategy: 'CUSTOM')]
-    #[ORM\CustomIdGenerator(class: UuidGenerator::class)]
     #[ORM\Column(type: 'guid')]
     private string $id;
 
+    /** @var non-empty-string */
     #[ORM\Column(length: self::EMAIL_MAX_LENGTH)]
     private string $email;
 
@@ -56,6 +55,7 @@ class Principal implements UserInterface, PasswordAuthenticatedUserInterface
 
     public function __construct(string $email, ?string $displayName = null, ?\DateTimeImmutable $now = null)
     {
+        $this->id = Uuid::v4();
         $now ??= new \DateTimeImmutable();
         $this->email = self::normalizeEmail($email);
         $this->displayName = self::normalizeDisplayName($displayName);
@@ -69,6 +69,7 @@ class Principal implements UserInterface, PasswordAuthenticatedUserInterface
      * Registration, login and the password-reset request all normalize through
      * here so `A@B.test` and `a@b.test` are the same account.
      */
+    /** @return non-empty-string */
     public static function normalizeEmail(string $email): string
     {
         $normalized = mb_strtolower(trim($email));

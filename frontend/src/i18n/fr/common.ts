@@ -42,6 +42,7 @@ export const nav = {
   settings: 'Paramètres',
   account: 'Mon compte',
   notifications: 'Notifications',
+  notificationsWithCount: (count: number) => `Notifications (${count} non lues)`,
   toggleNav: 'Afficher ou masquer la navigation',
   closeNav: 'Fermer la navigation',
   currentOrg: (name: string) => `Organisation actuelle : ${name}`,
@@ -139,13 +140,6 @@ export const notFound = {
   title: 'Cette page n’existe pas',
   body: 'L’adresse est peut-être mal saisie, ou l’élément a été supprimé. Choisissez un espace dans le sélecteur pour continuer.',
   backToDashboard: 'Aller au tableau de bord',
-}
-
-export const gate = {
-  eyebrow: 'NON CONNECTÉ',
-  endpointLabel: 'Point d’accès manquant',
-  sourceNote: 'Aucune donnée de démonstration n’est affichée ici.',
-  backToDashboard: 'Retour au tableau de bord',
 }
 
 export const toast = {

@@ -6,7 +6,28 @@ namespace App\Service;
 
 final class InvoiceInput
 {
-    /** @return array{customerId: string, issueDate: \DateTimeImmutable, dueDate: \DateTimeImmutable, calculation: array} */
+    /**
+     * Normalises a raw invoice body into the values the entity and calculator
+     * need. Line items are rebuilt field by field, so an entry that is not an
+     * object (or misses a key) is rejected by the calculator's own messages
+     * instead of failing on an array offset.
+     *
+     * @param array<string, mixed> $data
+     *
+     * @return array{
+     *     customerId: string,
+     *     issueDate: \DateTimeImmutable,
+     *     dueDate: \DateTimeImmutable,
+     *     calculation: array{
+     *         subtotal: string,
+     *         taxAmount: string,
+     *         discountAmount: string,
+     *         total: string,
+     *         taxRate: ?string,
+     *         lineItems: list<array{description: string, quantity: string, unitPrice: string, lineTotal: string}>
+     *     }
+     * }
+     */
     public function parse(array $data, InvoiceCalculator $calculator): array
     {
         foreach (['customerId', 'issueDate', 'dueDate', 'currency', 'lineItems'] as $required) {
@@ -26,11 +47,30 @@ final class InvoiceInput
             'issueDate' => $this->date($data['issueDate'], 'issueDate'),
             'dueDate' => $this->date($data['dueDate'], 'dueDate'),
             'calculation' => $calculator->calculate(
-                is_array($data['lineItems']) ? $data['lineItems'] : [],
+                $this->lineItems($data['lineItems']),
                 $data['taxRate'] ?? null,
                 $data['discountAmount'] ?? null,
             ),
         ];
+    }
+
+    /** @return list<array{description: mixed, quantity: mixed, unitPrice: mixed}> */
+    private function lineItems(mixed $value): array
+    {
+        if (!is_array($value)) {
+            return [];
+        }
+
+        $items = [];
+        foreach ($value as $item) {
+            $items[] = [
+                'description' => is_array($item) ? ($item['description'] ?? null) : null,
+                'quantity' => is_array($item) ? ($item['quantity'] ?? null) : null,
+                'unitPrice' => is_array($item) ? ($item['unitPrice'] ?? null) : null,
+            ];
+        }
+
+        return $items;
     }
 
     private function date(mixed $value, string $field): \DateTimeImmutable

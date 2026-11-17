@@ -262,7 +262,21 @@
 .search-trigger span { flex: 1; }
 .search-trigger kbd { padding: 1px var(--space-1); color: var(--color-text-muted); background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-xs); font-size: 11px; }
 
-.notification-button { text-decoration: none; }
+.notification-button { position: relative; text-decoration: none; }
+.notification-badge {
+  position: absolute;
+  inset-block-start: 4px;
+  inset-inline-end: 2px;
+  min-width: 17px;
+  padding: 0 4px;
+  color: var(--color-primary-contrast);
+  background: var(--color-danger);
+  border-radius: var(--radius-full);
+  font-size: 10px;
+  font-weight: var(--weight-bold);
+  line-height: 17px;
+  text-align: center;
+}
 
 .theme-control { display: flex; padding: 3px; gap: 2px; background: var(--color-background); border: 1px solid var(--color-border); border-radius: var(--radius-sm); }
 .theme-option {

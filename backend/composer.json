@@ -74,6 +74,15 @@
         ],
         "post-update-cmd": [
             "@auto-scripts"
+        ],
+        "test": "php bin/phpunit",
+        "stan": "phpstan analyse --no-progress",
+        "cs": "php-cs-fixer fix --dry-run --diff",
+        "cs:fix": "php-cs-fixer fix",
+        "check": [
+            "@stan",
+            "@cs",
+            "@test"
         ]
     },
     "conflict": {

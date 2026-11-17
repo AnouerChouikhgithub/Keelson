@@ -84,7 +84,6 @@ export function SignInScreen() {
             inputMode="email"
             aria-invalid={fields?.email === undefined ? undefined : true}
             aria-describedby={fields?.email === undefined ? undefined : 'sign-in-email-error'}
-            disabled={pending}
             required
           />
           {fields?.email !== undefined && <p className="field-error" id="sign-in-email-error">{fields.email}</p>}
@@ -97,7 +96,6 @@ export function SignInScreen() {
           autoComplete="current-password"
           inputRef={register('password')}
           error={fields?.password}
-          disabled={pending}
         />
 
         <button type="submit" className="button button-primary auth-submit" disabled={pending} aria-busy={pending || undefined}>

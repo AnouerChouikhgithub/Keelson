@@ -9,6 +9,7 @@ use App\Entity\Membership;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
 
+/** @extends ServiceEntityRepository<Invitation> */
 final class InvitationRepository extends ServiceEntityRepository
 {
     public function __construct(ManagerRegistry $registry)
@@ -41,7 +42,9 @@ final class InvitationRepository extends ServiceEntityRepository
 
     public function findByTokenHash(string $tokenHash): ?Invitation
     {
-        return $this->findOneBy(['tokenHash' => $tokenHash]);
+        $invitation = $this->findOneBy(['tokenHash' => $tokenHash]);
+
+        return $invitation instanceof Invitation ? $invitation : null;
     }
 
     /** Public redemption lookup: the organization name is part of the answer. */

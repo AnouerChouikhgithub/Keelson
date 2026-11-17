@@ -11,6 +11,7 @@ use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\DBAL\LockMode;
 use Doctrine\Persistence\ManagerRegistry;
 
+/** @extends ServiceEntityRepository<Customer> */
 final class CustomerRepository extends ServiceEntityRepository
 {
     public function __construct(ManagerRegistry $registry)

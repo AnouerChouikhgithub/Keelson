@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Entity;
 
-use App\Id\UuidGenerator;
 use App\Repository\CustomerRepository;
+use App\Util\Uuid;
 use Doctrine\ORM\Mapping as ORM;
 
 #[ORM\Entity(repositoryClass: CustomerRepository::class)]
@@ -14,8 +14,6 @@ use Doctrine\ORM\Mapping as ORM;
 class Customer
 {
     #[ORM\Id]
-    #[ORM\GeneratedValue(strategy: 'CUSTOM')]
-    #[ORM\CustomIdGenerator(class: UuidGenerator::class)]
     #[ORM\Column(type: 'guid')]
     private string $id;
 
@@ -51,6 +49,7 @@ class Customer
         ?array $billingAddress = null,
         ?\DateTimeImmutable $now = null,
     ) {
+        $this->id = Uuid::v4();
         $this->organization = $organization;
         $this->apply($name, $email, $phone, $billingAddress);
         $this->createdAt = $now ?? new \DateTimeImmutable();
@@ -135,5 +134,10 @@ class Customer
         $this->email = null === $email ? null : strtolower(trim($email));
         $this->phone = null === $phone ? null : trim($phone);
         $this->billingAddress = $billingAddress;
+    }
+
+    public function getUpdatedAt(): \DateTimeImmutable
+    {
+        return $this->updatedAt;
     }
 }

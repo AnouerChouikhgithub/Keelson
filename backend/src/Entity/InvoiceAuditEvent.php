@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Entity;
 
-use App\Id\UuidGenerator;
 use App\Repository\InvoiceAuditEventRepository;
+use App\Util\Uuid;
 use Doctrine\ORM\Mapping as ORM;
 
 #[ORM\Entity(repositoryClass: InvoiceAuditEventRepository::class)]
@@ -17,8 +17,6 @@ use Doctrine\ORM\Mapping as ORM;
 class InvoiceAuditEvent
 {
     #[ORM\Id]
-    #[ORM\GeneratedValue(strategy: 'CUSTOM')]
-    #[ORM\CustomIdGenerator(class: UuidGenerator::class)]
     #[ORM\Column(type: 'guid')]
     private string $id;
 
@@ -38,6 +36,7 @@ class InvoiceAuditEvent
     #[ORM\Column(name: 'actor_principal_id', type: 'guid')]
     private string $actorPrincipalId;
 
+    /** @var array<string, scalar|null> */
     #[ORM\Column(type: 'json')]
     private array $metadata;
 
@@ -57,6 +56,7 @@ class InvoiceAuditEvent
         if (!preg_match('/^[a-z][a-z0-9_.-]{1,31}$/', $action)) {
             throw new \InvalidArgumentException('Audit action is invalid.');
         }
+        $this->id = Uuid::v4();
         $this->organization = $organization;
         $this->invoiceId = $invoiceId;
         $this->customerId = $customerId;

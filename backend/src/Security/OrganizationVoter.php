@@ -27,6 +27,7 @@ use Symfony\Component\Security\Core\Authorization\Voter\Voter;
  * another Admin", "the last Owner cannot be removed" — live in the controller,
  * which has the target membership in hand.
  */
+/** @extends Voter<string, string> */
 final class OrganizationVoter extends Voter
 {
     public const READ = 'ORGANIZATION_READ';

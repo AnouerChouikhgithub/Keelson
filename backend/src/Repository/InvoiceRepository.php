@@ -10,6 +10,7 @@ use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\DBAL\LockMode;
 use Doctrine\Persistence\ManagerRegistry;
 
+/** @extends ServiceEntityRepository<Invoice> */
 final class InvoiceRepository extends ServiceEntityRepository
 {
     public function __construct(ManagerRegistry $registry)
@@ -40,7 +41,11 @@ final class InvoiceRepository extends ServiceEntityRepository
             ->getOneOrNullResult();
     }
 
-    /** @return list<Invoice> */
+    /**
+     * @param array{id: string, createdAt: \DateTimeImmutable}|null $cursor
+     *
+     * @return list<Invoice>
+     */
     public function findForOrganizationList(string $organizationId, string $principalId, ?string $status = null, int $limit = 25, ?array $cursor = null, ?string $q = null): array
     {
         $builder = $this->createQueryBuilder('invoice')

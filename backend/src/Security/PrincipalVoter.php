@@ -10,6 +10,7 @@ use App\Repository\MembershipRepository;
 use Symfony\Component\Security\Core\Authentication\Token\TokenInterface;
 use Symfony\Component\Security\Core\Authorization\Voter\Voter;
 
+/** @extends Voter<string, string> */
 final class PrincipalVoter extends Voter
 {
     public const ORGANIZATION_VIEW = 'ORGANIZATION_VIEW';
