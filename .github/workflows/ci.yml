@@ -156,7 +156,13 @@ jobs:
           GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO keelson_app;
           GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO keelson_app;
           SQL
+      # The integration suite installs triggers and exercises schema-level
+      # behaviour (a failing audit insert must roll the customer back), which the
+      # application role deliberately cannot do. Tests run as the owner role; the
+      # application role's narrower privileges are what production uses.
       - name: PHPUnit with coverage
+        env:
+          DATABASE_URL: ${{ env.DATABASE_OWNER_URL }}
         run: php bin/phpunit --coverage-clover var/coverage/clover.xml --coverage-filter src
       - name: Coverage gate (80% for Service, Security and Controller)
         run: php bin/coverage-check.php var/coverage/clover.xml --threshold=80
@@ -243,16 +249,26 @@ jobs:
         run: |
           php bin/console doctrine:migrations:migrate --no-interaction
           php bin/console app:fixtures:load --force
+      # Playwright starts its own API and SPA, and refuses to reuse a port that
+      # already answers (reuseExistingServer is off in CI). This probe proves the
+      # application boots with the job's environment, then stops the server it
+      # started so the journeys can bind the port themselves.
       - name: Verify the API boots before the browser does
         run: |
           php -S 127.0.0.1:8000 -t backend/public backend/public/index.php > /tmp/api.log 2>&1 &
+          api=$!
+          healthy=0
           for _ in $(seq 1 30); do
-            if curl -fsS http://127.0.0.1:8000/healthz > /dev/null; then exit 0; fi
+            if curl -fsS http://127.0.0.1:8000/healthz > /dev/null; then healthy=1; break; fi
             sleep 1
           done
-          echo 'The API did not become healthy:' >&2
-          cat /tmp/api.log >&2
-          exit 1
+          kill "$api" 2>/dev/null || true
+          wait "$api" 2>/dev/null || true
+          if [ "$healthy" -ne 1 ]; then
+            echo 'The API did not become healthy:' >&2
+            cat /tmp/api.log >&2
+            exit 1
+          fi
       - name: Run the journeys
         working-directory: e2e
         run: pnpm test
