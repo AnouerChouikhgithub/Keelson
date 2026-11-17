@@ -85,11 +85,15 @@ flowchart LR
     FPM -.->|"audit + notification rows"| PG
 ```
 
-Tenant isolation is **application-layer**: every repository call and voter requires
-an active membership for the organization in the route, and the organization id in
-the URL is a selector, never authority. PostgreSQL row-level security is not
-implemented; see [docs/adr/0003](docs/adr/0003-postgresql-row-level-security.md)
-for the reasoning and the consequences.
+Tenant isolation has **two layers**. PostgreSQL row-level security is enabled and
+forced on `customers`, `invoices`, `invitations` and `notifications`, keyed on a
+transaction-local `app.organization_id`, so a query that forgets its tenant filter
+returns no rows rather than another tenant's. On top of that, every repository call
+and voter requires an active membership for the organization in the route, and the
+organization id in the URL is a selector, never authority. The application role must
+not be the table owner and must not have `BYPASSRLS` — `/readyz` fails when it is.
+See [docs/adr/0003](docs/adr/0003-postgresql-row-level-security.md) for the reasoning,
+the two deliberate exceptions and the cost of a transaction per request.
 
 ## Quick start
 
@@ -259,9 +263,10 @@ for any of them.
 
 ## Limits
 
-[docs/limitations.md](docs/limitations.md) is the honest list: no row-level
-security, no billing, no email-change flow, no multi-factor authentication, single
-locale per build of the email templates, and the measured local latency figures.
+[docs/limitations.md](docs/limitations.md) is the honest list: row-level security on
+the tenant tables but not the identity tables, no billing, no email-change flow, no
+multi-factor authentication, single locale per build of the email templates, and the
+measured local latency figures.
 Read it before promising a feature to a customer.
 
 ## Documentation

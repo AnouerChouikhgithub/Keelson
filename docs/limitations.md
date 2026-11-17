@@ -5,12 +5,30 @@ it means for whoever deploys Keelson.
 
 ## Security and tenancy
 
-- **No row-level security.** Isolation is enforced by repositories and voters, not
-  by PostgreSQL. A query added later that forgets the tenant filter is a data leak;
-  the protection is review plus the cross-tenant tests in
-  `tests/Unit/Repository/TenantScopedRepositoryTest.php` and
-  `tests/Integration/RouteIdorTest.php`. See
+- **Row-level security covers the tenant tables, not the identity tables.**
+  `customers`, `invoices`, `invitations` and `notifications` are `ENABLE` **and**
+  `FORCE ROW LEVEL SECURITY` with a policy on the transaction-local
+  `app.organization_id`; `principals`, `memberships`, `auth_tokens` and `sessions`
+  deliberately are not, because they are read before a tenant is known. Isolation
+  for those stays application-layer. See
   [adr/0003](adr/0003-postgresql-row-level-security.md).
+- **An unscoped query returns no rows, not all rows.** That is the point, but it
+  means a console command or a fixture that touches a tenant table must use
+  `App\Tenancy\TenantContext::run()`; without it the write is rejected and the read
+  is empty.
+- **`/readyz` fails when the connecting role bypasses the policies.** A superuser or
+  a role with `BYPASSRLS` is exempt from every policy, so the probe answers `503`
+  with `checks.rowLevelSecurity = bypass`. The dev Compose database's `app` role is
+  the bootstrap **superuser**, so a plain local stack answers `503` there; the
+  production split in [deployment.md](deployment.md) is what makes it `ok`.
+- **The database suite still runs as the schema owner in CI.** That role is a
+  superuser, so it bypasses the policies and the suite does not exercise them
+  globally; the RLS behaviour is asserted by
+  `tests/Integration/RowLevelSecurityTest.php` on a dedicated non-`BYPASSRLS` probe
+  connection. Running the whole suite as `keelson_app` needs every suite that seeds
+  tenant rows to wrap those writes in `TenantContext` — a follow-up, not a claim.
+  `invoice_lines` has no table today (line items live in `invoices.line_items`); the
+  migration applies the policy if one is ever introduced.
 - **A denial is a `404`.** Members of another organization get "not found", never
   "forbidden". That is deliberate (no tenant enumeration), but it means logs and
   users cannot distinguish "does not exist" from "not yours".

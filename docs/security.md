@@ -67,8 +67,19 @@ be redeemed after the user asked for a new one.
 - `tests/Integration/RouteIdorTest.php` walks every route with an identifier as a
   foreign tenant and anonymously; `InvoiceAuthorizationMatrixTest` covers the
   role matrix (Owner/Admin/Member/Viewer, suspended membership).
-- PostgreSQL row-level security is **not** implemented (ADR 0003): the
-  application layer is the only enforcement.
+- PostgreSQL row-level security is enabled and **forced** on `customers`,
+  `invoices`, `invitations` and `notifications` (ADR 0003). Each policy admits a row
+  only when `organization_id = current_setting('app.organization_id', true)::uuid`,
+  and the same predicate guards writes, so a foreign `INSERT` is refused by the
+  database. `App\Tenancy\TenantContext` sets the value transaction-locally, which
+  means it is discarded on commit and cannot leak on a reused connection. A missing
+  setting yields **no rows**, never all of them.
+- Notifications are the one cross-tenant read: the policy also accepts rows whose
+  `principal_id` matches `app.principal_id`, because the inbox spans every
+  organization the person belongs to. Its write check stays tenant-only.
+- `principals`, `memberships`, `auth_tokens` and `sessions` are deliberately outside
+  the policies: they are read before a tenant is known. Their authorization remains
+  the voters and the repositories above.
 
 ## Last-owner invariant under concurrency
 
@@ -156,8 +167,11 @@ audits still run when the PHP one fails.
 
 ## Not implemented
 
-- PostgreSQL row-level security and the policy-per-table work described in ADR
-  0003.
+- Row-level security on the identity tables (`principals`, `memberships`,
+  `auth_tokens`, `sessions`); see ADR 0003 for why they stay application-layer.
+- A suite-wide run as the application role: the database suite still connects as the
+  schema owner, and the policies are asserted by `RowLevelSecurityTest` on a
+  dedicated non-`BYPASSRLS` role.
 - Multi-factor authentication, social login, enterprise SSO.
 - Email change (an address is fixed at registration).
 - A "signed-in devices" screen or "sign out everywhere" button.
