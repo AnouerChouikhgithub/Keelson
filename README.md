@@ -187,7 +187,7 @@ php bin/console debug:router --env=test
 composer stan                    # PHPStan level 8 + dead-code detector, no baseline
 composer cs                      # php-cs-fixer, dry run
 bash bin/test-db.sh start        # throwaway PostgreSQL 16, ephemeral port
-php bin/phpunit                  # 214 tests / 1192 assertions
+php bin/phpunit                  # backend counts: bash bin/test-counts.sh
 php bin/coverage-check.php var/coverage/clover.xml   # 80% for Service, Security, Controller
 bash bin/test-db.sh stop
 composer audit
@@ -196,7 +196,7 @@ composer audit
 pnpm install --frozen-lockfile
 pnpm exec tsc -b
 pnpm run lint
-pnpm test                        # 98 tests in 15 files (node + jsdom projects)
+pnpm test                        # node + jsdom projects (same script reports counts)
 pnpm run build
 pnpm run check:bundle            # entry and total JavaScript budgets
 pnpm exec knip                   # unused files, exports, types, dependencies

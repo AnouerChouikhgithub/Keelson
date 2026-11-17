@@ -7,11 +7,11 @@
 > code is what it is, what a denial means, how a flow was verified — and it is kept
 > for that reasoning, not as a second source of truth. Sections written during an
 > earlier sprint keep their own wording; where a number disagreed with the suite it
-> was updated on 2026-11-17 (214 tests / 1192 assertions).
+> was updated on 2026-11-17 (counts: `bash bin/test-counts.sh`).
 
 **Verified on 2026-11-16** by reading `backend/src/Controller/`, `backend/src/Repository/`,
 `backend/src/Service/`, `backend/src/Security/` and `config/packages/security.yaml`, by running the
-backend suite (`php bin/phpunit` → 214 tests / 1192 assertions, exit 0) and by exercising every
+backend suite (`php bin/phpunit`, exit 0 — counts from `bash bin/test-counts.sh`) and by exercising every
 sign-in flow with `curl` against a local server with Mailpit. This document describes **behaviour
 that exists today**, not a target design. Anything the frontend needs but the backend does not
 provide is listed in [Gaps](#gaps-and-how-each-was-classified).
@@ -422,7 +422,7 @@ retries a mutation automatically.
 - Shapes and validation: the controllers, `InputHydrator`, `JsonBody`, `ApiErrorResponse`,
   `InvoiceSerializer`, `InvoiceCalculator`, `InvoiceInput`, `Customer`, `CustomerRepository`,
   `InvoiceRepository`, `InvoiceVoter`, `security.yaml`, `CsrfProtectionListener`.
-- Behaviour: `php bin/phpunit` → **214 tests / 1192 assertions**, exit 0, against the helper's
+- Behaviour: `php bin/phpunit` exits 0 against the helper's
   disposable PostgreSQL 16 container (never the Compose database). At 1.0.0 the same behaviour is
   also exercised end to end by the seven Playwright journeys in `e2e/tests/`.
 - Manual round trip: register → Mailpit → verify → login → `GET /api/session` → invoice `POST`

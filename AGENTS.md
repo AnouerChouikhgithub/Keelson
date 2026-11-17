@@ -49,16 +49,17 @@ Keep the UI clean, modern and accessible (WCAG AA contrast).
   `typescript-eslint` 8.71.2, Vitest 5.1.0, jsdom 27, Testing Library, knip 6.
   TypeScript is deliberately pinned below 6.1 because `typescript-eslint` 8.71.2
   supports `>=4.8.4 <6.1.0`; do not move it back to 7.x until that peer range
-  widens. `tsc -b`, `pnpm run lint`, `pnpm test` (98 tests in 15 files: node and
-  jsdom projects), `pnpm run build` and `pnpm run check:bundle` (entry 358.6 kB of a
-  420 kB budget) all pass. `pnpm exec knip` and `node scripts/unused-i18n.mjs`
+  widens. `tsc -b`, `pnpm run lint`, `pnpm test` (node and jsdom projects),
+  `pnpm run build` and `pnpm run check:bundle` (entry 358.6 kB of a 420 kB budget)
+  all pass. Test counts are printed by `bash bin/test-counts.sh`; do not copy a
+  number into a document. `pnpm exec knip` and `node scripts/unused-i18n.mjs`
   report nothing.
 - Backend dependencies: Symfony 7.4, Doctrine ORM/DBAL/Migrations plus the Doctrine
   bundles, `symfony/security-bundle`, `symfony/security-csrf`, `symfony/validator`,
   `symfony/rate-limiter`, `symfony/mailer`, `symfony/yaml`. No identity-provider
   bundle, no JWT library, no API Platform, no Stripe, no Messenger.
 - Tests: `php bin/phpunit` against the disposable `backend/bin/test-db.sh`
-  PostgreSQL 16 container gives **214 tests / 1192 assertions, exit 0**. Static
+  PostgreSQL 16 container (counts: `bash bin/test-counts.sh`, exit 0). Static
   analysis: `composer stan` — PHPStan level 8 with `shipmonk/dead-code-detector`
   and **no baseline** — reports no errors; `composer cs` is clean.
   `tests/Unit/Repository/TenantScopedRepositoryTest.php` and `tests/Integration/*`
