@@ -17,6 +17,9 @@ use Doctrine\ORM\EntityManagerInterface;
  * The plaintext token exists only in the outgoing email and in the request that
  * redeems it; the database stores `hash('sha256', $plaintext)`. Tokens are
  * 32 random bytes encoded as base64url, so they survive a link without escaping.
+ *
+ * Redemption is atomic: {@see AuthTokenRepository::consume()} is one conditional
+ * UPDATE, so two concurrent requests carrying the same link cannot both succeed.
  */
 final class AuthTokenService
 {
@@ -29,6 +32,7 @@ final class AuthTokenService
     public function __construct(
         private readonly AuthTokenRepository $tokens,
         private readonly EntityManagerInterface $entityManager,
+        private readonly TransactionBoundary $transactions,
     ) {
     }
 
@@ -63,23 +67,36 @@ final class AuthTokenService
     }
 
     /**
-     * Redeems a token, marking it used.
+     * Redeems a token and applies the account mutation it authorises.
+     *
+     * Consumption and mutation share one transaction: if `$apply` throws (a
+     * validation error, a database failure), the rollback releases the token
+     * again, so a failed reset does not burn the link. The reverse ordering —
+     * commit the "used" flag, then mutate — could leave a consumed token with
+     * no completed operation.
      *
      * Unknown, expired and already-used tokens all throw the same exception, so
      * a caller cannot learn whether a link ever existed.
      */
-    public function consume(string $plaintext, string $type, ?\DateTimeImmutable $now = null): Principal
+    public function redeem(string $plaintext, string $type, callable $apply): Principal
     {
-        $now ??= new \DateTimeImmutable();
-        $token = '' === $plaintext ? null : $this->tokens->findUsable(self::hash($plaintext), $type, $now);
-        if (null === $token) {
-            throw AuthTokenException::unusable();
-        }
+        return $this->transactions->run(function () use ($plaintext, $type, $apply): Principal {
+            $now = new \DateTimeImmutable();
+            $principalId = '' === $plaintext ? null : $this->tokens->consume(self::hash($plaintext), $type, $now);
+            if (null === $principalId) {
+                throw AuthTokenException::unusable();
+            }
 
-        $token->markUsed($now);
-        $this->entityManager->flush();
+            $principal = $this->entityManager->find(Principal::class, $principalId);
+            if (!$principal instanceof Principal) {
+                throw AuthTokenException::unusable();
+            }
 
-        return $token->getPrincipal();
+            $apply($principal);
+            $this->entityManager->flush();
+
+            return $principal;
+        });
     }
 
     private static function hash(string $plaintext): string

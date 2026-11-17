@@ -7,6 +7,7 @@ namespace App\Repository;
 use App\Entity\AuthToken;
 use App\Entity\Principal;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
+use Doctrine\DBAL\Types\Types;
 use Doctrine\Persistence\ManagerRegistry;
 
 /** @extends ServiceEntityRepository<AuthToken> */
@@ -18,24 +19,35 @@ final class AuthTokenRepository extends ServiceEntityRepository
     }
 
     /**
-     * Finds a token that is still usable for `$type`.
+     * Atomically consumes a token and returns the principal it belongs to.
      *
-     * Used and expired tokens are filtered out here rather than in the caller:
-     * the caller must not be able to tell those two cases apart from an unknown
-     * hash, and a single "no usable row" result does exactly that.
+     * One `UPDATE ... WHERE used_at IS NULL AND expires_at > now() RETURNING
+     * principal_id` is the whole redemption. Two requests carrying the same link
+     * therefore run the same statement: PostgreSQL serialises them on the row,
+     * the second one re-evaluates the predicate after the first commits and
+     * updates zero rows, so it gets `null`. A read followed by a separate write
+     * would let both observe "usable" and both succeed.
+     *
+     * Used, expired and unknown tokens all produce `null`; the caller answers
+     * them identically so a client cannot tell the cases apart.
      */
-    public function findUsable(string $tokenHash, string $type, \DateTimeImmutable $now): ?AuthToken
+    public function consume(string $tokenHash, string $type, \DateTimeImmutable $now): ?string
     {
-        return $this->createQueryBuilder('token')
-            ->andWhere('token.tokenHash = :tokenHash')
-            ->andWhere('token.type = :type')
-            ->andWhere('token.usedAt IS NULL')
-            ->andWhere('token.expiresAt > :now')
-            ->setParameter('tokenHash', $tokenHash)
-            ->setParameter('type', $type)
-            ->setParameter('now', $now)
-            ->getQuery()
-            ->getOneOrNullResult();
+        $principalId = $this->getEntityManager()->getConnection()->fetchOne(
+            'UPDATE auth_tokens SET used_at = :now
+             WHERE token_hash = :tokenHash AND type = :type AND used_at IS NULL AND expires_at > :now
+             RETURNING principal_id',
+            [
+                'now' => $now,
+                'tokenHash' => $tokenHash,
+                'type' => $type,
+            ],
+            [
+                'now' => Types::DATETIMETZ_IMMUTABLE,
+            ],
+        );
+
+        return false === $principalId || null === $principalId ? null : (string) $principalId;
     }
 
     /**

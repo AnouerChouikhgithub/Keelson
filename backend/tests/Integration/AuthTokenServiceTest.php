@@ -64,11 +64,13 @@ final class AuthTokenServiceTest extends KernelTestCase
         self::assertStringNotContainsString($plaintext, $stored);
     }
 
-    public function testConsumingATokenReturnsItsPrincipalAndMarksItUsed(): void
+    public function testRedeemingATokenReturnsItsPrincipalAndMarksItUsed(): void
     {
         $plaintext = $this->tokens->issue($this->principal, AuthToken::TYPE_RESET);
 
-        $principal = $this->tokens->consume($plaintext, AuthToken::TYPE_RESET);
+        $principal = $this->tokens->redeem($plaintext, AuthToken::TYPE_RESET, static function (Principal $principal): void {
+            // No account mutation needed to prove the redemption itself.
+        });
 
         self::assertSame($this->principal->getId(), $principal->getId());
         $usedAt = $this->entityManager->getConnection()->fetchOne(
@@ -81,10 +83,10 @@ final class AuthTokenServiceTest extends KernelTestCase
     public function testAUsedTokenCannotBeReplayed(): void
     {
         $plaintext = $this->tokens->issue($this->principal, AuthToken::TYPE_VERIFY);
-        $this->tokens->consume($plaintext, AuthToken::TYPE_VERIFY);
+        $this->redeem($plaintext, AuthToken::TYPE_VERIFY);
 
         $this->expectException(AuthTokenException::class);
-        $this->tokens->consume($plaintext, AuthToken::TYPE_VERIFY);
+        $this->redeem($plaintext, AuthToken::TYPE_VERIFY);
     }
 
     public function testAnExpiredTokenIsRejectedLikeAnUnknownOne(): void
@@ -96,7 +98,7 @@ final class AuthTokenServiceTest extends KernelTestCase
         );
 
         $this->expectException(AuthTokenException::class);
-        $this->tokens->consume($expired, AuthToken::TYPE_VERIFY);
+        $this->redeem($expired, AuthToken::TYPE_VERIFY);
     }
 
     public function testATokenIsBoundToItsType(): void
@@ -104,13 +106,13 @@ final class AuthTokenServiceTest extends KernelTestCase
         $verify = $this->tokens->issue($this->principal, AuthToken::TYPE_VERIFY);
 
         $this->expectException(AuthTokenException::class);
-        $this->tokens->consume($verify, AuthToken::TYPE_RESET);
+        $this->redeem($verify, AuthToken::TYPE_RESET);
     }
 
     public function testAnUnknownOrEmptyTokenIsRejected(): void
     {
         $this->expectException(AuthTokenException::class);
-        $this->tokens->consume('', AuthToken::TYPE_VERIFY);
+        $this->redeem('', AuthToken::TYPE_VERIFY);
     }
 
     public function testIssuingANewTokenRetiresThePreviousOne(): void
@@ -121,13 +123,13 @@ final class AuthTokenServiceTest extends KernelTestCase
         self::assertNotSame($first, $second);
 
         try {
-            $this->tokens->consume($first, AuthToken::TYPE_RESET);
+            $this->redeem($first, AuthToken::TYPE_RESET);
             self::fail('The superseded token must not be usable.');
         } catch (AuthTokenException) {
             // Expected: only the newest link works.
         }
 
-        self::assertSame($this->principal->getId(), $this->tokens->consume($second, AuthToken::TYPE_RESET)->getId());
+        self::assertSame($this->principal->getId(), $this->redeem($second, AuthToken::TYPE_RESET)->getId());
     }
 
     public function testATokenOfAnotherTypeIsNotRetiredByIssuingANewOne(): void
@@ -135,7 +137,7 @@ final class AuthTokenServiceTest extends KernelTestCase
         $verify = $this->tokens->issue($this->principal, AuthToken::TYPE_VERIFY);
         $this->tokens->issue($this->principal, AuthToken::TYPE_RESET);
 
-        self::assertSame($this->principal->getId(), $this->tokens->consume($verify, AuthToken::TYPE_VERIFY)->getId());
+        self::assertSame($this->principal->getId(), $this->redeem($verify, AuthToken::TYPE_VERIFY)->getId());
     }
 
     public function testTheExposedExpiryWindowsAreTheDocumentedOnes(): void
@@ -156,5 +158,12 @@ final class AuthTokenServiceTest extends KernelTestCase
     {
         $this->expectException(\InvalidArgumentException::class);
         $this->tokens->issue($this->principal, 'magic');
+    }
+
+    private function redeem(string $plaintext, string $type): Principal
+    {
+        return $this->tokens->redeem($plaintext, $type, static function (Principal $principal): void {
+            // The token flows under test only need the redemption itself.
+        });
     }
 }
