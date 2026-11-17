@@ -100,6 +100,12 @@ The frontend listens on `${HTTP_PORT:-8080}`. Terminate TLS in front of it (a lo
 balancer, Caddy, Traefik or another nginx) and pass `X-Forwarded-Proto`; then set
 `TRUSTED_PROXIES` and `TRUSTED_HEADERS` so Symfony honours it.
 
+Compose names the project after its directory, and the database volume with it. A
+second stack started from the same checkout (a staging copy next to the
+development one, for instance) would therefore reuse that volume, so give it its
+own name and its own database: `docker compose -p keelson-staging -f
+docker-compose.prod.yml up -d` (or put `COMPOSE_PROJECT_NAME` in the env file).
+
 ### Response headers
 
 The API sets these itself (`App\EventListener\SecurityHeadersListener`) on every
