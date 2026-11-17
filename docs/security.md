@@ -144,10 +144,11 @@ dependency decision for the owner, not a silent bump. It is **moderate**, so the
 - `picomatch` 4.0.7 is the newest published version and the advisory lists no
 patched release, so there is nothing to upgrade to. Rather than turn the audit
 job permanently red (which would train everyone to ignore it), the specific GHSA
-is listed in `frontend/package.json` under `pnpm.auditConfig.ignoreGhsas`. That
-is a scoped, visible acceptance of one advisory: every other advisory still
-fails the job. Re-check it when `picomatch` publishes a fix and remove the entry
-then.
+is listed in `frontend/pnpm-workspace.yaml` under `auditConfig.ignoreGhsas`,
+which is what `pnpm audit` reads. That is a scoped, visible acceptance: `pnpm
+audit` still prints `1 ignored: 1 high`, and every other advisory still fails the
+job. Re-check it when `picomatch` publishes a fix, then remove the entry (or run
+`pnpm audit --fix`).
 
 CI runs `composer audit --locked` (no install needed) and both pnpm audits in one
 job; the job fails if **any** of the three reports a problem, and the JavaScript

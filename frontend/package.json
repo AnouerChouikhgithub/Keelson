@@ -17,13 +17,6 @@
     "react-dom": "^19.3.1",
     "react-router": "^7.18.5"
   },
-  "pnpm": {
-    "auditConfig": {
-      "ignoreGhsas": [
-        "GHSA-fc5q-39xc-vjpf"
-      ]
-    }
-  },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@testing-library/jest-dom": "^7.0.1",

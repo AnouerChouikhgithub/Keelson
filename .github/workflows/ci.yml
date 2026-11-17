@@ -122,7 +122,7 @@ jobs:
       # the dev container it used to expect never exists here; warm the test one
       # and let phpstan.neon.dist list both paths.
       - name: Warm the compiled container for static analysis
-        run: php bin/console cache:warmup --env=test --no-debug=false
+        run: php bin/console cache:warmup --env=test
       - name: Doctrine mapping validation
         run: php bin/console doctrine:schema:validate --skip-sync --env=test
       - name: PHPStan (level 8, no baseline)
