@@ -85,31 +85,6 @@ class AuthToken
         return $this->principal;
     }
 
-    public function getType(): string
-    {
-        return $this->type;
-    }
-
-    public function getExpiresAt(): \DateTimeImmutable
-    {
-        return $this->expiresAt;
-    }
-
-    public function getUsedAt(): ?\DateTimeImmutable
-    {
-        return $this->usedAt;
-    }
-
-    public function getCreatedAt(): \DateTimeImmutable
-    {
-        return $this->createdAt;
-    }
-
-    public function isUsable(\DateTimeImmutable $now): bool
-    {
-        return null === $this->usedAt && $this->expiresAt > $now;
-    }
-
     public function markUsed(\DateTimeImmutable $now): void
     {
         if (null !== $this->usedAt) {

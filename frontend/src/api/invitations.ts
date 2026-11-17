@@ -16,7 +16,7 @@ function invitationsPath(organizationId: string, invitationId?: string, action?:
   return action === undefined ? item : `${item}/${action}`
 }
 
-export function parseInvitation(value: unknown): Invitation | null {
+function parseInvitation(value: unknown): Invitation | null {
   if (typeof value !== 'object' || value === null) return null
   const record = value as Record<string, unknown>
   const { id, email, role, status, expired, expiresAt, createdAt } = record

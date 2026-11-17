@@ -1,0 +1,114 @@
+# Production-shaped stack: copy to docker-compose.prod.yml, fill a .env next to
+# it, and run `docker compose -f docker-compose.prod.yml up -d --build`.
+#
+# Every secret comes from the environment and has NO default: `${APP_SECRET:?…}`
+# makes compose refuse to start rather than silently deploy a known value. The
+# only defaults are ports and the database name.
+#
+# Mailpit is not part of this stack: production sends through a real SMTP
+# endpoint described by MAILER_DSN.
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-keelson}
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      # Read by the init script below, which creates the runtime role with row
+      # privileges only. It runs on an empty data directory.
+      APP_DB_USER: ${APP_DB_USER:?set APP_DB_USER}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?set APP_DB_PASSWORD}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+      - ./docker/postgres/10-app-role.sh:/docker-entrypoint-initdb.d/10-app-role.sh:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    # No ports: only the other services on this network need to reach PostgreSQL.
+
+  migrate:
+    build:
+      context: ./backend
+    # The migration owner, not the runtime role: schema changes are the owner's
+    # job and the application role has no DDL rights (docs/deployment.md).
+    environment:
+      APP_ENV: prod
+      APP_DEBUG: '0'
+      APP_SECRET: ${APP_SECRET:?set APP_SECRET}
+      DATABASE_URL: postgresql://${POSTGRES_USER:?set POSTGRES_USER}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-keelson}?serverVersion=16&charset=utf8
+    command: ['php', 'bin/console', 'doctrine:migrations:migrate', '--no-interaction', '--allow-no-migration']
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: 'no'
+
+  backend:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    environment:
+      APP_ENV: prod
+      APP_DEBUG: '0'
+      APP_SECRET: ${APP_SECRET:?set APP_SECRET}
+      DATABASE_URL: postgresql://${APP_DB_USER:?set APP_DB_USER}:${APP_DB_PASSWORD:?set APP_DB_PASSWORD}@db:5432/${POSTGRES_DB:-keelson}?serverVersion=16&charset=utf8
+      # The recipe administrator's mailbox, used as the From address.
+      MAILER_DSN: ${MAILER_DSN:?set MAILER_DSN, for example smtp://user:pass@smtp.example.com:587}
+      FRONTEND_URL: ${FRONTEND_URL:?set FRONTEND_URL, for example https://app.example.com}
+      # Absolute URL for CLI-generated links and absolute redirects; the router
+      # requires it (config/packages/routing.yaml).
+      DEFAULT_URI: ${FRONTEND_URL:?set FRONTEND_URL, for example https://app.example.com}
+      REQUIRE_VERIFIED_EMAIL: 'true'
+      TRUSTED_HOSTS: ${TRUSTED_HOSTS:?set TRUSTED_HOSTS}
+      # Only set these when a reverse proxy terminates TLS in front of nginx.
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
+      TRUSTED_HEADERS: ${TRUSTED_HEADERS:-}
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          'REQUEST_METHOD=GET SCRIPT_NAME=/index.php SCRIPT_FILENAME=/app/public/index.php PATH_INFO=/healthz REQUEST_URI=/healthz SERVER_NAME=localhost cgi-fcgi -bind -connect 127.0.0.1:9000 | grep -q "\"status\":\"ok\""',
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    read_only: true
+    tmpfs:
+      - /tmp
+    volumes:
+      # The container writes only here (logs, cache), and the image made them
+      # www-data's.
+      - backend_var:/app/var
+
+  frontend:
+    build:
+      context: ./frontend
+    restart: unless-stopped
+    ports:
+      - '${HTTP_PORT:-8080}:80'
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1/healthz >/dev/null || exit 1']
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    read_only: true
+    tmpfs:
+      - /var/cache/nginx
+      - /var/run
+
+volumes:
+  db_data:
+  backend_var:

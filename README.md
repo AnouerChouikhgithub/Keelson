@@ -1,242 +1,276 @@
 # Keelson
 
-Multi-tenant SaaS starter: organizations, roles, invitations, subscriptions, usage
-limits and an admin panel. The demo product on top is invoicing for small
-businesses.
+A multi-tenant SaaS starter you can put in front of a real customer: organizations
+with roles, invitations, a first-party email + password account flow, tenant-scoped
+REST resources, an audit trail, notifications, three languages including
+right-to-left Arabic, and light/dark themes. The demo product on top of the
+plumbing is invoicing for small businesses — customers, invoices and their
+lifecycle.
 
-Two applications:
+It is two applications and one browser suite:
 
-- `backend/` — Symfony 7.4 API (PHP >=8.2), Doctrine ORM 3 / DBAL 4 / Migrations,
-  PostgreSQL 16. First-party email + password authentication with a server-side
-  session, mailed verification and reset links (see
-  [docs/ROADMAP.md](docs/ROADMAP.md)). Tenant-scoped customer, invoice and
-  invoice-audit HTTP API under `/api/organizations/{organizationId}/…`, plus
-  `/api/auth/{register,login,verify-email,logout,forgot-password,reset-password}`,
-  `/api/session`, `/api/me/organizations`, `/healthz` and `/readyz`.
-- `frontend/` — React 19 + Vite 8 + TypeScript dashboard shell. Session,
-  organization/role, customers and invoices are real API data; dashboard metrics,
-  onboarding/invitations, team, billing, pricing and notifications are labelled
-  mock surfaces with no backend yet.
+- `backend/` — Symfony 7.4 API on PHP 8.2+ (Doctrine ORM 3, PostgreSQL 16).
+- `frontend/` — React 19 + Vite 8 single-page dashboard in TypeScript.
+- `e2e/` — Playwright journeys that drive the real stack, not mocks.
 
-Brand color: `#0F766E` (`--color-primary` in `frontend/src/theme/tokens.css`).
+## What it does
 
-Tenant isolation is application-layer only: repositories and controllers require
-an active membership for the route organization, and a client-supplied
-organization ID is a selector, never authority. PostgreSQL row-level security is
-not implemented. Never assume otherwise without reading the schema, queries and
-code.
+**Accounts and access**
+
+- Register with an address and a first organization; confirm the address through a
+  mailed link before signing in.
+- Sign in with a server-side session (`HttpOnly`, `SameSite=Lax`, `Secure` on
+  HTTPS); passwords are hashed, sign-in is rate limited per address and per client.
+- Forgot/reset password, change password, sign out.
+- Invite a colleague by email; the invitation is previewed publicly, accepted with
+  a name and password, and becomes a membership with a role.
+- Four roles — Owner, Admin, Member, Viewer — enforced by voters on every request.
+  A Viewer reads everything and writes nothing. Denials answer `404`, not `403`, so
+  the API never confirms that another tenant's record exists.
+- Switch organizations; the server re-authorizes the switch on every request.
+
+**The invoicing product**
+
+- Customers with optional billing address, searchable, cursor-paginated.
+- Invoice drafts with line items, tax rate, discount and server-computed totals;
+  draft → sent → paid, plus an automatic overdue transition.
+- Every transition writes an audit event; the detail screen shows the trail.
+- A dashboard of the numbers that matter in the current organization.
+- A notification feed for members, invitations and invoice transitions.
+
+**Platform behaviour**
+
+- JSON error envelope (`error.code`, `error.message`, field errors) for every
+  failure; request-shape and type errors are `422`, never `500`.
+- CSRF and same-origin enforcement on every unsafe request.
+- Cursor (keyset) pagination for every list — no page drift while rows are added.
+- English, French and Arabic, with logical CSS properties so Arabic mirrors.
+- Light, dark and system themes from one token file.
+- A production configuration validator that refuses to boot on unsafe settings.
+
+## Architecture
+
+```mermaid
+flowchart LR
+    subgraph Browser
+        SPA["React SPA<br/>Vite build, hash-named assets"]
+    end
+
+    subgraph Edge
+        NGINX["nginx<br/>static assets + SPA fallback<br/>security headers + CSP"]
+    end
+
+    subgraph Application
+        FPM["php-fpm / Symfony 7.4<br/>session auth, voters, JSON API"]
+    end
+
+    subgraph Data
+        PG[("PostgreSQL 16<br/>tenants, invoices, sessions,<br/>audit events, notifications")]
+    end
+
+    MAIL["SMTP<br/>(Mailpit in development)"]
+
+    SPA -->|"same-origin /api/*"| NGINX
+    NGINX -->|"FastCGI"| FPM
+    FPM -->|"Doctrine DBAL"| PG
+    FPM -->|"verification, reset,<br/>invitation mail"| MAIL
+    FPM -.->|"audit + notification rows"| PG
+```
+
+Tenant isolation is **application-layer**: every repository call and voter requires
+an active membership for the organization in the route, and the organization id in
+the URL is a selector, never authority. PostgreSQL row-level security is not
+implemented; see [docs/adr/0003](docs/adr/0003-postgresql-row-level-security.md)
+for the reasoning and the consequences.
 
 ## Quick start
 
-Prerequisites: PHP 8.2+ with `ext-sodium` (declared by `lcobucci/jwt`), Composer,
-Node 20.19+/22.12+, pnpm 12.14, Docker Desktop.
+Prerequisite: Docker Desktop, PHP 8.2+ with `ext-sodium`, Composer, Node 20.19+/22.12+
+and pnpm 12.14.
 
 ```sh
-# 1. PostgreSQL 16 (127.0.0.1:5433, db/user keelson/app) and Mailpit (UI :8026)
+# 1. PostgreSQL 16 (127.0.0.1:5433) and Mailpit (UI http://localhost:8026)
 docker compose up -d
 
-# 2. Backend dependencies and local configuration
-cd backend
-composer install
-cp .env.example .env.local     # then fill APP_SECRET and DATABASE_URL
-php bin/console doctrine:migrations:migrate
-symfony serve --no-tls --port=8000
-# or: php -S 127.0.0.1:8000 -t public public/index.php
+# 2. Backend: dependencies, local configuration, schema, server on :8000
+cd backend && composer install && cp .env.example .env.local   # set APP_SECRET
+php bin/console doctrine:migrations:migrate && php -S 127.0.0.1:8000 -t public public/index.php
 
-# 3. Frontend
-cd ../frontend
-pnpm install --frozen-lockfile
-pnpm start                     # Vite on http://127.0.0.1:5173
+# 3. Frontend: dependencies and Vite on :5173
+cd ../frontend && pnpm install --frozen-lockfile && pnpm start
+
+# 4. (optional) synthetic demo accounts and data
+bash ../backend/bin/dev-reset.sh
+
+# 5. Browser suite, once: install Chromium
+pnpm --dir ../e2e exec playwright install chromium
 ```
 
-Then open http://localhost:5173. A signed-out visitor lands on `/sign-in`;
-"Create an account" registers the address together with its first organization.
-The confirmation mail is caught by Mailpit at http://localhost:8026 — open the
-link it contains and sign in. Nothing is pre-seeded, and the language selector on
-the auth screens switches the whole flow between English, French and Arabic.
-
-`backend/.env.local` is git-ignored and the only place credentials belong. It
-needs `APP_SECRET` and `DATABASE_URL` (the committed development URL is
-`postgresql://app:app@127.0.0.1:5433/keelson_dev?serverVersion=16&charset=utf8`).
-Sign-in additionally reads `MAILER_DSN` (Mailpit at `smtp://127.0.0.1:1026`),
-`FRONTEND_URL` (where verification and reset links point) and
-`REQUIRE_VERIFIED_EMAIL`; without them console commands still work but new
-accounts cannot confirm their address. Read the verification mail at
-http://localhost:8026 after registering.
-
-`GET /healthz` and `GET /readyz` are `PUBLIC_ACCESS` and need no session. The
-Compose database uses the persistent `db_data` volume: never reset it, never run
-`docker compose down -v`, and never point migrations or tests at it.
+Open <http://localhost:5173>: a signed-out visitor lands on `/sign-in`, and
+"Create an account" registers the address with its first organization. The
+confirmation mail appears in Mailpit at <http://localhost:8026>.
 
 ## Demo accounts
 
-`backend/bin/dev-reset.sh` (or `backend\bin\dev-reset.ps1` on Windows) rebuilds
-`keelson_dev` — drop, create, migrate, seed — and prints the accounts it created.
-The seed is idempotent: running it twice creates nothing new and changes nothing.
+`bash backend/bin/dev-reset.sh` rebuilds `keelson_dev` (drop, create, migrate, seed)
+and prints the accounts. Every account shares the password **`Keelson-Demo-2026!`**
+(`FIXTURE_PASSWORD` overrides it; at least 10 characters).
 
-| Email | Role(s) | Organization(s) |
+| Email | Role | Organization |
 | --- | --- | --- |
 | `owner@example.test` | Owner | Northwind Demo Co. (fixture) |
 | `admin@example.test` | Admin | Northwind Demo Co. (fixture) |
-| `member@example.test` | Member | Northwind Demo Co. **and** Contoso Demo Co. (fixture) |
+| `member@example.test` | Member | Northwind **and** Contoso (fixture) |
 | `viewer@example.test` | Viewer | Contoso Demo Co. (fixture) |
-| `unverified@example.test` | — (no membership) | — — sign-in answers `403 email_not_verified` |
+| `unverified@example.test` | — | none; sign-in answers `403 email_not_verified` |
 
-Every account shares the password **`Keelson-Demo-2026!`**. Set `FIXTURE_PASSWORD`
-(at least 10 characters) before seeding to use another one; the loader hashes it at
-load time and never stores or prints a hash. The command's table shows the password
-column only outside production, which the target guard refuses anyway.
+The loader refuses `APP_ENV=prod`, non-PostgreSQL drivers, non-loopback hosts and
+database names without a `test`/`dev`/`fixture` segment, so these accounts cannot
+reach a real deployment.
 
-```sh
-bash backend/bin/dev-reset.sh                          # reset keelson_dev and seed
-cd backend && php bin/console app:fixtures:load --force --env=dev   # seed only
-```
+`php bin/console app:fixtures:bulk` adds 1,000 customers and 10,000 invoices for
+performance work; see [docs/performance.md](docs/performance.md).
 
-These accounts exist **only in a local development or test database**: the loader
-refuses `APP_ENV=prod`, non-PostgreSQL drivers, non-loopback hosts and any database
-name without a `test`/`dev`/`fixture` segment. The seeded data is 2 organizations,
-12 customers and 30 invoices (draft, sent, overdue and paid, with dates relative to
-today) plus the invoice audit events the API would have written.
+## Command-line tools
 
-### An existing Docker volume
+| Command | What it does |
+| --- | --- |
+| `php bin/console app:config:check` | Validates the environment without printing secrets; exits non-zero on a fatal finding |
+| `php bin/console app:db:target` | Prints `database@host` for the effective connection, credentials excluded |
+| `php bin/console app:fixtures:load --force` | Seeds the demo accounts and data into a local dev/test database |
+| `php bin/console app:fixtures:bulk` | Bulk performance data (1,000 customers / 10,000 invoices) |
+| `php bin/console app:invoices:mark-overdue` | Moves sent invoices past their due date to overdue, with audit and notifications |
 
-`POSTGRES_DB` only applies when the `db_data` volume is first initialised. A volume
-created before this sprint still contains a database named `keelson`; create the
-development one once and re-seed:
+## Environment variables
 
-```sh
-cd backend && php bin/console doctrine:database:create --env=dev
-bash bin/dev-reset.sh          # now drops/creates/migrates/seeds keelson_dev
-```
+Backend (read from the process environment, then `backend/.env`, then
+`.env.local` — which is git-ignored and the only place credentials belong):
 
-Never run that against a database named `keelson`, and never against the volume you
-care about.
+| Variable | Required | Purpose |
+| --- | --- | --- |
+| `APP_ENV` | yes | `dev`, `test` or `prod` |
+| `APP_DEBUG` | prod: `0` | Debug toolbar and verbose errors; must be `0` in production |
+| `APP_SECRET` | yes | Signs CSRF tokens and the session; a long random value per environment |
+| `APP_SHARE_DIR` | no | Shared writable directory (`var/share` by default) |
+| `DATABASE_URL` | yes | `postgresql://user:pass@host:5432/db?serverVersion=16&charset=utf8` |
+| `DEFAULT_URI` | yes | Absolute URL for CLI-generated links and absolute redirects |
+| `FRONTEND_URL` | yes | Origin of the SPA; verification, reset and invitation links point here (must be `https://` in production) |
+| `MAILER_DSN` | yes | SMTP endpoint; `smtp://127.0.0.1:1026` with Mailpit locally, never `null://` in production |
+| `REQUIRE_VERIFIED_EMAIL` | no | Defaults to `true`; refuses to sign in an unconfirmed address |
+| `TRUSTED_HOSTS` | prod: yes | Comma-separated hosts or one regex; mandatory in production |
+| `TRUSTED_PROXIES` | behind a proxy | CIDRs of the reverse proxy; must be paired with `TRUSTED_HEADERS` |
+| `TRUSTED_HEADERS` | behind a proxy | e.g. `x-forwarded-for,x-forwarded-proto,x-forwarded-host,x-forwarded-port` |
+| `LOG_LEVEL` | no | Structured-log threshold override for an investigation |
+| `FIXTURE_PASSWORD` | no | Shared password for the seeded demo accounts (local dev/test only) |
+| `TEST_TOKEN` | test only | Suffixes the test database name so parallel runs do not collide |
+
+Frontend:
+
+| Variable | Required | Purpose |
+| --- | --- | --- |
+| `VITE_API_BASE_URL` | no | Only when the API is served from another origin; empty means same-origin `/api` |
+
+Browser suite: `E2E_BASE_URL`, `MAILPIT_URL`, `FIXTURE_PASSWORD` and `CI` — see
+[e2e/README.md](e2e/README.md).
 
 ## Checks
 
-Frontend, from `frontend/`:
+Everything below is what CI runs ([.github/workflows/ci.yml](.github/workflows/ci.yml));
+each command is also runnable locally.
 
 ```sh
-pnpm install --frozen-lockfile
-pnpm run build                 # tsc -b && vite build
-pnpm run lint                  # eslint
-pnpm test                      # vitest, Node environment
-```
-
-Backend, from `backend/`:
-
-```sh
+# Backend, from backend/
 composer validate --no-check-publish
 php bin/console lint:yaml config --env=test
 php bin/console lint:container --env=test
 php bin/console debug:router --env=test
-./vendor/bin/phpstan analyse    # level 5, baseline in phpstan-baseline.neon
+composer stan                    # PHPStan level 8 + dead-code detector, no baseline
+composer cs                      # php-cs-fixer, dry run
+bash bin/test-db.sh start        # throwaway PostgreSQL 16, ephemeral port
+php bin/phpunit                  # 214 tests / 1192 assertions
+php bin/coverage-check.php var/coverage/clover.xml   # 80% for Service, Security, Controller
+bash bin/test-db.sh stop
 composer audit
 
-# Full suite: needs a disposable PostgreSQL 16, never the Compose volume
-bash bin/test-db.sh start       # tmpfs container, ephemeral port, migrates
-php bin/phpunit
-bash bin/test-db.sh stop        # removes the container and .env.test.local
+# Frontend, from frontend/
+pnpm install --frozen-lockfile
+pnpm exec tsc -b
+pnpm run lint
+pnpm test                        # 98 tests in 15 files (node + jsdom projects)
+pnpm run build
+pnpm run check:bundle            # entry and total JavaScript budgets
+pnpm exec knip                   # unused files, exports, types, dependencies
+node scripts/unused-i18n.mjs     # dictionary keys no screen references
+pnpm audit --audit-level high
+
+# Browser journeys, from e2e/
+bash prepare-stack.sh            # docker compose up db mailpit + rebuild keelson_dev
+pnpm test                        # 7 journeys, chromium, one worker
 ```
 
-Database-independent subset (no PostgreSQL needed):
+The backend suite needs a disposable PostgreSQL: `bin/test-db.sh start` creates a
+volume-free container on an ephemeral loopback port and writes a git-ignored
+`.env.test.local`. It never touches the Compose `db_data` volume. Coverage needs
+`pcov` (or `xdebug`); CI installs `pcov` and enforces the threshold through
+`backend/bin/coverage-check.php`, because PHPUnit has no per-directory threshold.
 
-```sh
-php bin/phpunit tests/Unit/Entity tests/Unit/Security tests/Unit/Service tests/Unit/Util tests/Unit/EventListener
+## Project structure
+
+```
+backend/                 Symfony API
+  src/                   Controller, Service, Security (voters), Entity, Repository,
+                         Listener, Command, Config (EnvironmentValidator)
+  config/                YAML configuration, security firewall, services
+  migrations/            versioned schema, including the pg_trgm search indexes
+  tests/                 Unit tests (no database) and Integration tests (real PostgreSQL)
+  bin/                   dev-reset, test-db, perf, coverage-check
+  docker/                php.ini and php-fpm pool for the image
+  Dockerfile             multi-stage production image (php-fpm, non-root, opcache)
+frontend/                React SPA
+  src/api/               typed API layer, one module per resource
+  src/screens/           one file (and stylesheet) per screen
+  src/components/        Field, DataTable, OverlaySurface, Toast, …
+  src/i18n/{en,fr,ar}/   dictionaries; `en` is the shape the others are typed against
+  src/theme/tokens.css   every colour, radius and shadow
+  nginx.conf             static serving, SPA fallback, /api to php-fpm, CSP
+e2e/                     Playwright journeys and their support code
+docs/                    ADRs, API contract, OpenAPI, deployment, performance
+docker/postgres/         init script that creates the least-privilege runtime role
 ```
 
-Last run in this repository (2026-11-16, Sprint 1):
+## Production
 
-| Check | Result |
-| --- | --- |
-| `pnpm install --frozen-lockfile` | PASS |
-| `pnpm run build` | PASS — `dist/assets/index-*.js` 437.05 kB / 128.33 kB gzip |
-| `pnpm run lint` | PASS — 0 findings |
-| `pnpm test` | PASS — 61 tests in 6 files |
-| `composer install` | PASS |
-| `composer validate --no-check-publish` | PASS |
-| `php bin/console lint:container --env=test` | PASS |
-| `php bin/console debug:router --env=test` | PASS — 24 routes |
-| `php bin/phpstan analyse` | PASS — no errors |
-| `php bin/phpunit` (disposable container) | PASS — 170 tests, 932 assertions |
-| `doctrine:schema:validate --env=test` | **FAIL** — see limitations |
+[docs/deployment.md](docs/deployment.md) covers the image build, environment,
+migrations as the owner role, backups with `pg_dump`, rollback, the reverse proxy
+headers and the scheduled overdue job. `docker-compose.prod.example.yml` is a
+working shape of the whole stack — PostgreSQL, a migrate job, the API and the
+static frontend — with every secret taken from the environment and no defaults
+for any of them.
 
-The former anonymous-request failures are gone: an unauthenticated API call now
-answers `401` JSON from `ApiAuthenticationEntryPoint`, which is what those tests
-assert. Mapping validation (`doctrine:schema:validate --skip-sync`) passes and
-PHPStan reports no errors.
+## Limits
 
-## Limitations
-
-- Tenant isolation is enforced in repositories and controllers, not by PostgreSQL
-  RLS. There is no defence in depth behind the application layer.
-- The shell's own navigation is still client-side state inside `App.tsx`; only
-  the five auth screens are routes today (Sprint 7 moves the rest onto the router).
-- No component/DOM tests: the auth screens are verified by a manual browser run
-  and the API/session parsers by the node-environment suite (Sprint 8 adds DOM
-  tests, which needs a `jsdom` dependency).
-- Billing, subscriptions, usage enforcement and invitation delivery are not
-  implemented. In the frontend, dashboard metrics, onboarding/invitations, team,
-  billing, pricing and notifications are mock surfaces.
-- `php bin/console doctrine:schema:validate --env=test` fails while introspecting
-  the database: `An index with name "idx_6a2f2f95a5a280d" was already defined on
-  table "invoices"`. DBAL 4.5 synthesizes that name for the `fk_invoices_customer`
-  columns and the migration declares it too, so introspection sees it twice. Do
-  not run `schema:update` or `migrations:diff` against that database until it is
-  resolved.
-- No component/DOM frontend tests (`jsdom` + Testing Library would be a new
-  dependency). No OpenAPI document; `frontend/src/api/` is hand-written and
-  `docs/api-contract.md` records the verified shapes.
-- CSRF tokens are exposed to the SPA through `GET /api/session` (`csrfToken`);
-  the current frontend does not send them yet, which Sprint 3 fixes together with
-  the sign-in screens.
+[docs/limitations.md](docs/limitations.md) is the honest list: no row-level
+security, no billing, no email-change flow, no multi-factor authentication, single
+locale per build of the email templates, and the measured local latency figures.
+Read it before promising a feature to a customer.
 
 ## Documentation
 
 - [AGENTS.md](AGENTS.md) — repository rules, architecture and verified baseline.
-- [docs/ROADMAP.md](docs/ROADMAP.md) — the nine sprints and their status.
-- [docs/api-contract.md](docs/api-contract.md) — verified request/response shapes.
-- [docs/ui-spec.md](docs/ui-spec.md) — the screen specification; it does not prove
-  backend behaviour.
-- [backend/README.md](backend/README.md) — authentication, API surface, fixtures,
-  isolated test database.
-- [frontend/README.md](frontend/README.md) — frontend scope, stack, API layer.
+- [docs/deployment.md](docs/deployment.md) — build, configure, migrate, back up, roll back.
+- [CONTRIBUTING.md](CONTRIBUTING.md) — branch, commit and check conventions.
+- [SECURITY.md](SECURITY.md) — how to report a vulnerability and what is supported.
+- [CHANGELOG.md](CHANGELOG.md) — the 1.0.0 history, sprint by sprint.
+- [docs/ROADMAP.md](docs/ROADMAP.md) — the nine sprints and what each delivered.
+- [docs/adr/](docs/adr/) — the five decisions worth knowing before changing things.
+- [docs/openapi.yaml](docs/openapi.yaml) — the API contract, kept in step with the router by a test.
+- [docs/api-contract.md](docs/api-contract.md) — prose annotations the OpenAPI document cannot carry.
+- [docs/performance.md](docs/performance.md) — measured list-endpoint timings and indexes.
+- [docs/ui-spec.md](docs/ui-spec.md) — the screen specification.
+- [e2e/README.md](e2e/README.md) — the browser journeys and how to run them.
 
-## Rules
+## Licence
 
-Read [AGENTS.md](AGENTS.md) before changes. Keep tenant, auth, billing, migration
-and API-contract changes behind one owner; ask before adding dependencies or
-changing architecture; never commit secrets; record exact commands and results
-and never report an unrun or failed check as passing.
-
-## Scheduled tasks
-
-`app:invoices:mark-overdue` is the only scheduled job so far. It records sent invoices whose due
-date has passed as `overdue` (audit event + notifications for the organization's Owners and Admins),
-one organization at a time, in batches of 200 with a short transaction per batch, and it is safe to
-run as often as you like — a second run in the same minute finds nothing to do.
-
-Run it once a day, in the environment you are serving:
-
-Linux (cron, 02:15 daily):
-
-```cron
-15 2 * * * cd /srv/keelson/backend && php bin/console app:invoices:mark-overdue --env=prod >> var/log/mark-overdue.log 2>&1
-```
-
-Windows (Task Scheduler, 02:15 daily, run as the account that owns the checkout):
-
-```powershell
-schtasks /Create /SC DAILY /ST 02:15 /TN "Keelson mark overdue" /TR "php C:\path\to\keelson\backend\bin\console app:invoices:mark-overdue --env=dev" /F
-```
-
-Or from PowerShell with a scheduled task object if you need a working directory:
-
-```powershell
-$a = New-ScheduledTaskAction -Execute "php" -Argument "bin\console app:invoices:mark-overdue --env=dev" -WorkingDirectory "C:\path\to\keelson\backend"
-$t = New-ScheduledTaskTrigger -Daily -At 2:15am
-Register-ScheduledTask -TaskName "Keelson mark overdue" -Action $a -Trigger $t -Description "Marks past-due invoices overdue"
-```
-
-The command prints the number of transitions; `--env=prod` needs `APP_SECRET`, `DATABASE_URL` and the
-other production variables, exactly like the web process.
+There is no `LICENSE` file: the terms under which this code may be used are an
+open question for the owner (see the release notes). Until that is decided, treat
+the repository as all rights reserved.

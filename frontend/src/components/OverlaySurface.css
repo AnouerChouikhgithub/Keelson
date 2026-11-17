@@ -5,7 +5,6 @@
   display: flex;
 }
 
-.overlay-dialog-layer,
 .overlay-dialog { align-items: center; justify-content: center; }
 
 .overlay-scrim {
@@ -17,7 +16,6 @@
   cursor: pointer;
 }
 
-.overlay-drawer-layer,
 .overlay-drawer { justify-content: flex-end; }
 
 .overlay-drawer {

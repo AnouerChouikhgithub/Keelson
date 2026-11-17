@@ -1,32 +1,31 @@
 # Keelson roadmap
 
-Nine sprints from repository cleanup to a final sweep. Statuses describe what is
-verified in this repository today; they are not readiness claims for production.
+Nine sprints from repository cleanup to a tagged release. Statuses describe what is
+verified in this repository; they are not marketing claims.
 
 | # | Sprint | Scope | Status |
 | --- | --- | --- | --- |
 | 1 | Cleanup | Delete dead files, mocks and duplicated types; tidy the CSS and the backend dead code; merge the docs into `README.md` and this roadmap; get `.gitignore` right. No behaviour change. | **Done** |
-| 2 | Native auth backend | Replace the provider session with first-party authentication in the Symfony API: password storage, register/verify/login/logout/forgot/reset endpoints, CSRF token in the session payload, rate limiting and the provider migration. | Done |
-| 3 | Auth frontend | Sign-in, registration, email-verification and password-reset screens plus session-expiry handling against the native endpoints, and removal of the provider copy from the SPA. | Done |
-| 4 | Fixtures with logins | Extend `backend/src/DataFixtures/` so the synthetic demo identities can actually sign in, keeping the target guard, idempotency and no-production refusals. | Done |
-| 5 | Team, invitations, dashboard, notifications backend | Real endpoints for memberships and roles, invitation issue/accept/revoke, dashboard metrics read from invoices, and notifications with read state. Replaces the remaining `frontend/src/mocks/` surfaces. | Not started |
-| 6 | Isolation + security hardening | PostgreSQL row-level security (or an equivalent defence in depth), CSRF token exposure for API clients, authorization audit, and the regression tests that lock each rule in. Application-layer scoping alone is the current state. | Not started |
-| 7 | Frontend completion | Finish the screens in `docs/ui-spec.md`, i18n and accessibility states included, on real data only. | Not started |
-| 8 | Quality + CI | Component/DOM tests, coverage gates, a green hosted CI run, dependency-advisory policy, and the `doctrine:schema:validate` index-name collision. | Not started |
-| 9 | Final sweep | Remove what the previous sprints left behind, reconcile this roadmap and every document with the shipped code, and record the final verification evidence. | Not started |
+| 2 | Native auth backend | First-party authentication in the Symfony API: password storage, register/verify/login/logout/forgot/reset, CSRF token in the session payload, rate limiting, server-side sessions. | **Done** |
+| 3 | Auth frontend | Sign-in, registration, verification and password-reset screens plus session-expiry handling against the native endpoints. | **Done** |
+| 4 | Fixtures with logins | Synthetic demo identities that can sign in, with the target guard, idempotency and no-production refusals. | **Done** |
+| 5 | Team, invitations, dashboard, notifications backend | Real endpoints for memberships and roles, invitations (issue/accept/revoke), dashboard metrics from invoices, notifications with read state; the customer/invoice/audit API; the SPA stopped using mocks. | **Done** |
+| 6 | Isolation + security hardening | Membership voters everywhere, cross-tenant denials as `404`, CSRF and same-origin enforcement, security headers, structured logs with redaction, the production configuration validator, and the regression tests that lock each rule in. Row-level security was **not** implemented — see [adr/0003](adr/0003-postgresql-row-level-security.md). | **Done, with a documented gap** |
+| 7 | Frontend completion | Every screen in `docs/ui-spec.md` on real data, i18n (EN/FR/AR, RTL), accessibility states, light/dark/system themes. | **Done** |
+| 8 | Quality + CI | Component tests (jsdom), PHPStan level 8 with no baseline, php-cs-fixer, the coverage gate, OpenAPI + router parity, Playwright journeys, the bundle budget, a CI workflow with pinned actions, Dependabot, ADRs, and the measured performance work. | **Done** |
+| 9 | Final sweep | Dead-code detection with empty findings, repository hygiene and a history secret scan, production packaging (images + compose), the production-build proof, the full documentation set, the acceptance run and the `v1.0.0` tag. | **Done** |
 
-## Verified baseline (2026-11-16, Sprint 1)
+## Where 1.0.0 stands
 
-- Frontend: `pnpm run build`, `pnpm run lint` (0 findings) and `pnpm test`
-  (**57 tests**, 5 files) exit 0.
-- Backend: `composer validate --no-check-publish` and
-  `php bin/console lint:container --env=test` exit 0;
-  `php bin/phpstan analyse` (level 5, baseline) reports no errors.
-- Backend test suite against `backend/bin/test-db.sh`:
-  **115 tests / 585 assertions, 4 failures**. The four failures pre-date Sprint 1
-  and are unchanged by it: anonymous `/api/...` requests now answer `401` JSON
-  from `ApiAuthenticationEntryPoint`, while four tests still expect a redirect to a
-  sign-in page. Fixing that is behaviour work, not cleanup. (Sprint 2 removed those
-  tests with the provider; the suite has been green since.)
-- Not established: PostgreSQL RLS, real provider sign-in (until Sprint 2/3), any
-  billing or usage enforcement, invitation delivery.
+- Backend: 214 tests / 1192 assertions against a disposable PostgreSQL 16, PHPStan
+  level 8 with the dead-code detector reporting nothing, php-cs-fixer clean.
+- Frontend: 98 tests in 15 files (node and jsdom projects), `tsc -b`, ESLint,
+  `vite build`, a bundle budget, `knip` and the dictionary scan all clean.
+- Browser: seven Playwright journeys over the real stack pass locally.
+- Packaging: both images build and the compose stack serves the app with HSTS only
+  over HTTPS, verified against a fresh production database.
+- Coverage: the 80% gate for `src/Service`, `src/Security` and `src/Controller`
+  exists and runs in CI; **this machine has no `pcov`/`xdebug`, so the number was
+  not measured locally**.
+
+Known gaps are listed in [limitations.md](limitations.md).

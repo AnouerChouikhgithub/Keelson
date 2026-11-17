@@ -37,14 +37,14 @@ export type CustomerPatch = Partial<CustomerInput>
 export type InvoiceStatus = 'draft' | 'sent' | 'paid' | 'overdue'
 
 /** Mirrors `Invoice::getLineItems()` after `InvoiceCalculator` normalization. */
-export type InvoiceLineItem = {
+type InvoiceLineItem = {
   description: string
   quantity: string
   unitPrice: string
   lineTotal: string
 }
 
-export type InvoiceCustomerSnapshot = {
+type InvoiceCustomerSnapshot = {
   id: string
   name: string
   email: string | null
@@ -103,7 +103,7 @@ export type Member = {
   joinedAt: string
 }
 
-export type InvitationStatus = 'pending' | 'accepted' | 'revoked'
+type InvitationStatus = 'pending' | 'accepted' | 'revoked'
 
 /** Row of `GET …/invitations`; the plaintext token is never part of it. */
 export type Invitation = {

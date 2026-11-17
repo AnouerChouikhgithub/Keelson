@@ -40,13 +40,6 @@ final class InvitationRepository extends ServiceEntityRepository
             ->getOneOrNullResult();
     }
 
-    public function findByTokenHash(string $tokenHash): ?Invitation
-    {
-        $invitation = $this->findOneBy(['tokenHash' => $tokenHash]);
-
-        return $invitation instanceof Invitation ? $invitation : null;
-    }
-
     /** Public redemption lookup: the organization name is part of the answer. */
     public function findUsableByTokenHash(string $tokenHash): ?Invitation
     {

@@ -143,16 +143,6 @@ class Invitation
         return $this->expiresAt;
     }
 
-    public function getAcceptedAt(): ?\DateTimeImmutable
-    {
-        return $this->acceptedAt;
-    }
-
-    public function getRevokedAt(): ?\DateTimeImmutable
-    {
-        return $this->revokedAt;
-    }
-
     public function getCreatedAt(): \DateTimeImmutable
     {
         return $this->createdAt;
@@ -177,19 +167,6 @@ class Invitation
     public function isUsable(?\DateTimeImmutable $now = null): bool
     {
         return $this->isPending() && !$this->isExpired($now);
-    }
-
-    /** A pending invitation can change role; anything else is history. */
-    public function changeRole(string $role): void
-    {
-        if (!$this->isPending()) {
-            throw new \DomainException('Only a pending invitation may change role.');
-        }
-        if (!in_array($role, [self::ROLE_ADMIN, self::ROLE_MEMBER, self::ROLE_VIEWER], true)) {
-            throw new \InvalidArgumentException('Invitation role is not supported.');
-        }
-        $this->role = $role;
-        $this->updatedAt = new \DateTimeImmutable();
     }
 
     /**
@@ -232,10 +209,5 @@ class Invitation
         $this->status = self::STATUS_REVOKED;
         $this->revokedAt = $now;
         $this->updatedAt = $now;
-    }
-
-    public function getUpdatedAt(): \DateTimeImmutable
-    {
-        return $this->updatedAt;
     }
 }

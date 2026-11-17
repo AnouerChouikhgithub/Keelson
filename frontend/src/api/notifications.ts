@@ -1,7 +1,7 @@
 import { query, request } from './client'
 import type { AppNotification, Paginated } from './types'
 
-export function parseNotification(value: unknown): AppNotification | null {
+function parseNotification(value: unknown): AppNotification | null {
   if (typeof value !== 'object' || value === null) return null
   const record = value as Record<string, unknown>
   const { id, type, data, organizationId, read, createdAt, readAt } = record

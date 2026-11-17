@@ -90,11 +90,6 @@ class ApiException extends \RuntimeException implements HttpExceptionInterface
         return new self(Response::HTTP_FORBIDDEN, 'csrf_invalid', 'A valid CSRF token is required for this request.');
     }
 
-    public static function forbidden(string $message = 'You are not allowed to perform this action.'): self
-    {
-        return new self(Response::HTTP_FORBIDDEN, 'forbidden', $message);
-    }
-
     public static function notFound(string $message = 'Resource not found.'): self
     {
         return new self(Response::HTTP_NOT_FOUND, 'not_found', $message);
