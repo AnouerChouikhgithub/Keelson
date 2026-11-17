@@ -7,27 +7,14 @@ export const common = {
   reload: 'Recharger',
   cancel: 'Annuler',
   close: 'Fermer',
-  dismiss: 'Fermer la notification',
-  save: 'Enregistrer',
   saving: 'Enregistrement…',
-  create: 'Créer',
-  edit: 'Modifier',
   delete: 'Supprimer',
-  back: 'Retour',
   search: 'Rechercher',
-  clearSearch: 'Effacer la recherche',
   loadMore: 'Charger plus',
   loadedCount: (count: number) => (count <= 1 ? `${count} élément chargé` : `${count} éléments chargés`),
   actions: 'Actions',
-  print: 'Imprimer',
-  status: 'Statut',
-  amount: 'Montant',
-  name: 'Nom',
-  email: 'E-mail',
-  phone: 'Téléphone',
   role: 'Rôle',
   organization: 'Organisation',
-  sessionExpired: 'Votre session a changé. Reconnectez-vous.',
 }
 
 export const nav = {
@@ -152,5 +139,4 @@ export const errors = {
   boundaryBody:
     'Une erreur inattendue du client a été interceptée. Vos données sont sur le serveur ; rechargez l’écran pour continuer.',
   boundaryReload: 'Recharger l’écran',
-  title: 'Une erreur est survenue',
 }

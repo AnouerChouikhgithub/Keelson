@@ -11,27 +11,14 @@ export const common = {
   reload: 'Reload',
   cancel: 'Cancel',
   close: 'Close',
-  dismiss: 'Dismiss',
-  save: 'Save',
   saving: 'Saving…',
-  create: 'Create',
-  edit: 'Edit',
   delete: 'Delete',
-  back: 'Back',
   search: 'Search',
-  clearSearch: 'Clear search',
   loadMore: 'Load more',
   loadedCount: (count: number) => (count === 1 ? '1 record loaded' : `${count} records loaded`),
   actions: 'Actions',
-  print: 'Print',
-  status: 'Status',
-  amount: 'Amount',
-  name: 'Name',
-  email: 'Email',
-  phone: 'Phone',
   role: 'Role',
   organization: 'Organization',
-  sessionExpired: 'Your session changed. Sign in again.',
 }
 
 export const nav = {
@@ -155,5 +142,4 @@ export const errors = {
   boundaryTitle: 'This screen stopped responding',
   boundaryBody: 'An unexpected client error was caught. Your data is on the server; reload the screen to continue.',
   boundaryReload: 'Reload the screen',
-  title: 'Something went wrong',
 }

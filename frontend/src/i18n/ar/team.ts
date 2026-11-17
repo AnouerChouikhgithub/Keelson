@@ -39,13 +39,11 @@ export const team = {
     email: 'البريد الإلكتروني',
     role: 'الدور',
     expires: 'تنتهي',
-    actions: 'إجراءات',
   },
   resend: 'إرسال مجددًا',
   resending: 'جارٍ الإرسال…',
   resent: (email: string) => `أُرسل رابط جديد إلى ${email}.`,
   revoke: 'إلغاء',
-  revoking: 'جارٍ الإلغاء…',
   revoked: (email: string) => `أُلغيت دعوة ${email}.`,
   notPending: 'لم تعد معلّقة',
   revokeTitle: 'إلغاء هذه الدعوة؟',
@@ -53,7 +51,6 @@ export const team = {
   invitationsLoadFailed: 'تعذّر تحميل الدعوات.',
   noInvitations: 'لا توجد دعوات معلّقة',
   noInvitationsHint: 'ادعُ زميلًا بالبريد أعلاه.',
-  roleNote: (role: string) => `أنت ${role} في مساحة العمل هذه. الخادم يقرر كل طلب؛ وإخفاء إجراء مجرد تسهيل.`,
 }
 
 export const notifications = {

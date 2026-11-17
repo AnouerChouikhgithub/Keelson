@@ -40,13 +40,11 @@ export const team = {
     email: 'E-mail',
     role: 'Rôle',
     expires: 'Expire',
-    actions: 'Actions',
   },
   resend: 'Renvoyer',
   resending: 'Envoi…',
   resent: (email: string) => `Un nouveau lien a été envoyé à ${email}.`,
   revoke: 'Révoquer',
-  revoking: 'Révocation…',
   revoked: (email: string) => `Invitation de ${email} révoquée.`,
   notPending: 'Plus en attente',
   revokeTitle: 'Révoquer cette invitation ?',
@@ -54,7 +52,6 @@ export const team = {
   invitationsLoadFailed: 'Les invitations n’ont pas pu être chargées.',
   noInvitations: 'Aucune invitation en attente',
   noInvitationsHint: 'Invitez un coéquipier par e-mail ci-dessus.',
-  roleNote: (role: string) => `Vous êtes ${role} dans cet espace. Le serveur décide de chaque requête ; masquer une action n’est qu’un confort.`,
 }
 
 export const notifications = {

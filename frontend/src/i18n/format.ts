@@ -3,7 +3,6 @@ import type { Locale } from './index'
 const currencyFormatters = new Map<Locale, Intl.NumberFormat>()
 const numberFormatters = new Map<string, Intl.NumberFormat>()
 const percentFormatters = new Map<Locale, Intl.NumberFormat>()
-const currencySymbols = new Map<Locale, string>()
 const dateFormatters = new Map<Locale, Intl.DateTimeFormat>()
 
 export function formatCurrency(locale: Locale, value: number): string {
@@ -32,16 +31,6 @@ export function formatNumber(locale: Locale, value: number, maximumFractionDigit
   return formatter.format(value)
 }
 
-export function formatCurrencySymbol(locale: Locale): string {
-  let symbol = currencySymbols.get(locale)
-  if (!symbol) {
-    symbol = new Intl.NumberFormat(locale, { style: 'currency', currency: 'TND' })
-      .formatToParts(0)
-      .find((part) => part.type === 'currency')?.value ?? 'TND'
-    currencySymbols.set(locale, symbol)
-  }
-  return symbol
-}
 
 export function formatPercent(locale: Locale, ratio: number): string {
   let formatter = percentFormatters.get(locale)

@@ -40,13 +40,11 @@ export const team = {
     email: 'Email',
     role: 'Role',
     expires: 'Expires',
-    actions: 'Actions',
   },
   resend: 'Send again',
   resending: 'Sending…',
   resent: (email: string) => `A new link was sent to ${email}.`,
   revoke: 'Revoke',
-  revoking: 'Revoking…',
   revoked: (email: string) => `Invitation for ${email} revoked.`,
   notPending: 'No longer pending',
   revokeTitle: 'Revoke this invitation?',
@@ -54,7 +52,6 @@ export const team = {
   invitationsLoadFailed: 'Invitations could not be loaded.',
   noInvitations: 'No pending invitations',
   noInvitationsHint: 'Invite a teammate by email above.',
-  roleNote: (role: string) => `You are ${role} in this workspace. The server decides every request; hiding an action is only a convenience.`,
 }
 
 export const notifications = {

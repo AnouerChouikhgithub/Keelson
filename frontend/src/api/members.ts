@@ -14,7 +14,7 @@ function membersPath(organizationId: string, membershipId?: string): string {
  * A malformed row is dropped rather than rendered half-empty: a member with no
  * role cannot be authorized against and must not appear as if they had one.
  */
-export function parseMember(value: unknown): Member | null {
+function parseMember(value: unknown): Member | null {
   if (typeof value !== 'object' || value === null) return null
   const record = value as Record<string, unknown>
   const { id, principalId, email, name, role, joinedAt } = record

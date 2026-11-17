@@ -7,27 +7,14 @@ export const common = {
   reload: 'إعادة التحميل',
   cancel: 'إلغاء',
   close: 'إغلاق',
-  dismiss: 'إغلاق الإشعار',
-  save: 'حفظ',
   saving: 'جارٍ الحفظ…',
-  create: 'إنشاء',
-  edit: 'تعديل',
   delete: 'حذف',
-  back: 'رجوع',
   search: 'بحث',
-  clearSearch: 'مسح البحث',
   loadMore: 'تحميل المزيد',
   loadedCount: (count: number) => (count === 0 ? 'لا سجلات محمّلة' : count === 1 ? 'سجل واحد محمّل' : count === 2 ? 'سجلان محمّلان' : `${count} سجلات محمّلة`),
   actions: 'إجراءات',
-  print: 'طباعة',
-  status: 'الحالة',
-  amount: 'المبلغ',
-  name: 'الاسم',
-  email: 'البريد الإلكتروني',
-  phone: 'الهاتف',
   role: 'الدور',
   organization: 'المؤسسة',
-  sessionExpired: 'تغيّرت جلستك. سجّل الدخول مرة أخرى.',
 }
 
 export const nav = {
@@ -151,5 +138,4 @@ export const errors = {
   boundaryTitle: 'توقفت هذه الشاشة عن الاستجابة',
   boundaryBody: 'تم التقاط خطأ غير متوقع في الواجهة. بياناتك على الخادم؛ أعد تحميل الشاشة للمتابعة.',
   boundaryReload: 'إعادة تحميل الشاشة',
-  title: 'حدث خطأ ما',
 }

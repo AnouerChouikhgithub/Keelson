@@ -9,7 +9,7 @@ import type { SessionUser } from './session'
  * server handed out. `signIn`/`signOut` resolve only when the server confirmed
  * the change; they reject otherwise, so a screen can report the real outcome.
  */
-export type AuthStatus = 'loading' | 'anonymous' | 'authenticated' | 'error'
+type AuthStatus = 'loading' | 'anonymous' | 'authenticated' | 'error'
 
 export type AuthValue = {
   status: AuthStatus
