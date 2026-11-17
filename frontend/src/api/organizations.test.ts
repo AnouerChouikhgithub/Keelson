@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { canDeleteInvoiceResources, canWriteInvoiceResources, listOrganizations } from './organizations'
 import { presentError, isConflict } from './presentError'
 import { ApiError } from './errors'
-import { messages } from '../i18n/messages'
+import { messages } from '../i18n'
 
 const fetchMock = vi.fn<typeof fetch>()
 

@@ -1,9 +1,9 @@
 /**
  * Types for the verified backend contract in `docs/api-contract.md`.
  *
- * Every shape here was read from `backend/src` (and its serializers) — not from
- * a screen design. Keep this file in sync with that document rather than
- * inventing fields the API does not return.
+ * Every shape here was read from `backend/src` — not from a screen design.
+ * Keep this file in sync with that document rather than inventing fields the
+ * API does not return.
  */
 
 export type BillingAddress = {
@@ -99,23 +99,17 @@ export type OrganizationMembership = {
 }
 
 /**
- * A created/selected organization as the screens render it. Not an API shape:
- * organization creation has no endpoint yet, so this is built locally.
+ * Row of `GET …/invoice-audit-events`.
+ *
+ * The endpoint returns a single page (`limit` only, no cursor), so the audit
+ * screen pages through what it received rather than pretending to page the API.
  */
-export type OrganizationSummary = {
+export type AuditEvent = {
   id: string
-  name: string
-  subdomain: string
-  initials: string
-  location: string
-}
-
-/** Team rows are mock data until the team API exists. */
-export type TeamMember = {
-  id: string
-  name: string
-  email: string
-  initials: string
-  role: OrganizationRole
-  location: string
+  invoiceId: string | null
+  customerId: string | null
+  action: string
+  actorPrincipalId: string | null
+  metadata: Record<string, unknown> | null
+  createdAt: string
 }

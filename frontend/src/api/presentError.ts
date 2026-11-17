@@ -1,4 +1,4 @@
-import type { Messages } from '../i18n/messages'
+import type { Messages } from '../i18n'
 import { ApiError } from './errors'
 
 /**

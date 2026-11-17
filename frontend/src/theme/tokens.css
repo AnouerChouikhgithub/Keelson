@@ -1,56 +1,147 @@
+/*
+ * The only file with colour values. Components use these custom properties, so
+ * the brand colour and both themes change here and nowhere else.
+ *
+ * Contrast: every text token is at least 4.5:1 against the surface it is used
+ * on in BOTH themes (status text is paired with its `-soft` background).
+ */
 :root,
 :root[data-theme='light'] {
   color-scheme: light;
+
+  /* Surfaces and text */
   --color-background: #F8FAFC;
   --color-surface: #FFFFFF;
   --color-surface-elevated: #FFFFFF;
   --color-border: #E2E8F0;
+  --color-border-strong: #CBD5E1;
   --color-text: #0F172A;
-  --color-text-secondary: #475569;
-  --color-text-muted: #64748B;
+  --color-text-secondary: #44546A;
+  --color-text-muted: #5B6878;
+
+  /* Brand */
   --color-primary: #0F766E;
+  --color-primary-hover: #115E59;
   --color-primary-contrast: #FFFFFF;
   --color-primary-soft: #CCFBF1;
-  --color-success: #16A34A;
-  --color-warning: #D97706;
-  --color-danger: #DC2626;
-  --color-info: #2563EB;
+
+  /* Status — the text values are darkened for AA on white and on `-soft` */
+  --color-success: #15803D;
+  --color-warning: #B45309;
+  --color-danger: #B91C1C;
+  --color-info: #1D4ED8;
   --color-success-soft: #DCFCE7;
   --color-warning-soft: #FEF3C7;
   --color-danger-soft: #FEE2E2;
   --color-info-soft: #DBEAFE;
+
   --color-chart-grid: #E2E8F0;
-  --color-overlay: rgb(15 23 42 / 42%);
+  --color-chart-bar: #99F6E4;
+  --color-overlay: rgb(15 23 42 / 48%);
   --color-focus: #0F766E;
-  --font-ui: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
-  --radius-card: 12px;
-  --radius-control: 10px;
-  --radius-sheet: 16px;
-  --transition-ui: 180ms ease-out;
+
+  /* Elevation */
+  --shadow-sm: 0 1px 2px rgb(15 23 42 / 6%);
+  --shadow-md: 0 8px 24px rgb(15 23 42 / 10%);
+  --shadow-lg: 0 20px 48px rgb(15 23 42 / 18%);
 }
 
 :root[data-theme='dark'] {
   color-scheme: dark;
+
   --color-background: #0B0F14;
   --color-surface: #121821;
   --color-surface-elevated: #1A2230;
   --color-border: #263041;
+  --color-border-strong: #33415A;
   --color-text: #E6EAF0;
-  --color-text-secondary: #9AA6B8;
-  --color-text-muted: #8290A4;
+  --color-text-secondary: #AEBACB;
+  --color-text-muted: #93A1B5;
+
   --color-primary: #2DD4BF;
+  --color-primary-hover: #5EEAD4;
   --color-primary-contrast: #062B29;
   --color-primary-soft: #123B3A;
+
   --color-success: #4ADE80;
   --color-warning: #FBBF24;
-  --color-danger: #F87171;
-  --color-info: #60A5FA;
+  --color-danger: #FCA5A5;
+  --color-info: #93C5FD;
   --color-success-soft: #143522;
   --color-warning-soft: #3B2D11;
   --color-danger-soft: #3B2025;
   --color-info-soft: #172B42;
+
   --color-chart-grid: #263041;
-  --color-overlay: rgb(0 0 0 / 64%);
-  --color-focus: #2DD4BF;
+  --color-chart-bar: #2DD4BF;
+  --color-overlay: rgb(0 0 0 / 68%);
+  --color-focus: #5EEAD4;
+
+  /* Dark mode is layered, not inverted: borders instead of heavy shadows. */
+  --shadow-sm: none;
+  --shadow-md: 0 10px 28px rgb(0 0 0 / 46%);
+  --shadow-lg: 0 24px 60px rgb(0 0 0 / 60%);
+}
+
+:root {
+  /* 4pt spacing grid */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* Radii */
+  --radius-xs: 6px;
+  --radius-sm: 8px;
+  --radius-md: 10px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-full: 999px;
+
+  /* Type scale */
+  --font-ui: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  --text-display: 28px;
+  --leading-display: 34px;
+  --text-title: 20px;
+  --leading-title: 28px;
+  --text-heading: 16px;
+  --leading-heading: 24px;
+  --text-body: 15px;
+  --leading-body: 23px;
+  --text-caption: 13px;
+  --leading-caption: 18px;
+  --weight-regular: 400;
+  --weight-medium: 550;
+  --weight-semibold: 650;
+  --weight-bold: 700;
+
+  /* Motion */
+  --duration-fast: 120ms;
+  --duration-base: 200ms;
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  /* Layout and stacking */
+  --sidebar-width: 252px;
+  --content-max: 1440px;
+  --tap-target: 44px;
+  --z-base: 0;
+  --z-sticky: 10;
+  --z-sidebar: 20;
+  --z-menu: 30;
+  --z-overlay: 60;
+  --z-toast: 80;
+  --z-skip-link: 100;
+
+  /* Backwards-compatible aliases used by older components. */
+  --radius-card: var(--radius-lg);
+  --radius-control: var(--radius-md);
+  --radius-sheet: var(--radius-xl);
+  --transition-ui: var(--duration-fast) var(--ease-out);
 }

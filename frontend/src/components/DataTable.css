@@ -1,0 +1,35 @@
+.data-table { display: grid; gap: var(--space-3); min-width: 0; }
+/* The table scrolls on its own; without the explicit min-width the grid item
+   would grow to the table's min-content and push the page sideways. */
+.data-table-scroll { position: relative; min-width: 0; max-width: 100%; overflow-x: auto; }
+
+.data-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-caption);
+  white-space: nowrap;
+}
+
+.data-table thead { background: var(--color-background); }
+.data-table th {
+  height: 40px;
+  padding: 0 var(--space-3);
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.02em;
+  text-align: start;
+}
+.data-table td {
+  height: 52px;
+  padding: var(--space-2) var(--space-3);
+  color: var(--color-text-secondary);
+  border-block-start: 1px solid var(--color-border);
+  vertical-align: middle;
+}
+.data-table tbody tr:hover { background: var(--color-background); }
+
+.data-table .cell-strong { color: var(--color-text); font-weight: var(--weight-semibold); }
+.data-table .cell-amount { color: var(--color-text); font-variant-numeric: tabular-nums; }
+.data-table .cell-end { text-align: end; }
+.data-table .cell-actions { display: flex; gap: var(--space-1); justify-content: flex-end; }

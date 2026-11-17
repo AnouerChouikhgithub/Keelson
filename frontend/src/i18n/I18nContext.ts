@@ -1,5 +1,5 @@
 import { createContext, useContext } from 'react'
-import type { Locale, Messages } from './messages'
+import type { Locale, Messages } from './index'
 
 export type I18nValue = {
   locale: Locale

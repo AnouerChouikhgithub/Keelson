@@ -3,8 +3,8 @@ import type { ReactNode } from 'react'
 import { I18nContext } from './I18nContext'
 import type { I18nValue } from './I18nContext'
 import { formatCurrency, formatDate, formatDateTime, formatMonth, formatNumber, formatPercent } from './format'
-import { locales, messages } from './messages'
-import type { Locale } from './messages'
+import { locales, messages } from './index'
+import type { Locale } from './index'
 
 const localeKey = 'keelson-locale'
 

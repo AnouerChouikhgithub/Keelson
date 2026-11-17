@@ -1,4 +1,4 @@
-import type { Locale } from './messages'
+import type { Locale } from './index'
 
 const currencyFormatters = new Map<Locale, Intl.NumberFormat>()
 const numberFormatters = new Map<string, Intl.NumberFormat>()
