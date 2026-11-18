@@ -8,7 +8,7 @@ use App\Entity\Principal;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\RequestStack;
-use Symfony\Component\RateLimiter\RateLimit;
+use Symfony\Component\RateLimiter\LimiterInterface;
 use Symfony\Component\RateLimiter\RateLimiterFactory;
 
 /**
@@ -138,7 +138,7 @@ final class AuthAttemptLimiter
     }
 
     /**
-     * @param list<RateLimit> $buckets
+     * @param list<LimiterInterface> $buckets
      *
      * @return int|null the longest wait any exhausted bucket asks for, null when all accepted
      */
@@ -151,7 +151,7 @@ final class AuthAttemptLimiter
                 continue;
             }
 
-            $seconds = max(1, $limit->getRetryAfter()->getTimestamp() - time());
+            $seconds = (int) max(1, $limit->getRetryAfter()->getTimestamp() - time());
             $retryAfter = null === $retryAfter ? $seconds : max($retryAfter, $seconds);
         }
 
