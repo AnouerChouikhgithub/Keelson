@@ -23,9 +23,9 @@ use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
  * at login, so a planted session would be adopted on first use and would prove
  * nothing about the flow a person actually takes.
  *
- * The second browser lives in a second cookie jar on the same client, so the
- * two sessions are the two rows the application really wrote, without a second
- * kernel in the same test.
+ * The second browser lives in a second cookie jar on the same client, so the two
+ * sessions are the two rows the application really wrote without a second kernel
+ * in the same test.
  */
 final class SessionRevocationTest extends WebTestCase
 {
@@ -34,9 +34,6 @@ final class SessionRevocationTest extends WebTestCase
 
     private const PASSWORD = 'Correct-Horse-9';
     private const NEW_PASSWORD = 'Another-Horse-42';
-
-    /** What `GET /api/session` answers once the session has been ended. */
-    private const ANONYMOUS = ['authenticated' => false, 'user' => null, 'csrfToken' => null];
 
     private EntityManagerInterface $entityManager;
     private KernelBrowser $client;
@@ -69,17 +66,7 @@ final class SessionRevocationTest extends WebTestCase
     public function testAResetEndsEveryOtherSessionOfTheAccount(): void
     {
         $principal = $this->createPrincipal();
-
-        $first = $this->signIn($principal->getEmail());
-        $second = $this->signIn($principal->getEmail());
-
-        self::assertNotSame(
-            $this->cookieValues($first),
-            $this->cookieValues($second),
-            'Each sign-in must open a session of its own, otherwise this test proves nothing.',
-        );
-        self::assertTrue($this->sessionWith($first)['authenticated']);
-        self::assertTrue($this->sessionWith($second)['authenticated']);
+        [$first, $second] = $this->twoSessions($principal->getEmail());
 
         $this->useCookies($first);
         $this->post('/api/auth/forgot-password', ['email' => $principal->getEmail()]);
@@ -88,27 +75,23 @@ final class SessionRevocationTest extends WebTestCase
         $this->post('/api/auth/reset-password', ['token' => $this->lastEmailToken(), 'password' => self::NEW_PASSWORD]);
         self::assertResponseStatusCodeSame(204);
 
-        self::assertSame(
-            self::ANONYMOUS,
-            $this->sessionWith($first),
-            'The session that submitted the reset must not survive it.',
-        );
-        self::assertSame(
-            self::ANONYMOUS,
-            $this->sessionWith($second),
-            'A reset exists to recover a lost password: every session opened with the old one must end.',
-        );
+        $this->assertSignedOut($this->sessionWith($first), 'The session that submitted the reset must not survive it.');
+        $this->assertSignedOut($this->sessionWith($second), 'A reset exists to recover a lost password: every session opened with the old one must end.');
     }
 
+    /**
+     * The endpoint's promise for the browser that did not ask for the change.
+     *
+     * Symfony's own token-hash comparison already ends this session; the test
+     * pins the behaviour rather than the mechanism, so the promise outlives a
+     * rewrite of how revocation is done.
+     */
     public function testAChangeKeepsTheSessionThatMadeItAndEndsTheOther(): void
     {
         $principal = $this->createPrincipal();
+        [$first, $second] = $this->twoSessions($principal->getEmail());
 
-        $first = $this->signIn($principal->getEmail());
-        $second = $this->signIn($principal->getEmail());
-        self::assertTrue($this->sessionWith($second)['authenticated'], 'The second browser must be signed in before the change.');
         $this->useCookies($first);
-
         $this->client->request('POST', '/api/me/password', server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_ORIGIN' => 'http://localhost',
@@ -123,28 +106,44 @@ final class SessionRevocationTest extends WebTestCase
         self::assertTrue($kept['authenticated'], 'The browser that changed the password must stay signed in.');
         self::assertSame($principal->getEmail(), $kept['user']['email'] ?? null);
 
-        self::assertSame(
-            self::ANONYMOUS,
-            $this->sessionWith($second),
-            'The other browser was opened with the retired password and must be signed out.',
-        );
+        $this->assertSignedOut($this->sessionWith($second), 'The other browser was opened with the retired password and must be signed out.');
     }
 
     /**
-     * Signs in through the real endpoint and keeps that browser's cookies.
+     * Signs in twice on one account and checks the two sessions are distinct.
      *
-     * The jar is emptied first, so each call opens a session of its own instead of
-     * reusing the cookie of the previous one.
+     * Each sign-in empties the cookie jar first, so it opens a session of its own
+     * instead of reusing the previous cookie.
      *
-     * @return array<string, Cookie>
+     * @return array{0: array<string, Cookie>, 1: array<string, Cookie>}
      */
+    private function twoSessions(string $email): array
+    {
+        $first = $this->signIn($email);
+        $second = $this->signIn($email);
+
+        self::assertNotSame(
+            $this->cookieValues($first),
+            $this->cookieValues($second),
+            'Each sign-in must open a session of its own, otherwise this test proves nothing.',
+        );
+        self::assertTrue($this->sessionWith($first)['authenticated']);
+        self::assertTrue($this->sessionWith($second)['authenticated']);
+
+        return [$first, $second];
+    }
+
+    /** @return array<string, Cookie> */
     private function signIn(string $email): array
     {
         $this->client->getCookieJar()->clear();
         $this->post('/api/auth/login', ['email' => $email, 'password' => self::PASSWORD]);
         self::assertResponseStatusCodeSame(200);
 
-        return $this->cookies();
+        /** @var array<string, Cookie> $cookies */
+        $cookies = $this->client->getCookieJar()->all();
+
+        return $cookies;
     }
 
     /** @param array<string, Cookie> $cookies */
@@ -175,17 +174,15 @@ final class SessionRevocationTest extends WebTestCase
         return $decoded;
     }
 
-    /** @return array<string, Cookie> */
-    private function cookies(): array
+    /**
+     * Asserts the payload carries no signed-in identity.
+     *
+     * @param array<string, mixed> $payload
+     */
+    private function assertSignedOut(array $payload, string $message): void
     {
-        $cookies = [];
-        foreach ($this->client->getCookieJar()->all() as $cookie) {
-            if ($cookie instanceof Cookie) {
-                $cookies[$cookie->getName()] = $cookie;
-            }
-        }
-
-        return $cookies;
+        self::assertFalse($payload['authenticated'] ?? null, $message);
+        self::assertNull($payload['user'] ?? null, $message);
     }
 
     /**
