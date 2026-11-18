@@ -17,6 +17,14 @@ parameters:
     # unverified account cannot sign in.
     app.auth.require_verified_email: '%env(bool:REQUIRE_VERIFIED_EMAIL)%'
 
+    # AI foundation. `AI_ENABLED` is the deployment switch every AI call consults;
+    # `AI_PROVIDER=fake` keeps a checkout working without a credential. The empty
+    # fallbacks keep the container bootable when no AI variables are configured.
+    app.ai.enabled: '%env(bool:AI_ENABLED)%'
+    app.ai.provider: '%env(default:app.ai.provider.fallback:AI_PROVIDER)%'
+    app.ai.provider.fallback: 'fake'
+    app.ai.empty: ''
+
     # The shared password every synthetic demo account is seeded with. It is a
     # documented, dev-only value: production cannot reach the loader (the target
     # guard refuses it) and the plaintext is never stored or printed as a hash.
@@ -103,6 +111,22 @@ services:
     App\Security\OrganizationVoter:
         tags: ['security.voter']
 
+    # AI foundation: the deployment switch is a parameter, and the provider is chosen
+    # from AI_PROVIDER at runtime (see App\Ai\AiProviderSelector).
+    App\Ai\AiFeatureFlags:
+        arguments:
+            $enabled: '%app.ai.enabled%'
+
+    App\Ai\AiProviderSelector:
+        arguments:
+            $provider: '%app.ai.provider%'
+
+    App\Ai\HttpAiProvider:
+        arguments:
+            $apiKey: '%env(default:app.ai.empty:AI_API_KEY)%'
+            $model: '%env(default:app.ai.empty:AI_MODEL)%'
+            $baseUrl: '%env(default:app.ai.empty:AI_BASE_URL)%'
+
     # Synthetic dev/test fixtures. The target guard reads the effective DBAL
     # connection parameters (including Doctrine's test dbname suffix), so only
     # the environment is injected here.
@@ -125,3 +149,22 @@ services:
 
     # add more service definitions when explicit configuration is needed
     # please note that last definitions always *replace* previous ones
+
+when@test:
+    services:
+        _defaults:
+            autowire: true
+            autoconfigure: true
+        # Nothing in the application wires the gateway yet (its first feature is a
+        # later track), so the test container would inline it away. These aliases
+        # keep the foundation testable without making production services public.
+        App\Ai\AiGateway:
+            public: true
+        App\Ai\AiFeatureFlags:
+            public: true
+            arguments:
+                $enabled: '%app.ai.enabled%'
+        App\Ai\FakeAiProvider:
+            public: true
+        App\Repository\OrganizationAiSettingsRepository:
+            public: true

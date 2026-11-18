@@ -1287,6 +1287,209 @@ paths:
           $ref: '#/components/responses/Unauthenticated'
         '403':
           $ref: '#/components/responses/CsrfRejected'
+  /api/ai/status:
+    get:
+      tags: [AI]
+      summary: The caller's AI eligibility.
+      description: |
+        Reads counters only; no provider is called. `organizationId` is optional and
+        without it the caller's first active organization is used.
+      parameters:
+        - name: organizationId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Eligibility and the remaining monthly token budget.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [enabled, organizationEnabled, budgetRemainingTokens]
+                properties:
+                  enabled:
+                    type: boolean
+                  organizationEnabled:
+                    type: boolean
+                  budgetRemainingTokens:
+                    type: integer
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/ai/guide:
+    post:
+      tags: [AI]
+      summary: Ask the product assistant (stub, 501).
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [question]
+              properties:
+                question:
+                  type: string
+                  maxLength: 2000
+      responses:
+        '200':
+          description: Plain-text answer and its internal sources.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [answer, sources]
+                properties:
+                  answer:
+                    type: string
+                  sources:
+                    type: array
+                    items:
+                      type: object
+                      required: [title, reference]
+                      properties:
+                        title:
+                          type: string
+                        reference:
+                          type: string
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          description: CSRF rejected, or AI is disabled (`ai_disabled`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '501':
+          description: The generator is not implemented yet (`not_implemented`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/organizations/{organizationId}/ai-settings:
+    parameters:
+      - $ref: '#/components/parameters/OrganizationId'
+    get:
+      tags: [AI]
+      summary: Read the tenant's AI opt-in and budget (Owner or Admin only).
+      responses:
+        '200':
+          description: The effective settings and the remaining budget.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [enabled, monthlyTokenBudget, budgetRemainingTokens]
+                properties:
+                  enabled:
+                    type: boolean
+                  monthlyTokenBudget:
+                    type: integer
+                  budgetRemainingTokens:
+                    type: integer
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags: [AI]
+      summary: Replace the tenant's AI opt-in and budget (Owner or Admin only).
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enabled, monthlyTokenBudget]
+              properties:
+                enabled:
+                  type: boolean
+                monthlyTokenBudget:
+                  type: integer
+                  minimum: 0
+                  maximum: 100000000
+      responses:
+        '200':
+          description: The stored settings.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [enabled, monthlyTokenBudget, budgetRemainingTokens]
+                properties:
+                  enabled:
+                    type: boolean
+                  monthlyTokenBudget:
+                    type: integer
+                  budgetRemainingTokens:
+                    type: integer
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/CsrfRejected'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /api/organizations/{organizationId}/ai/summaries/{kind}:
+    parameters:
+      - $ref: '#/components/parameters/OrganizationId'
+      - name: kind
+        in: path
+        required: true
+        schema:
+          type: string
+          enum: [organization, invoices, customers]
+    post:
+      tags: [AI]
+      summary: Generate an organization summary (stub, 501).
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      responses:
+        '200':
+          description: Sanitized summary text and the aggregates behind it.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [text, generatedAt, facts]
+                properties:
+                  text:
+                    type: string
+                  generatedAt:
+                    type: string
+                    format: date-time
+                  facts:
+                    type: object
+                    additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          description: CSRF rejected, or AI is disabled (`ai_disabled`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '501':
+          description: The generator is not implemented yet (`not_implemented`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /healthz:
     get:
       tags: [Health]

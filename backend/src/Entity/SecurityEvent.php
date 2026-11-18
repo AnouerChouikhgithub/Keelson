@@ -27,6 +27,7 @@ class SecurityEvent
     public const LOGIN_FAILURE = 'login_failure';
     public const PASSWORD_CHANGED = 'password_changed';
     public const INVITATION_ACCEPTED = 'invitation_accepted';
+    public const AI_ENABLED = 'ai_enabled';
 
     #[ORM\Id]
     #[ORM\Column(type: Types::GUID)]
