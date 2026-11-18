@@ -2,6 +2,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { installFetch, requests } from '../../test/fetchMock'
+import AssistantLauncher from './AssistantLauncher'
 import { AiSettingsSection } from './AiSettingsSection'
 import { AiProviders } from './testRender'
 
@@ -76,6 +77,47 @@ describe('AiSettingsSection', () => {
 
     expect(screen.queryByRole('heading', { name: 'AI assistance' })).toBeNull()
     expect(screen.queryByLabelText('Monthly token budget')).toBeNull()
+  })
+
+  it('makes the header assistant appear as soon as an owner enables AI', async () => {
+    // A stateful status: the organization opt-in only turns on after the PUT, so
+    // this fails if the mounted launcher keeps its cached "off" answer.
+    let organizationEnabled = false
+    const fetchMock = installFetch([
+      {
+        path: '/api/ai/status',
+        method: 'GET',
+        json: () => ({ enabled: true, organizationEnabled, budgetRemainingTokens: 50000 }),
+      },
+      { path: '/ai-settings', method: 'GET', json: storedSettings },
+      {
+        path: '/ai-settings',
+        method: 'PUT',
+        json: () => {
+          organizationEnabled = true
+          return { ...storedSettings, enabled: true }
+        },
+      },
+    ])
+    const user = userEvent.setup()
+    render(
+      <AiProviders>
+        <AssistantLauncher organizationId="org-settings-activation" />
+        <AiSettingsSection organizationId="org-settings-activation" role="Owner" />
+      </AiProviders>,
+    )
+
+    await screen.findByRole('heading', { name: 'AI assistance' })
+    expect(screen.queryByRole('button', { name: 'Ask Keelson' })).toBeNull()
+
+    await user.click(screen.getByLabelText('Enable AI for this workspace'))
+    await user.click(screen.getByRole('button', { name: 'Save AI settings' }))
+
+    expect(await screen.findByRole('button', { name: 'Ask Keelson' })).toBeVisible()
+    // It appeared from a second read of the status, not from a cached answer.
+    expect(
+      requests(fetchMock).filter((request) => request.path.startsWith('/api/ai/status')),
+    ).toHaveLength(4)
   })
 
   it('renders nothing when the status call fails', async () => {
