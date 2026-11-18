@@ -1193,6 +1193,44 @@ paths:
           $ref: '#/components/responses/Unauthenticated'
         '404':
           $ref: '#/components/responses/NotFound'
+  /api/organizations/{organizationId}/onboarding:
+    parameters:
+      - $ref: '#/components/parameters/OrganizationId'
+    get:
+      tags: [Dashboard]
+      summary: The getting-started checklist, computed from database counts.
+      description: |
+        Every step is a count, never a stored flag, so the checklist survives a reload and
+        agrees with what the organization actually contains. Any active member may read it;
+        the step ids are stable and the client translates them.
+      responses:
+        '200':
+          description: The five steps and how many are done.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [steps, completed, total]
+                properties:
+                  steps:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, done]
+                      properties:
+                        id:
+                          type: string
+                          enum: [invite_team, add_customer, create_invoice, send_invoice, record_payment]
+                        done:
+                          type: boolean
+                  completed:
+                    type: integer
+                  total:
+                    type: integer
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /api/notifications:
     get:
       tags: [Notifications]
@@ -1282,6 +1320,272 @@ paths:
           $ref: '#/components/responses/Unauthenticated'
         '403':
           $ref: '#/components/responses/CsrfRejected'
+  /api/ai/status:
+    get:
+      tags: [AI]
+      summary: The caller's AI eligibility.
+      description: |
+        Reads counters only; no provider is called. `organizationId` is optional and
+        without it the caller's first active organization is used.
+      parameters:
+        - name: organizationId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Eligibility and the remaining monthly token budget.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [enabled, organizationEnabled, budgetRemainingTokens]
+                properties:
+                  enabled:
+                    type: boolean
+                  organizationEnabled:
+                    type: boolean
+                  budgetRemainingTokens:
+                    type: integer
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/ai/guide:
+    post:
+      tags: [AI]
+      summary: Ask the product assistant, grounded in the bundled documentation.
+      description: |
+        Retrieval scores the documentation for the requested locale and keeps the top three
+        articles the caller's role may see; only those articles, the role and the question are
+        sent to the model. A question the documentation does not cover is answered with a fixed
+        message in the caller's locale and `sources` is empty: no model call, no spend.
+
+        The assistant never reads tenant rows. `organizationId` is optional and selects the
+        tenant whose settings, budget and rate limits apply; without it the caller's oldest
+        active organization is used.
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [question]
+              properties:
+                question:
+                  type: string
+                  minLength: 3
+                  maxLength: 500
+                locale:
+                  type: string
+                  enum: [en, fr, ar]
+                  default: en
+                organizationId:
+                  type: string
+                  format: uuid
+      responses:
+        '200':
+          description: Plain-text answer and up to three documentation sources.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [answer, sources]
+                properties:
+                  answer:
+                    type: string
+                  sources:
+                    type: array
+                    maxItems: 3
+                    items:
+                      type: object
+                      required: [id, title]
+                      properties:
+                        id:
+                          type: string
+                        title:
+                          type: string
+        '400':
+          description: The organization id is not a UUID (`invalid_id`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '402':
+          description: The organization has used its monthly token budget (`ai_budget_exceeded`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: CSRF rejected, or AI is disabled (`ai_disabled`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          description: The provider failed (`ai_unavailable`); the reservation is released.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/organizations/{organizationId}/ai-settings:
+    parameters:
+      - $ref: '#/components/parameters/OrganizationId'
+    get:
+      tags: [AI]
+      summary: Read the tenant's AI opt-in and budget (Owner or Admin only).
+      responses:
+        '200':
+          description: The effective settings and the remaining budget.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [enabled, monthlyTokenBudget, budgetRemainingTokens]
+                properties:
+                  enabled:
+                    type: boolean
+                  monthlyTokenBudget:
+                    type: integer
+                  budgetRemainingTokens:
+                    type: integer
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags: [AI]
+      summary: Replace the tenant's AI opt-in and budget (Owner or Admin only).
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enabled, monthlyTokenBudget]
+              properties:
+                enabled:
+                  type: boolean
+                monthlyTokenBudget:
+                  type: integer
+                  minimum: 0
+                  maximum: 100000000
+      responses:
+        '200':
+          description: The stored settings.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [enabled, monthlyTokenBudget, budgetRemainingTokens]
+                properties:
+                  enabled:
+                    type: boolean
+                  monthlyTokenBudget:
+                    type: integer
+                  budgetRemainingTokens:
+                    type: integer
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/CsrfRejected'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /api/organizations/{organizationId}/ai/summaries/{kind}:
+    parameters:
+      - $ref: '#/components/parameters/OrganizationId'
+      - name: kind
+        in: path
+        required: true
+        schema:
+          type: string
+          enum: [overview, receivables, activity]
+    post:
+      tags: [AI]
+      summary: Summarize this organization's own data.
+      description: |
+        Reads the tenant's aggregates through the caller's active membership, asks the
+        provider for 2 to 4 plain sentences and returns the text with the facts behind
+        it. Every figure in the text must be derivable from `facts`; otherwise, or when
+        the provider is unavailable, the deterministic template is returned and
+        `fallback` is `true`. The model never queries the database: it receives only
+        counts, amounts in integer millimes, ISO dates, the role, the locale and at
+        most five customer display names.
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                locale:
+                  type: string
+                  enum: [en, fr, ar]
+                  description: Overrides `Accept-Language` for this summary.
+      responses:
+        '200':
+          description: Sanitized summary text, the aggregates behind it, and whether the template was used.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [text, generatedAt, fallback, facts]
+                properties:
+                  text:
+                    type: string
+                  generatedAt:
+                    type: string
+                    format: date-time
+                  fallback:
+                    type: boolean
+                  facts:
+                    type: object
+                    additionalProperties: true
+        '400':
+          description: The organization id is not a UUID (`invalid_id`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '402':
+          description: The monthly token budget cannot fund this call (`ai_budget_exceeded`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: CSRF rejected, or AI is disabled globally or for this organization (`ai_disabled`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
   /healthz:
     get:
       tags: [Health]
