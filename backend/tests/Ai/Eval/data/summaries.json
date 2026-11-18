@@ -1,0 +1,67 @@
+{
+  "description": "One seeded organization and the exact facts each summary kind must produce from it. Offsets are days from the day the suite runs, so the fixture is the same on every date; 'outsideWindow' moves an invoice's timestamps to the previous month so the seven-day and month-to-date figures are not all-inclusive.",
+  "currency": "TND",
+  "role": "Owner",
+  "locale": "en",
+  "customers": [
+    {"name": "Acme Holdings", "ageSeconds": 10},
+    {"name": "Northwind Traders", "ageSeconds": 20},
+    {"name": "Beta Studio", "ageSeconds": 30},
+    {"name": "Gamma Logistics", "ageSeconds": 40},
+    {"name": "Delta Foods", "ageSeconds": 50},
+    {"name": "Zeta Labs", "ageSeconds": 60}
+  ],
+  "invoices": [
+    {"ref": "INV-1", "customer": "Acme Holdings", "status": "sent", "dueOffsetDays": 10, "total": "100.000"},
+    {"ref": "INV-2", "customer": "Northwind Traders", "status": "sent", "dueOffsetDays": -5, "total": "50.000"},
+    {"ref": "INV-3", "customer": "Gamma Logistics", "status": "draft", "dueOffsetDays": 20, "total": "20.000"},
+    {"ref": "INV-4", "customer": "Delta Foods", "status": "paid", "dueOffsetDays": 14, "total": "75.500"},
+    {"ref": "INV-5", "customer": "Delta Foods", "status": "sent", "dueOffsetDays": 3, "total": "12.250"},
+    {"ref": "INV-6", "customer": "Beta Studio", "status": "sent", "dueOffsetDays": 30, "total": "40.000"},
+    {"ref": "INV-7", "customer": "Zeta Labs", "status": "sent", "dueOffsetDays": -1, "total": "1.000"},
+    {"ref": "INV-8", "customer": "Acme Holdings", "status": "paid", "dueOffsetDays": 14, "total": "200.000", "outsideWindow": true},
+    {"ref": "INV-9", "customer": "Beta Studio", "status": "draft", "dueOffsetDays": 15, "total": "5.000"},
+    {"ref": "INV-10", "customer": "Gamma Logistics", "status": "paid", "dueOffsetDays": 14, "total": "3.000"}
+  ],
+  "expected": {
+    "overview": {
+      "numbers": {
+        "customerCount": 6,
+        "invoiceCount": 10,
+        "draftInvoiceCount": 2,
+        "sentInvoiceCount": 3,
+        "overdueInvoiceCount": 2,
+        "paidInvoiceCount": 3,
+        "outstandingMillimes": 203250,
+        "overdueMillimes": 51000,
+        "paidThisMonthMillimes": 78500
+      },
+      "dates": {"asOf": "today"},
+      "customerNames": ["Acme Holdings", "Northwind Traders", "Beta Studio", "Delta Foods", "Zeta Labs"]
+    },
+    "receivables": {
+      "numbers": {
+        "openInvoiceCount": 5,
+        "overdueInvoiceCount": 2,
+        "dueSoonInvoiceCount": 1,
+        "outstandingMillimes": 203250,
+        "overdueMillimes": 51000,
+        "dueSoonMillimes": 12250
+      },
+      "dates": {"asOf": "today", "oldestDueDate": "today-5"},
+      "customerNames": ["Acme Holdings", "Northwind Traders", "Beta Studio", "Delta Foods", "Zeta Labs"]
+    },
+    "activity": {
+      "numbers": {
+        "windowDays": 7,
+        "invoicesCreated": 9,
+        "invoicesSent": 7,
+        "invoicesPaid": 2,
+        "paidMillimes": 78500,
+        "customersCreated": 6
+      },
+      "dates": {"windowStart": "today-6", "asOf": "today"},
+      "customerNames": ["Acme Holdings", "Northwind Traders", "Gamma Logistics", "Delta Foods"]
+    }
+  }
+}

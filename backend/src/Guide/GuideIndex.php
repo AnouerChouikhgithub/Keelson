@@ -31,6 +31,17 @@ final class GuideIndex
     /** A single matched term is around 1.5; anything under this is noise. */
     public const MIN_SCORE = 0.5;
 
+    /**
+     * How many distinct query terms an article must share before it counts as related.
+     *
+     * One word is not evidence of topicality: "write a poem about the sea" shares the
+     * ordinary word "about" with an article and scored 2.4 on it, which was enough to
+     * spend a real provider call on a question the corpus cannot answer. Requiring two
+     * distinct terms is what makes the relevance floor mean something, and it is the
+     * rule the off-topic eval set measures.
+     */
+    public const MINIMUM_MATCHED_TERMS = 2;
+
     private const K1 = 1.2;
     private const B = 0.75;
     private const MAXIMUM_TERM_LENGTH = 40;
@@ -133,15 +144,17 @@ final class GuideIndex
         $scored = [];
         foreach ($documents as $document) {
             $score = 0.0;
+            $matched = 0;
             foreach ($terms as $term) {
                 $frequency = $document->terms[$term] ?? 0;
                 if (0 === $frequency) {
                     continue;
                 }
+                ++$matched;
                 $score += $inverseFrequencies[$term] * ($frequency * (self::K1 + 1))
                     / ($frequency + self::K1 * (1 - self::B + self::B * $document->length / $averageLength));
             }
-            if ($score >= self::MIN_SCORE) {
+            if ($matched >= self::MINIMUM_MATCHED_TERMS && $score >= self::MIN_SCORE) {
                 $scored[] = ['article' => $document->article, 'score' => round($score, 4)];
             }
         }
