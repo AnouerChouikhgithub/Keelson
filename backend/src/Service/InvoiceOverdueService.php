@@ -6,6 +6,8 @@ namespace App\Service;
 
 use App\Entity\Invoice;
 use App\Entity\InvoiceAuditEvent;
+use App\Entity\Organization;
+use App\Tenancy\TenantContext;
 use Doctrine\DBAL\LockMode;
 use Doctrine\ORM\EntityManagerInterface;
 
@@ -30,6 +32,10 @@ use Doctrine\ORM\EntityManagerInterface;
  * Rows are locked FOR UPDATE in id order, so a concurrent payment either commits
  * first (and is skipped) or waits and observes the new status; neither overwrites
  * the other.
+ *
+ * Each organization is processed inside {@see TenantContext::run()}: row-level
+ * security only exposes that tenant's invoices while the transaction carries its
+ * id, so the same loop that scopes the work also satisfies the database.
  */
 final class InvoiceOverdueService
 {
@@ -37,7 +43,7 @@ final class InvoiceOverdueService
 
     public function __construct(
         private readonly EntityManagerInterface $entityManager,
-        private readonly TransactionBoundary $transactions,
+        private readonly TenantContext $tenants,
         private readonly NotificationService $notifications,
     ) {
     }
@@ -48,11 +54,11 @@ final class InvoiceOverdueService
         $today ??= new \DateTimeImmutable('today');
 
         $transitioned = 0;
-        foreach ($this->organizationIds($today) as $organizationId) {
+        foreach ($this->organizationIds() as $organizationId) {
             // Re-select until a batch comes back empty: the previous batch changed
             // the status of exactly the rows it handled, so the set shrinks.
             do {
-                $handled = $this->transactions->run(function () use ($organizationId, $today): int {
+                $handled = $this->tenants->run($organizationId, function () use ($organizationId, $today): int {
                     $query = $this->entityManager->createQueryBuilder()
                         ->select('invoice')
                         ->from(Invoice::class, 'invoice')
@@ -99,16 +105,24 @@ final class InvoiceOverdueService
         return $transitioned;
     }
 
-    /** @return list<string> */
-    private function organizationIds(\DateTimeImmutable $today): array
+    /**
+     * Every active organization, not every organization with an overdue invoice.
+     *
+     * The cheaper query would be a DISTINCT over `invoices`, but an unscoped read
+     * of that table returns nothing under row-level security: the tenant has to be
+     * known before its rows can be selected. Organizations are not tenant-scoped,
+     * so they are the correct starting point; each one is then checked for work and
+     * most answer with zero rows and one short transaction.
+     *
+     * @return list<string>
+     */
+    private function organizationIds(): array
     {
         $ids = $this->entityManager->createQueryBuilder()
-            ->select('DISTINCT IDENTITY(invoice.organization)')
-            ->from(Invoice::class, 'invoice')
-            ->andWhere('invoice.status = :sent')
-            ->andWhere('invoice.dueDate < :today')
-            ->setParameter('sent', 'sent')
-            ->setParameter('today', $today)
+            ->select('organization.id')
+            ->from(Organization::class, 'organization')
+            ->andWhere('organization.status = :active')
+            ->setParameter('active', 'active')
             ->getQuery()
             ->getSingleColumnResult();
 

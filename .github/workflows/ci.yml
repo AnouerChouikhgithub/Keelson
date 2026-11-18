@@ -25,6 +25,30 @@ env:
   PNPM_VERSION: '12.14.0'
 
 jobs:
+  # A path that .gitignore matches and that is committed anyway is invisible to
+  # `git status` and easy to keep updating by accident (audit screenshots, a
+  # working report, a machine-local env file). The tree must stay in agreement with
+  # its own ignore rules; the one intentional exception is `backend/.env`, which is
+  # un-ignored explicitly in .gitignore.
+  hygiene:
+    name: Repository hygiene (no tracked-but-ignored paths)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Fail when a git-ignored path is tracked
+        run: |
+          tracked="$(git ls-files -ci --exclude-standard)"
+          if [ -n "$tracked" ]; then
+            echo '::error::These paths are tracked although .gitignore matches them:'
+            printf '%s\n' "$tracked" | sed 's/^/  /'
+            echo 'Either untrack them (git rm --cached) or un-ignore them explicitly.'
+            exit 1
+          fi
+          echo 'No tracked-but-ignored paths.'
+
   frontend:
     name: Frontend (types, lint, tests, build, bundle budget)
     runs-on: ubuntu-latest

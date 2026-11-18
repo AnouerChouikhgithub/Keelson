@@ -227,9 +227,35 @@ Register-ScheduledTask -TaskName "Keelson mark overdue" -Action $a -Trigger $t `
 | Endpoint | Meaning |
 | --- | --- |
 | `GET /healthz` | the kernel booted; no dependencies touched. Used by the container healthcheck |
-| `GET /readyz` | the database answers; returns `503` when it does not. Point your load balancer here |
+| `GET /readyz` | the database answers **and** the connecting role is subject to row-level security; returns `503` when either fails. Point your load balancer here |
 
-Both are public and exempt from CSRF (they are `GET`). They return JSON.
+Both are public and exempt from CSRF (they are `GET`). They return JSON:
+
+```json
+{"status":"ready","checks":{"database":"ok","rowLevelSecurity":"ok"}}
+```
+
+`rowLevelSecurity` is `ok` only for a role that is neither a superuser nor
+`BYPASSRLS`. Either attribute silently exempts a role from every policy, which would
+leave the deployment protected by nothing but the application filters — so it is a
+`503`, not a warning. The bundled **development** Compose database connects as the
+bootstrap superuser and therefore reports `bypass`; that is expected locally and is
+why production must use the `keelson_owner`/`keelson_app` split above.
+
+### Row-level security and the application role
+
+Migrations enable **and force** row-level security on `customers`, `invoices`,
+`invitations` and `notifications`, and `FORCE` applies the policies to the table owner
+too. The API's role therefore only needs `SELECT, INSERT, UPDATE, DELETE` on rows —
+the grants `docker/postgres/10-app-role.sh` sets up — and must not own the tables or
+have `BYPASSRLS`. Every authenticated request runs in one transaction opened by
+`App\EventListener\TenantIsolationListener`, which is where `app.organization_id`
+lives; a long request holds its connection for its whole duration.
+
+Scheduled work runs as the same role and needs nothing extra: `app:invoices:mark-overdue`
+sets the tenant per organization through `TenantContext::run()`. A hand-written
+`UPDATE` or `DELETE` in a runbook must do the same, or it will silently match zero
+rows.
 
 ## 9. What is not covered
 

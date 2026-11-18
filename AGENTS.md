@@ -30,11 +30,17 @@ audit trail and — the demo product on top — invoicing. Version 1.0.0.
   `frontend/Dockerfile` (nginx serving the build and forwarding `/api` over
   FastCGI), `docker-compose.prod.example.yml`, `docker/postgres/10-app-role.sh`.
 
-Tenant isolation is application-layer only: repositories and controllers require an
-active membership for the route organization, and a client-supplied organization ID
-is a selector, never authority. PostgreSQL row-level security and Stripe webhooks
-are **not implemented** — see `docs/adr/0003-postgresql-row-level-security.md`. Do
-not assume either exists without inspecting schema, queries and code.
+Tenant isolation has two layers. PostgreSQL row-level security is enabled and
+**forced** on `customers`, `invoices`, `invitations` and `notifications`, keyed on a
+transaction-local `app.organization_id` that `App\Tenancy\TenantContext` sets (the
+request listener opens the transaction; console commands and fixtures call
+`TenantContext::run()`). On top of it, repositories and controllers require an active
+membership for the route organization, and a client-supplied organization ID is a
+selector, never authority. The application role must not own the tables or hold
+`BYPASSRLS` — `/readyz` fails when it does. See
+`docs/adr/0003-postgresql-row-level-security.md` for the two deliberate exceptions
+(notifications are per recipient; identity tables stay application-layer) and for the
+cost of a transaction per request. Stripe webhooks are **not implemented**.
 
 ## Brand
 
@@ -185,9 +191,10 @@ built at runtime belongs in its allowlist with a reason.
 
 - Read `README.md`, `docs/ROADMAP.md`, `CONTRIBUTING.md` and `backend/README.md`
   before planning multi-file or delegated work.
-- Treat PostgreSQL RLS, Stripe billing/webhooks, usage enforcement and email-change
-  as unimplemented until current source and tests prove them. Application-layer
-  scoping is not defense-in-depth on its own.
+- Row-level security covers the four tenant tables listed above and nothing else;
+  treat Stripe billing/webhooks, usage enforcement and email-change as unimplemented
+  until current source and tests prove them. Do not add a tenant table without a
+  policy in the same migration.
 - Tenant, auth, billing, webhook/idempotency, database migration and API contract
   changes require one integration owner and serialize by default. Agree contracts
   before assigning frontend/backend tasks.

@@ -41,7 +41,7 @@ missing operational tooling.
 | F7 | P1 | The signup journey matched two elements in strict mode (`Add customer` in the header and in the empty state; the customer name in the row and in the toast), failing on timing. | Locators made unambiguous with a comment on why. Commits `22b13cf`, `9fee60e`. |
 | — | P2 | No executable backup or restore procedure existed; the runbook described one in prose. | `backend/bin/db-backup.sh` and `db-restore.sh`: compressed custom-format dump, archive verification, SHA-256, retention, an in-place restore guard, `--single-transaction --exit-on-error`. Commit `e2a5eaa`. |
 | — | P2 | `pnpm audit` failed on a high-severity advisory with no published fix, which would have kept the audit job permanently red. | The single GHSA (`GHSA-fc5q-39xc-vjpf`, `picomatch`, dev-only) is listed in `frontend/pnpm-workspace.yaml`; the audit prints `1 ignored: 1 high` and every other advisory still fails the job. Commit `47bebe8`. |
-| — | P2 | `.pr-screenshots/` was untracked and unignored. | Added to `.gitignore`. |
+| — | P2 | `.pr-screenshots/` was listed in `.gitignore` but four PNGs had been committed anyway, so the release tree carried 116 kB of audit screenshots that the ignore rule said were never part of it. | The directory is removed from the index (`git rm --cached`) and stays ignored; the images remain in history, which was not rewritten. `AUDIT-REPORT.md` was untracked the same way, and a CI gate now fails on any tracked-but-ignored path. |
 
 ## Regression tests added
 
