@@ -35,9 +35,15 @@ it means for whoever deploys Keelson.
 - **No multi-factor authentication**, no social login and no enterprise SSO.
 - **No email-change flow.** An address is fixed at registration; only the display
   name and password can change.
-- **No session-management screen.** A password change invalidates other sessions
-  through the stored hash, but there is no "signed-in devices" list and no "sign
-  out everywhere" button.
+- **No session-management screen.** Changing or resetting the password ends the
+  account's other sessions — each records `principals.session_version` at login and
+  the request listener ends whatever disagrees — but there is no "signed-in devices"
+  list and no "sign out everywhere" button.
+- **Session revocation starts now.** A session opened before `session_version`
+  existed carries no recorded value and adopts the current one on its first request,
+  so an earlier reset cannot end it retroactively. The same applies to a session a
+  test client plants directly (`loginUser()`), which never passes through the login
+  handler that stamps the version.
 - **Rate limits are per process and per minute** (sign-in by address and by client
   address). They use Symfony's rate limiter with the configured cache; a
   multi-instance deployment shares them only if that cache is shared.
