@@ -57,7 +57,6 @@ final class AiGateway
     ) {
     }
 
-    // @phpstan-ignore shipmonk.deadMethod (entry point: features built on this foundation call it)
     public function complete(Principal $principal, string $organizationId, AiRequest $request): AiResponse
     {
         if (null === $this->memberships->findForOrganizationAndPrincipal($organizationId, $principal->getId())) {
