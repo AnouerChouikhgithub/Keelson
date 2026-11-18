@@ -14,6 +14,7 @@ use App\Repository\InvitationRepository;
 use App\Repository\MembershipRepository;
 use App\Repository\PrincipalRepository;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
+use Doctrine\DBAL\LockMode;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\Mailer\MailerInterface;
 use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
@@ -25,6 +26,12 @@ use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
  * stored: the row keeps `hash('sha256', $token)`. Acceptance is the only place
  * an invitation creates a membership, and it runs in one transaction so a
  * half-accepted invitation cannot exist.
+ *
+ * Two people can open the same link at the same moment, so acceptance is decided
+ * by the database: the invitation row is taken with a write lock, which serialises
+ * the attempts, and a unique-constraint violation (an account or a membership
+ * somebody else just created) is answered as the same conflict rather than as a
+ * server error.
  */
 final class InvitationService
 {
@@ -94,6 +101,12 @@ final class InvitationService
      * - new account: the password is required here, and the address is marked
      *   verified because receiving the link proves control of the mailbox.
      *
+     * Acceptance is idempotent by refusal, not by repetition: a second acceptance
+     * of the same link is a `409 invitation_unavailable`, including when it was a
+     * concurrent request that lost the race on the row lock or on a unique index.
+     * The link is not consumed by a failed attempt, so the caller can retry once
+     * the invitation is genuinely still pending.
+     *
      * @return array{organization: Organization, membership: Membership, principal: Principal, created: bool}
      */
     public function accept(string $plaintextToken, ?Principal $caller, ?string $password, ?string $displayName): array
@@ -103,45 +116,61 @@ final class InvitationService
             throw ApiException::invalidToken();
         }
 
-        return $this->transactions->run(function () use ($invitation, $caller, $password, $displayName): array {
-            $organization = $invitation->getOrganization();
-            $existing = $this->principals->findOneByEmail($invitation->getEmail());
-            $created = false;
-
-            if (null !== $existing) {
-                if (null === $caller || $caller->getId() !== $existing->getId()) {
-                    throw ApiException::signInRequired();
+        try {
+            return $this->transactions->run(function () use ($invitation, $caller, $password, $displayName): array {
+                // The lookup above is a pre-check: two requests carrying the same
+                // link can both see a usable row. The write lock makes the second
+                // wait, then read the committed status below instead of creating
+                // a second account and a second membership.
+                $this->entityManager->refresh($invitation, LockMode::PESSIMISTIC_WRITE);
+                if (!$invitation->isUsable()) {
+                    throw ApiException::conflict('This invitation can no longer be accepted.', 'invitation_unavailable');
                 }
-                $principal = $existing;
-                if (null !== $this->memberships->findOneBy(['organization' => $organization, 'principal' => $principal])) {
-                    throw ApiException::conflictAlreadyMember();
-                }
-            } else {
-                if (null === $password || '' === $password) {
-                    throw ApiException::validationFailed('The request contains invalid fields.', ['password' => ['Choose a password to create your account.']]);
-                }
-                $principal = new Principal($invitation->getEmail(), $displayName);
-                $principal->setPasswordHash($this->passwordHasher->hashPassword($principal, $password));
-                // The token arrived by email, which is what verification means here.
-                $principal->markEmailVerified();
-                $this->entityManager->persist($principal);
-                $created = true;
-            }
 
-            $membership = new Membership($organization, $principal, $invitation->getRole());
-            $this->entityManager->persist($membership);
-            $invitation->accept();
-            $this->notifications->memberJoined($organization, $principal, true);
-            $this->notifications->invitationAccepted($organization, $principal, $invitation->getInvitedBy());
-            $this->entityManager->flush();
-            $this->events->record(SecurityEvent::INVITATION_ACCEPTED, $principal, [
-                'organizationId' => $organization->getId(),
-                'role' => $invitation->getRole(),
-                'accountCreated' => $created,
-            ]);
+                $organization = $invitation->getOrganization();
+                $existing = $this->principals->findOneByEmail($invitation->getEmail());
+                $created = false;
 
-            return ['organization' => $organization, 'membership' => $membership, 'principal' => $principal, 'created' => $created];
-        });
+                if (null !== $existing) {
+                    if (null === $caller || $caller->getId() !== $existing->getId()) {
+                        throw ApiException::signInRequired();
+                    }
+                    $principal = $existing;
+                    if (null !== $this->memberships->findOneBy(['organization' => $organization, 'principal' => $principal])) {
+                        throw ApiException::conflictAlreadyMember();
+                    }
+                } else {
+                    if (null === $password || '' === $password) {
+                        throw ApiException::validationFailed('The request contains invalid fields.', ['password' => ['Choose a password to create your account.']]);
+                    }
+                    $principal = new Principal($invitation->getEmail(), $displayName);
+                    $principal->setPasswordHash($this->passwordHasher->hashPassword($principal, $password));
+                    // The token arrived by email, which is what verification means here.
+                    $principal->markEmailVerified();
+                    $this->entityManager->persist($principal);
+                    $created = true;
+                }
+
+                $membership = new Membership($organization, $principal, $invitation->getRole());
+                $this->entityManager->persist($membership);
+                $invitation->accept();
+                $this->notifications->memberJoined($organization, $principal, true);
+                $this->notifications->invitationAccepted($organization, $principal, $invitation->getInvitedBy());
+                $this->entityManager->flush();
+                $this->events->record(SecurityEvent::INVITATION_ACCEPTED, $principal, [
+                    'organizationId' => $organization->getId(),
+                    'role' => $invitation->getRole(),
+                    'accountCreated' => $created,
+                ]);
+
+                return ['organization' => $organization, 'membership' => $membership, 'principal' => $principal, 'created' => $created];
+            });
+        } catch (UniqueConstraintViolationException) {
+            // A concurrent acceptance won the account or membership unique index.
+            // The transaction is rolled back here, so the link is not half-spent
+            // and the caller gets the domain conflict instead of a 500.
+            throw ApiException::conflict('This invitation can no longer be accepted.', 'invitation_unavailable');
+        }
     }
 
     /**

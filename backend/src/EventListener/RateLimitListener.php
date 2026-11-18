@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\EventListener;
 
 use App\Exception\ApiException;
+use App\Security\AuthAttemptLimiter;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 use Symfony\Component\HttpFoundation\Request;
@@ -18,9 +19,14 @@ use Symfony\Component\Security\Core\Authentication\Token\Storage\TokenStorageInt
  *
  * Each bucket is keyed by what an attacker would have to vary: the client
  * address for anonymous routes, the authenticated principal for change-password
- * (a shared office address must not lock out colleagues). The login and resend
- * budgets live in {@see AuthThrottleListener}, which runs before the firewall
- * and must not know whether the account exists; these run after it.
+ * (a shared office address must not lock out colleagues). Where an address is
+ * part of the key, it is {@see AuthAttemptLimiter::emailKey()} — the normalized
+ * address the account lookup uses — so spelling it differently never buys a
+ * second budget.
+ *
+ * The login and resend budgets live in {@see AuthThrottleListener}, which runs
+ * before the firewall and must not know whether the account exists; these run
+ * after it.
  *
  * The refusal is the same envelope as every other error, with a Retry-After the
  * client can honour.
@@ -74,8 +80,9 @@ final class RateLimitListener implements EventSubscriberInterface
     private function consumeForgot(Request $request, string $client): void
     {
         $email = $this->email($request);
-        if (null !== $email) {
-            $this->consume($this->forgotByEmail->create(strtolower($email))->consume(1));
+        $key = null === $email ? null : AuthAttemptLimiter::emailKey($email);
+        if (null !== $key) {
+            $this->consume($this->forgotByEmail->create($key)->consume(1));
         }
         $this->consume($this->forgotByClient->create($client)->consume(1));
     }
