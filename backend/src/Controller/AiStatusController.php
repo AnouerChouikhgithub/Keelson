@@ -9,6 +9,7 @@ use App\Entity\Membership;
 use App\Exception\ApiException;
 use App\Repository\MembershipRepository;
 use App\Repository\OrganizationAiSettingsRepository;
+use App\Tenancy\TenantContext;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -32,6 +33,7 @@ final class AiStatusController extends AbstractController
         private readonly AiFeatureFlags $flags,
         private readonly MembershipRepository $memberships,
         private readonly OrganizationAiSettingsRepository $settings,
+        private readonly TenantContext $tenants,
     ) {
     }
 
@@ -51,7 +53,14 @@ final class AiStatusController extends AbstractController
             $organizationId = [] === $memberships ? '' : $memberships[0]->getOrganization()->getId();
         }
 
-        $settings = '' === $organizationId ? null : $this->settings->findForOrganization($organizationId);
+        // The settings row is a tenant table under row-level security, and this route
+        // has no `{organizationId}` attribute for the request listener to scope, so the
+        // read sets the tenant itself. It is a read: TenantContext::run() opens (and
+        // closes) the transaction the setting needs.
+        $settings = '' === $organizationId ? null : $this->tenants->run(
+            $organizationId,
+            fn () => $this->settings->findForOrganization($organizationId),
+        );
         $period = (new \DateTimeImmutable())->format('Y-m');
 
         return $this->json([
