@@ -27,7 +27,6 @@ final class PromptBuilder
     /**
      * @param array<string, string|int|float|bool|null> $fields
      */
-    // @phpstan-ignore shipmonk.deadMethod (entry point for the feature tracks that build prompts)
     public function build(string $instruction, array $fields, int $fieldLimit = self::DEFAULT_FIELD_LIMIT): string
     {
         if ($fieldLimit < 1 || $fieldLimit > 20000) {
