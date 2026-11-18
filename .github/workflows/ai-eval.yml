@@ -1,0 +1,141 @@
+name: AI evaluation (real provider)
+
+# Manual only, on purpose.
+#
+# There is no `pull_request` trigger, so a fork cannot cause this workflow to run and
+# cannot attempt to read the repository secret: a fork's pull request simply has no event
+# that matches. The `if` guard below repeats the restriction so that adding a trigger
+# later cannot quietly turn a pull request into a credential holder.
+#
+# What it runs is the same `ai-eval` suite CI runs with the deterministic fake provider,
+# except the gateway is pointed at the real provider configured through the secret. That
+# is what makes the numbers comparable: identical questions, identical fixtures,
+# identical assertions; only the answer text changes.
+#
+# The workflow prints a pass-rate table (backend/bin/ai-eval-table.php). It never prints
+# a prompt or an answer: the table is built from JUnit test-case names, which carry a
+# question id, and the eval fixtures are synthetic. Nothing in this job reads tenant data.
+
+on:
+  workflow_dispatch:
+    inputs:
+      model:
+        description: 'Model identifier (for example gpt-4o-mini). Empty uses AI_MODEL from the environment.'
+        required: false
+        default: ''
+      base_url:
+        description: 'OpenAI-compatible base URL. Empty uses the documented default.'
+        required: false
+        default: 'https://api.openai.com/v1'
+      minimum_pass_rate:
+        description: 'Fail below this percentage for any set.'
+        required: false
+        default: '90'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ai-eval-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  PHP_VERSION: '8.5'
+
+jobs:
+  real-provider:
+    name: Real provider evaluation (manual)
+    # Belt and braces: dispatch only, and never from a pull request event.
+    if: github.event_name == 'workflow_dispatch' && github.event.pull_request == null
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: keelson_owner
+          POSTGRES_PASSWORD: keelson_owner
+          POSTGRES_DB: keelson
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U keelson_owner -d keelson"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      APP_ENV: test
+      APP_SECRET: ci-only-not-a-secret
+      MAILER_DSN: 'null://null'
+      FRONTEND_URL: http://localhost:5173
+      REQUIRE_VERIFIED_EMAIL: 'true'
+      DATABASE_OWNER_URL: postgresql://keelson_owner:keelson_owner@127.0.0.1:5432/keelson?serverVersion=16&charset=utf8
+      DATABASE_URL: postgresql://keelson_owner:keelson_owner@127.0.0.1:5432/keelson?serverVersion=16&charset=utf8
+      # The real provider, through the same gateway the product uses.
+      AI_ENABLED: 'true'
+      AI_PROVIDER: 'openai'
+      AI_MODEL: ${{ github.event.inputs.model != '' && github.event.inputs.model || 'gpt-4o-mini' }}
+      AI_BASE_URL: ${{ github.event.inputs.base_url != '' && github.event.inputs.base_url || 'https://api.openai.com/v1' }}
+      # A secret is a credential, not a log line: it is referenced here and never echoed.
+      AI_API_KEY: ${{ secrets.AI_API_KEY }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2.35.0
+        with:
+          php-version: ${{ env.PHP_VERSION }}
+          extensions: pdo_pgsql, sodium, intl, ctype, iconv
+          coverage: none
+          tools: composer:v2
+      - name: Fail early when no credential is configured
+        run: |
+          if [ -z "${AI_API_KEY}" ]; then
+            echo '::error::AI_API_KEY is not set. Add it under Settings → Secrets → Actions.'
+            exit 1
+          fi
+          echo 'A provider credential is present.'
+      - name: Install PHP dependencies
+        run: composer install --no-interaction --prefer-dist --no-progress
+      - name: Create the test database
+        env:
+          PGPASSWORD: keelson_owner
+        run: |
+          psql -h 127.0.0.1 -U keelson_owner -d keelson -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE DATABASE keelson_test OWNER keelson_owner;
+          SQL
+      - name: Migrate
+        run: php bin/console doctrine:migrations:migrate --env=test --no-interaction
+      # The suite is the same one CI runs; `--group ai-eval` selects the 130 guide
+      # questions, the off-topic set and the summary fixtures. `--no-output` keeps
+      # assertion diffs (which can print an answer) out of the log; the table below is
+      # the report.
+      - name: Run the eval with the real provider
+        run: |
+          set +e
+          php bin/phpunit --group ai-eval --log-junit var/ai-eval/junit.xml --no-output
+          status=$?
+          set -e
+          echo "PHPUnit exit status: ${status}"
+          # A failing assertion must still fail the job, but only after the table is
+          # printed, so an operator sees the pass rate that caused it.
+          echo "PHPUNIT_STATUS=${status}" >> "$GITHUB_ENV"
+      - name: Print the pass-rate table
+        run: |
+          php bin/ai-eval-table.php var/ai-eval/junit.xml --minimum=${{ github.event.inputs.minimum_pass_rate }}
+          table_status=$?
+          if [ "${PHPUNIT_STATUS}" -ne 0 ]; then
+            echo '::error::The evaluation suite failed; the table above shows which sets were affected.'
+            exit 1
+          fi
+          exit "${table_status}"
+      - name: Upload the JUnit report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ai-eval-junit
+          path: backend/var/ai-eval/junit.xml
+          if-no-files-found: ignore

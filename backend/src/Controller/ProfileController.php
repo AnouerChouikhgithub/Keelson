@@ -10,6 +10,7 @@ use App\Http\InputHydrator;
 use App\Http\JsonBody;
 use App\Input\ChangePasswordInput;
 use App\Input\UpdateProfileInput;
+use App\Security\SessionVersion;
 use App\Service\SecurityEventRecorder;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
@@ -23,10 +24,11 @@ use Symfony\Component\Security\Core\Authentication\Token\Storage\TokenStorageInt
 /**
  * The signed-in person's own account.
  *
- * A password change signs every other session out: Symfony compares the password
- * hash stored in each session's token with the current one on the next request.
- * This session is kept by rewriting its token with the new hash — otherwise the
- * person who just changed their password would be signed out by their own action.
+ * A password change signs every other session out: each session records the
+ * account's `session_version` at login, the change increments it, and the request
+ * listener ends whatever disagrees (see {@see App\Security\SessionVersion}). This
+ * session is kept by recording the new version — otherwise the person who just
+ * changed their password would be signed out by their own action.
  */
 final class ProfileController extends AbstractController
 {
@@ -66,13 +68,18 @@ final class ProfileController extends AbstractController
         }
 
         $principal->setPasswordHash($this->passwordHasher->hashPassword($principal, $input->newPassword));
+        $principal->invalidateSessions();
         $this->entityManager->flush();
         $this->events->record(SecurityEvent::PASSWORD_CHANGED, $principal);
 
-        // Keep this session, invalidate the others (their serialized token still
-        // carries the previous hash).
+        // Keep this session, invalidate the others: they recorded the previous
+        // version and are signed out on their next request, while this one adopts
+        // the new version now.
         $token = $this->tokenStorage->getToken();
         $token?->setUser($principal);
+        if ($request->hasSession()) {
+            SessionVersion::stamp($request->getSession(), $principal);
+        }
 
         return new Response(null, Response::HTTP_NO_CONTENT);
     }

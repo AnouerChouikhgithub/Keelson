@@ -325,6 +325,7 @@ final class SyntheticFixtureLoaderTest extends KernelTestCase
             new FixtureTargetGuard(),
             self::getContainer()->get(UserPasswordHasherInterface::class),
             self::getContainer()->get(\App\Service\InvoiceAuditLogger::class),
+            self::getContainer()->get(\App\Tenancy\TenantContext::class),
             'test',
             'short',
         );

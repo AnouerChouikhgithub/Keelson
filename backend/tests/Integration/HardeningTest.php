@@ -149,8 +149,9 @@ final class HardeningTest extends WebTestCase
     /**
      * The per-address budget must be the account's budget: capitalizing the
      * address is the cheapest way to mint a fresh bucket out of one account.
-     * (A padded address is a `422` from the validator, so case is what an
-     * accepted request can vary.)
+     *
+     * A padded address is a `422` from the validator, so what an accepted
+     * request can vary is the case.
      */
     public function testTheForgotPasswordBudgetSharesOneBucketAcrossAddressVariants(): void
     {

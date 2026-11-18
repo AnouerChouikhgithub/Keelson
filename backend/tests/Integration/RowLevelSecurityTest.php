@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace App\Tests\Integration;
 
+use App\Entity\AiRequestRecord;
 use App\Entity\Customer;
 use App\Entity\Membership;
 use App\Entity\Organization;
+use App\Entity\OrganizationAiSettings;
 use App\Entity\Principal;
 use App\Tenancy\TenantContext;
 use Doctrine\DBAL\DriverManager;
@@ -31,7 +33,7 @@ final class RowLevelSecurityTest extends KernelTestCase
 {
     private const PROBE_ROLE = 'keelson_rls_probe';
     private const PROBE_PASSWORD = 'keelson_rls_probe';
-    private const TENANT_TABLES = ['customers', 'invoices', 'invitations', 'notifications'];
+    private const TENANT_TABLES = ['customers', 'invoices', 'invitations', 'notifications', 'organization_ai_settings', 'ai_requests'];
 
     private EntityManagerInterface $entityManager;
     private \Doctrine\DBAL\Connection $probe;
@@ -88,7 +90,7 @@ final class RowLevelSecurityTest extends KernelTestCase
             // The seeding connection is a superuser here, which bypasses the
             // policies, so the cleanup needs no tenant context.
             $connection = $this->entityManager->getConnection();
-            foreach (['customers', 'invoices', 'invitations', 'notifications'] as $table) {
+            foreach (self::TENANT_TABLES as $table) {
                 $connection->executeStatement(
                     'DELETE FROM '.$table.' WHERE organization_id IN (?, ?)',
                     [$this->organizationA->getId(), $this->organizationB->getId()],
@@ -111,13 +113,12 @@ final class RowLevelSecurityTest extends KernelTestCase
 
     public function testThePoliciesAreEnabledAndForcedOnEveryTenantTable(): void
     {
-        $rows = $this->entityManager->getConnection()->fetchAllAssociative(
-            "SELECT c.relname, c.relrowsecurity, c.relforcerowsecurity
-               FROM pg_class c
-               JOIN pg_namespace n ON n.oid = c.relnamespace
-              WHERE n.nspname = 'public' AND c.relname IN (?, ?, ?, ?)",
-            self::TENANT_TABLES,
-        );
+        $placeholders = implode(', ', array_fill(0, count(self::TENANT_TABLES), '?'));
+        $sql = "SELECT c.relname, c.relrowsecurity, c.relforcerowsecurity
+                  FROM pg_class c
+                  JOIN pg_namespace n ON n.oid = c.relnamespace
+                 WHERE n.nspname = 'public' AND c.relname IN ($placeholders)";
+        $rows = $this->entityManager->getConnection()->fetchAllAssociative($sql, self::TENANT_TABLES);
 
         self::assertCount(count(self::TENANT_TABLES), $rows, 'every tenant table exists and is covered');
         foreach ($rows as $row) {
@@ -187,6 +188,65 @@ final class RowLevelSecurityTest extends KernelTestCase
         self::assertIsArray($role);
         self::assertSame(0, (int) $role['is_superuser'], 'the probe role must not be a superuser');
         self::assertSame(0, (int) $role['bypass_rls'], 'the probe role must not have BYPASSRLS');
+    }
+
+    /**
+     * The AI tables carry tenant rows, so they carry the same policy.
+     *
+     * They were created without one, which left them protected by the application layer
+     * alone; Version20261201130000 closes that. This asserts the behaviour the policy is
+     * for: unset scope reads nothing, the owning tenant sees its own row and not the
+     * other's, and a foreign row cannot be written even with a tenant-scoped connection.
+     */
+    public function testTheAiTablesAreScopedByTheSamePolicy(): void
+    {
+        $settings = new OrganizationAiSettings($this->organizationA, true, 1000);
+        $this->entityManager->persist($settings);
+        $this->entityManager->persist(new AiRequestRecord(
+            $this->organizationA->getId(),
+            $this->principal->getId(),
+            'guide',
+            AiRequestRecord::STATUS_SUCCEEDED,
+            'fake-model',
+            10,
+            5,
+            15,
+            120,
+            null,
+        ));
+        $this->entityManager->flush();
+
+        $this->probe->beginTransaction();
+        try {
+            self::assertSame(0, (int) $this->probe->fetchOne('SELECT COUNT(*) FROM ai_requests'), 'No scope, no rows.');
+            self::assertSame(0, (int) $this->probe->fetchOne('SELECT COUNT(*) FROM organization_ai_settings'));
+        } finally {
+            $this->probe->rollBack();
+        }
+
+        self::assertSame(1, (int) $this->scoped(
+            $this->organizationA->getId(),
+            fn (): int|string => (int) $this->probe->fetchOne('SELECT COUNT(*) FROM ai_requests'),
+        ));
+        self::assertSame(0, (int) $this->scoped(
+            $this->organizationB->getId(),
+            fn (): int|string => (int) $this->probe->fetchOne('SELECT COUNT(*) FROM ai_requests'),
+        ));
+
+        $this->probe->beginTransaction();
+        try {
+            $this->probe->executeStatement('SELECT set_config(?, ?, true)', [TenantContext::ORGANIZATION_SETTING, $this->organizationA->getId()]);
+            $this->expectException(DbalException::class);
+            $this->probe->executeStatement(
+                'INSERT INTO ai_requests (id, organization_id, principal_id, feature, status, model, prompt_tokens, completion_tokens, total_tokens, latency_ms, error_code, created_at)'
+                ." VALUES (?, ?, NULL, 'guide', 'succeeded', 'fake-model', 1, 1, 2, 5, NULL, now())",
+                [$this->uuid(), $this->organizationB->getId()],
+            );
+        } finally {
+            if ($this->probe->isTransactionActive()) {
+                $this->probe->rollBack();
+            }
+        }
     }
 
     /**

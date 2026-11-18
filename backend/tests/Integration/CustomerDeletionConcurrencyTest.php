@@ -139,7 +139,14 @@ final class CustomerDeletionConcurrencyTest extends WebTestCase
                 sprintf('Expected a lock-wait timeout, got %s: %s', $exception::class, $exception->getMessage()),
             );
         } finally {
-            $this->entityManager->getConnection()->executeStatement('SET lock_timeout = DEFAULT');
+            // `catchExceptions(false)` skips the kernel's exception listeners, so
+            // the failed request left its transaction open and aborted. Clear it
+            // before this connection answers anything else.
+            $main = $this->entityManager->getConnection();
+            if ($main->isTransactionActive()) {
+                $main->rollBack();
+            }
+            $main->executeStatement('SET lock_timeout = DEFAULT');
             $other->rollBack();
             $customerId = $this->customerId;
             self::assertSame(1, (int) $other->fetchOne('SELECT COUNT(*) FROM customers WHERE id = ?', [$customerId]));

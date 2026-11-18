@@ -41,6 +41,11 @@ final class JsonLoginSuccessHandler implements AuthenticationSuccessHandlerInter
             // Knowing the right password clears this address' failed attempts so
             // a legitimate user who mistyped is not locked out afterwards.
             $this->attempts->resetFor($user);
+            // Remember which password this session was opened with, so a later
+            // reset or password change can end it (see SessionVersion).
+            if ($request->hasSession()) {
+                SessionVersion::stamp($request->getSession(), $user);
+            }
         }
 
         return new JsonResponse(

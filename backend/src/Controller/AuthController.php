@@ -175,11 +175,15 @@ final class AuthController
             $principal->setPasswordHash($this->passwordHasher->hashPassword($principal, $input->password));
             // Receiving the link is proof the address is reachable.
             $principal->markEmailVerified();
+            // A reset exists to recover a lost password, so every session opened
+            // with the old one ends: each recorded a version that no longer
+            // matches (see App\Security\SessionVersion).
+            $principal->invalidateSessions();
         });
 
-        // The stored session token carries the previous hash; Symfony's
-        // ContextListener compares it on the next request and signs other
-        // sessions out without any extra code here.
+        // Sessions opened before this reset recorded the previous version, and the
+        // request listener signs each of them out on its next request — including
+        // the one that submitted the link. See App\Security\SessionVersion.
         return new Response(null, Response::HTTP_NO_CONTENT);
     }
 }

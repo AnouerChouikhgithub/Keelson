@@ -31,7 +31,8 @@ audit trail and — the demo product on top — invoicing. Version 1.0.0.
   FastCGI), `docker-compose.prod.example.yml`, `docker/postgres/10-app-role.sh`.
 
 Tenant isolation has two layers. PostgreSQL row-level security is enabled and
-**forced** on `customers`, `invoices`, `invitations` and `notifications`, keyed on a
+**forced** on `customers`, `invoices`, `invitations`, `notifications`,
+`organization_ai_settings` and `ai_requests`, keyed on a
 transaction-local `app.organization_id` that `App\Tenancy\TenantContext` sets (the
 request listener opens the transaction; console commands and fixtures call
 `TenantContext::run()`). On top of it, repositories and controllers require an active
@@ -191,7 +192,7 @@ built at runtime belongs in its allowlist with a reason.
 
 - Read `README.md`, `docs/ROADMAP.md`, `CONTRIBUTING.md` and `backend/README.md`
   before planning multi-file or delegated work.
-- Row-level security covers the four tenant tables listed above and nothing else;
+- Row-level security covers the six tenant tables listed above and nothing else;
   treat Stripe billing/webhooks, usage enforcement and email-change as unimplemented
   until current source and tests prove them. Do not add a tenant table without a
   policy in the same migration.

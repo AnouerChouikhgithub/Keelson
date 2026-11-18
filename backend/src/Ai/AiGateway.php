@@ -15,6 +15,7 @@ use App\Exception\ApiException;
 use App\Repository\MembershipRepository;
 use App\Repository\OrganizationAiSettingsRepository;
 use App\Service\TransactionBoundary;
+use App\Tenancy\TenantContext;
 use Doctrine\ORM\EntityManagerInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
@@ -49,6 +50,7 @@ final class AiGateway
         private readonly EntityManagerInterface $entityManager,
         private readonly TransactionBoundary $transactions,
         private readonly OutputSanitizer $sanitizer,
+        private readonly TenantContext $tenants,
         #[Autowire(service: 'limiter.ai_principal')]
         private readonly RateLimiterFactoryInterface $principalLimiter,
         #[Autowire(service: 'limiter.ai_organization')]
@@ -59,6 +61,16 @@ final class AiGateway
 
     public function complete(Principal $principal, string $organizationId, AiRequest $request): AiResponse
     {
+        // The request carries the tenant it was built for, and that must be the tenant
+        // this call is billed to: a mismatch would reserve one organization's budget and
+        // write the ledger row against another.
+        if ($request->organizationId !== $organizationId) {
+            throw new \InvalidArgumentException('An AI request must be billed to the organization it was built for.');
+        }
+        if (null !== $request->principalId && $request->principalId !== $principal->getId()) {
+            throw new \InvalidArgumentException('An AI request must carry the principal that asked for it.');
+        }
+
         if (null === $this->memberships->findForOrganizationAndPrincipal($organizationId, $principal->getId())) {
             throw ApiException::notFound();
         }
@@ -67,7 +79,10 @@ final class AiGateway
             throw AiDisabledException::create();
         }
 
-        $settings = $this->settings->findForOrganization($organizationId);
+        $settings = $this->inTenant(
+            $organizationId,
+            fn () => $this->settings->findForOrganization($organizationId),
+        );
         if (null === $settings || !$settings->isEnabled()) {
             throw AiDisabledException::create();
         }
@@ -77,7 +92,8 @@ final class AiGateway
 
         $period = (new \DateTimeImmutable())->format('Y-m');
         $estimate = $this->estimate($request);
-        $reserved = $this->transactions->run(
+        $reserved = $this->inTenant(
+            $organizationId,
             fn (): bool => $this->settings->reserveBudget($organizationId, $period, $estimate),
         );
         if (!$reserved) {
@@ -101,7 +117,7 @@ final class AiGateway
 
         $latencyMs = (int) round((microtime(true) - $started) * 1000);
         $total = $response->totalTokens();
-        $this->transactions->run(function () use ($organizationId, $period, $estimate, $total, $request, $response, $latencyMs): void {
+        $this->inTenant($organizationId, function () use ($organizationId, $period, $estimate, $total, $request, $response, $latencyMs): void {
             $this->settings->settleBudget($organizationId, $period, $estimate, $total);
             $this->entityManager->persist(new AiRequestRecord(
                 $organizationId,
@@ -138,7 +154,7 @@ final class AiGateway
         string $reason,
     ): void {
         $latencyMs = (int) round((microtime(true) - $started) * 1000);
-        $this->transactions->run(function () use ($organizationId, $period, $estimate, $request, $latencyMs, $reason): void {
+        $this->inTenant($organizationId, function () use ($organizationId, $period, $estimate, $request, $latencyMs, $reason): void {
             $this->settings->releaseBudget($organizationId, $period, $estimate);
             $this->entityManager->persist(new AiRequestRecord(
                 $organizationId,
@@ -171,6 +187,28 @@ final class AiGateway
         }
 
         throw AiRateLimitedException::create($limit->getRetryAfter()->getTimestamp() - time());
+    }
+
+    /**
+     * Runs one gateway step under the tenant's row-level-security context.
+     *
+     * `organization_ai_settings` and `ai_requests` are tenant tables, so PostgreSQL
+     * filters them by `app.organization_id`. A tenant route has the setting from
+     * TenantIsolationListener, but `POST /api/ai/guide` names its organization in the
+     * body and has no `{organizationId}` attribute, so the gateway activates the tenant
+     * itself. It has already proved the caller is an active member, which is the same
+     * condition the listener tests, and `set_config(..., true)` lasts only for the
+     * enclosing transaction.
+     *
+     * @param callable(): mixed $work
+     */
+    private function inTenant(string $organizationId, callable $work): mixed
+    {
+        return $this->transactions->run(function () use ($organizationId, $work): mixed {
+            $this->tenants->activate($organizationId);
+
+            return $work();
+        });
     }
 
     private function reason(\Throwable $exception): string
