@@ -182,8 +182,8 @@ final class AiSettingsApiTest extends WebTestCase
         $this->client->loginUser($this->principals['Member']);
 
         $this->send('POST', $this->summariesPath($this->organization));
-        self::assertResponseStatusCodeSame(501);
-        self::assertSame('not_implemented', $this->payload()['error']['code']);
+        self::assertResponseStatusCodeSame(403);
+        self::assertSame('ai_disabled', $this->payload()['error']['code']);
 
         $this->send('POST', $this->summariesPath($this->otherOrganization));
         self::assertResponseStatusCodeSame(404);
@@ -205,7 +205,7 @@ final class AiSettingsApiTest extends WebTestCase
 
     private function summariesPath(Organization $organization): string
     {
-        return '/api/organizations/'.$organization->getId().'/ai/summaries/invoices';
+        return '/api/organizations/'.$organization->getId().'/ai/summaries/overview';
     }
 
     /** @param array<string, mixed>|null $body */

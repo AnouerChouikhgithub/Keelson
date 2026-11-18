@@ -148,21 +148,60 @@ Errors: `400 invalid_id`, `401`, `402 ai_budget_exceeded`, `403 ai_disabled` or
 
 ## `POST /api/organizations/{organizationId}/ai/summaries/{kind}`
 
-**Stub — answers `501`.** `kind` is one of `organization`, `invoices`, `customers`.
-Any active member may ask; the tenant is resolved through the membership.
+Implemented. `kind` is one of `overview`, `receivables` or `activity`; any other value
+is `404`, like a foreign tenant. Any active member may ask — the tenant is resolved
+through the caller's membership, and the aggregates are the ones every role already
+sees on the dashboard, the invoice list and the customer list.
 
-Success response `200` (once implemented):
+Optional request body:
+
+```json
+{"locale": "fr"}
+```
+
+`locale` is `en`, `fr` or `ar` and only selects the language of the text; without it
+the `Accept-Language` header decides, then English. An unsupported value is `422`.
+
+Response `200`:
 
 ```json
 {
   "text": "Three invoices are overdue and one customer accounts for most of the balance.",
   "generatedAt": "2026-12-01T10:15:30+00:00",
-  "facts": {"overdueInvoices": 3, "outstandingTotal": "1240.00"}
+  "fallback": false,
+  "facts": {
+    "kind": "receivables",
+    "role": "Member",
+    "locale": "en",
+    "currency": "TND",
+    "openInvoiceCount": 6,
+    "overdueInvoiceCount": 3,
+    "dueSoonInvoiceCount": 1,
+    "outstandingMillimes": 1240000,
+    "overdueMillimes": 800000,
+    "dueSoonMillimes": 100000,
+    "asOf": "2026-12-01",
+    "oldestDueDate": "2026-11-21",
+    "customerNames": ["Acme SARL"]
+  }
 }
 ```
 
-`text` is sanitized plain text. `facts` holds aggregates the summary was built from, so
-the client can label them without parsing prose.
+- `text` is sanitized plain text: no HTML, markdown, links or images.
+- `fallback` is `true` when the deterministic template was used: the provider was
+  unavailable, returned nothing usable, or wrote a figure that `facts` cannot derive.
+  The response is still `200` — the caller asked for a summary and the facts are theirs.
+- `facts` is everything the text was allowed to say. Counts are integers, amounts are
+  integer **millimes** of the tenant's most used currency (`currency`), dates are ISO
+  calendar dates, and `customerNames` holds at most five display names.
+- The prompt contains only `kind`, `role`, `locale`, `currency`, those numbers, those
+  dates and those display names. No email address, phone number, billing address,
+  invoice line, note, member identity or invoice number is ever sent to a provider.
+
+Failures: `400` (`invalid_id`), `401`, `402` (`ai_budget_exceeded`), `403`
+(`ai_disabled` or `csrf_invalid`), `404` (unknown kind or foreign tenant), `422`
+(unsupported locale), `429` (`ai_rate_limited`, with `Retry-After`). A provider outage
+is not a failure: it produces the template with `fallback: true`.
 
 ## Budget accounting
 
