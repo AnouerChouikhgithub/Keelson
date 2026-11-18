@@ -1521,47 +1521,76 @@ paths:
         required: true
         schema:
           type: string
-          enum: [organization, invoices, customers]
+          enum: [overview, receivables, activity]
     post:
       tags: [AI]
-      summary: Generate an organization summary (stub, 501).
+      summary: Summarize this organization's own data.
+      description: |
+        Reads the tenant's aggregates through the caller's active membership, asks the
+        provider for 2 to 4 plain sentences and returns the text with the facts behind
+        it. Every figure in the text must be derivable from `facts`; otherwise, or when
+        the provider is unavailable, the deterministic template is returned and
+        `fallback` is `true`. The model never queries the database: it receives only
+        counts, amounts in integer millimes, ISO dates, the role, the locale and at
+        most five customer display names.
       parameters:
         - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                locale:
+                  type: string
+                  enum: [en, fr, ar]
+                  description: Overrides `Accept-Language` for this summary.
       responses:
         '200':
-          description: Sanitized summary text and the aggregates behind it.
+          description: Sanitized summary text, the aggregates behind it, and whether the template was used.
           content:
             application/json:
               schema:
                 type: object
-                required: [text, generatedAt, facts]
+                required: [text, generatedAt, fallback, facts]
                 properties:
                   text:
                     type: string
                   generatedAt:
                     type: string
                     format: date-time
+                  fallback:
+                    type: boolean
                   facts:
                     type: object
                     additionalProperties: true
+        '400':
+          description: The organization id is not a UUID (`invalid_id`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '401':
           $ref: '#/components/responses/Unauthenticated'
+        '402':
+          description: The monthly token budget cannot fund this call (`ai_budget_exceeded`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
-          description: CSRF rejected, or AI is disabled (`ai_disabled`).
+          description: CSRF rejected, or AI is disabled globally or for this organization (`ai_disabled`).
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
         '404':
           $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
         '429':
           $ref: '#/components/responses/RateLimited'
-        '501':
-          description: The generator is not implemented yet (`not_implemented`).
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
   /healthz:
     get:
       tags: [Health]

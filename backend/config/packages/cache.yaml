@@ -15,5 +15,17 @@ framework:
         #app: cache.adapter.apcu
 
         # Namespaced pools use the above "app" backend by default
-        #pools:
-            #my.dedicated.cache: null
+        pools:
+            # Workspace summaries: one entry per tenant/role/kind/fact digest, 15
+            # minutes. A dedicated pool keeps those keys out of cache.app, and the
+            # array adapter in tests keeps a cached answer inside one process.
+            cache.ai_summary:
+                adapter: cache.adapter.filesystem
+                default_lifetime: 900
+
+when@test:
+    framework:
+        cache:
+            pools:
+                cache.ai_summary:
+                    adapter: cache.adapter.array
