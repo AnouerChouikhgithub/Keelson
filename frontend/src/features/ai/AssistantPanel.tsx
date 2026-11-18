@@ -19,8 +19,8 @@ import './ai.css'
  * polite live region, so a screen reader hears the new answer without the page
  * moving.
  */
-export function AssistantPanel({ onClose }: { onClose: () => void }) {
-  const { m } = useI18n()
+export function AssistantPanel({ organizationId, onClose }: { organizationId: string; onClose: () => void }) {
+  const { m, locale } = useI18n()
   const [question, setQuestion] = useState('')
   const [asked, setAsked] = useState<string | null>(null)
   const [answer, setAnswer] = useState<AiGuideAnswer | null>(null)
@@ -38,7 +38,7 @@ export function AssistantPanel({ onClose }: { onClose: () => void }) {
     setNotice(null)
     setAsked(trimmed)
     try {
-      const next = await askGuide(trimmed)
+      const next = await askGuide(trimmed, { organizationId, locale })
       setAnswer(next)
     } catch (caught) {
       if (isAbortError(caught)) return
@@ -78,13 +78,13 @@ export function AssistantPanel({ onClose }: { onClose: () => void }) {
               {answer.sources.length > 0 && (
                 <div className="ai-sources">
                   <p className="ai-sources-title">{m.ai.assistant.sources}</p>
-                  {/* `reference` is an internal identifier, never a URL, so these
+                  {/* `id` is an internal documentation id, never a URL, so these
                       are text and not links: inventing an href would invent a route. */}
                   <ul>
                     {answer.sources.map((source) => (
-                      <li key={source.reference}>
+                      <li key={source.id}>
                         <span>{source.title}</span>
-                        <code>{source.reference}</code>
+                        <code>{source.id}</code>
                       </li>
                     ))}
                   </ul>

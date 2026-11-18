@@ -3,16 +3,16 @@ import { Icon } from '../../components/Icon'
 import { useApiResource } from '../../api/useApiResource'
 import { useI18n } from '../../i18n/I18nContext'
 import { getOnboarding } from './api'
-import type { OnboardingStep } from './api'
 import './ai.css'
 
 /**
  * The getting-started card.
  *
- * Progress is counted from the steps themselves rather than from a total the
- * response might also carry, so the checklist and its counter cannot disagree.
- * A failed or empty read renders nothing: an onboarding hint is not worth an
- * error state on the dashboard.
+ * The server sends a closed set of step ids and computes the progress itself,
+ * so the counter below is `completed`/`total` from the response rather than a
+ * client-side recount — a step the UI cannot draw still counts. A failed or
+ * empty read renders nothing: an onboarding hint is not worth an error state on
+ * the dashboard.
  */
 export function OnboardingChecklist({ organizationId }: { organizationId: string }) {
   const { m } = useI18n()
@@ -20,11 +20,18 @@ export function OnboardingChecklist({ organizationId }: { organizationId: string
   const resource = useApiResource(`ai-onboarding:${organizationId}`, load)
 
   if (resource.state.status !== 'ready') return null
-  const steps = resource.state.data.steps
+  const { steps, completed, total } = resource.state.data
   if (steps.length === 0) return null
 
-  const done = steps.filter((step) => step.completed).length
-  const allDone = done === steps.length
+  // Read explicitly so the unused-key script can see every label.
+  const labels: Record<string, string> = {
+    invite_team: m.ai.onboarding.steps.invite_team,
+    add_customer: m.ai.onboarding.steps.add_customer,
+    create_invoice: m.ai.onboarding.steps.create_invoice,
+    send_invoice: m.ai.onboarding.steps.send_invoice,
+    record_payment: m.ai.onboarding.steps.record_payment,
+  }
+  const allDone = total > 0 && completed >= total
 
   return (
     <section className="panel ai-onboarding" aria-labelledby="ai-onboarding-title">
@@ -34,38 +41,39 @@ export function OnboardingChecklist({ organizationId }: { organizationId: string
           <p>{m.ai.onboarding.subtitle}</p>
         </div>
         <span className={`ai-progress ${allDone ? 'ai-progress-done' : ''}`}>
-          {m.ai.onboarding.progress(done, steps.length)}
+          {m.ai.onboarding.progress(completed, total)}
         </span>
       </div>
       <progress
         className="ai-progress-bar"
-        value={done}
-        max={steps.length}
-        aria-label={m.ai.onboarding.progress(done, steps.length)}
+        value={completed}
+        max={total}
+        aria-label={m.ai.onboarding.progress(completed, total)}
       />
       <ol className="ai-checklist">
         {steps.map((step) => (
-          <ChecklistRow key={step.key} step={step} />
+          <ChecklistRow key={step.id} label={labels[step.id] ?? step.id} done={step.done} />
         ))}
       </ol>
     </section>
   )
 }
 
-function ChecklistRow({ step }: { step: OnboardingStep }) {
+/**
+ * The step ids are a closed set shared with the backend; a step this build has
+ * no copy for still renders, with its id as the last resort.
+ */
+function ChecklistRow({ label, done }: { label: string; done: boolean }) {
   const { m } = useI18n()
-  // The contract does not define step copy, so a server label wins and the key
-  // is the last resort; nothing is invented client-side.
-  const label = step.label ?? step.key
 
   return (
-    <li className={`ai-checklist-row ${step.completed ? 'done' : ''}`}>
+    <li className={`ai-checklist-row ${done ? 'done' : ''}`}>
       <span className="ai-check" aria-hidden="true">
-        {step.completed && <Icon name="check" size={14} />}
+        {done && <Icon name="check" size={14} />}
       </span>
       <span className="ai-checklist-label">{label}</span>
       <span className="visually-hidden">
-        {step.completed ? m.ai.onboarding.done : m.ai.onboarding.todo}
+        {done ? m.ai.onboarding.done : m.ai.onboarding.todo}
       </span>
     </li>
   )

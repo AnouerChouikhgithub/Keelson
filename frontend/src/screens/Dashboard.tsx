@@ -131,7 +131,7 @@ export default function Dashboard() {
       {canUseAi(aiStatus) && (
         <div className="dashboard-ai">
           <OnboardingChecklist organizationId={membership.id} />
-          <SummaryCard organizationId={membership.id} kind="organization" />
+          <SummaryCard organizationId={membership.id} kind="overview" />
         </div>
       )}
 

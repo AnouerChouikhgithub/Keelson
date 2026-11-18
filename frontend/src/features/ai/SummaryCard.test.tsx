@@ -11,17 +11,29 @@ afterEach(() => {
 })
 
 const summary = {
-  text: 'Three invoices are overdue and one customer accounts for most of the balance.',
-  generatedAt: '2026-12-01T10:15:30+00:00',
-  facts: { overdueInvoices: 3, outstandingTotal: '1240.000' },
+  text: 'Overview: 7 customers, 18 invoices, 3 overdue and 11,956.600 TND outstanding.',
+  generatedAt: '2026-11-18T00:23:18+00:00',
+  fallback: false,
+  facts: {
+    kind: 'overview',
+    role: 'Owner',
+    locale: 'en',
+    currency: 'TND',
+    customerCount: 7,
+    invoiceCount: 18,
+    overdueInvoiceCount: 3,
+    outstandingMillimes: 11956600,
+    asOf: '2026-11-18',
+    customerNames: ['Atlas Harbour Supplies (fixture)'],
+  },
 }
 
 async function generateAndRead(extra: Record<string, unknown> = {}) {
-  installFetch([{ path: '/ai/summaries/organization', method: 'POST', json: { ...summary, ...extra } }])
+  installFetch([{ path: '/ai/summaries/overview', method: 'POST', json: { ...summary, ...extra } }])
   const user = userEvent.setup()
   const view = render(
     <AiProviders>
-      <SummaryCard organizationId="org-summary" kind="organization" />
+      <SummaryCard organizationId="org-summary" kind="overview" />
     </AiProviders>,
   )
   // The Arabic run renders localized labels, so the card's only button is
@@ -36,12 +48,12 @@ async function generateAndRead(extra: Record<string, unknown> = {}) {
 describe('SummaryCard', () => {
   it('generates on request and shows the facts above the sentence', async () => {
     const fetchMock = installFetch([
-      { path: '/ai/summaries/organization', method: 'POST', json: summary },
+      { path: '/ai/summaries/overview', method: 'POST', json: summary },
     ])
     const user = userEvent.setup()
     render(
       <AiProviders>
-        <SummaryCard organizationId="org-summary" kind="organization" />
+        <SummaryCard organizationId="org-summary" kind="overview" />
       </AiProviders>,
     )
 
@@ -56,19 +68,23 @@ describe('SummaryCard', () => {
     expect(text.indexOf('Overdue invoices')).toBeGreaterThanOrEqual(0)
     expect(text.indexOf('Overdue invoices')).toBeLessThan(text.indexOf(summary.text))
     expect(screen.getByText('AI-generated')).toBeVisible()
+    // The request metadata is not a workspace figure.
+    expect(within(section).queryByText('Owner')).toBeNull()
+    expect(within(section).queryByText('TND')).toBeNull()
     expect(requests(fetchMock)[0]).toMatchObject({
       method: 'POST',
-      path: '/api/organizations/org-summary/ai/summaries/organization',
+      path: '/api/organizations/org-summary/ai/summaries/overview',
+      body: { locale: 'en' },
     })
   })
 
-  it('hides the AI label when the text is a deterministic fallback', async () => {
+  it('hides the AI label when the text is the deterministic fallback', async () => {
     await generateAndRead({ fallback: true })
     expect(screen.queryByText('AI-generated')).toBeNull()
     expect(screen.getByText(summary.text)).toBeVisible()
   })
 
-  it('formats figures through the active locale in Arabic', async () => {
+  it('formats counts, millimes and ISO dates through the active locale in Arabic', async () => {
     window.localStorage.setItem('keelson-locale', 'ar')
     await generateAndRead()
 
@@ -77,18 +93,18 @@ describe('SummaryCard', () => {
     // whether `ar` uses Arabic-Indic or Latin digits, and the card must follow
     // the formatter instead of hardcoding either.
     expect(screen.getByText(new Intl.NumberFormat('ar', { maximumFractionDigits: 0 }).format(3))).toBeVisible()
-    // The amount carries the Arabic TND symbol, which proves `currency()` ran.
+    // The millimes become a currency amount, which proves `currency()` ran.
     expect(screen.getByText(/د\.ت\./)).toBeVisible()
   })
 
   it('shows the localized budget message instead of the sentence', async () => {
     installFetch([
-      { path: '/ai/summaries/customers', method: 'POST', status: 402, json: { error: { code: 'ai_budget_exceeded', message: 'x' } } },
+      { path: '/ai/summaries/activity', method: 'POST', status: 402, json: { error: { code: 'ai_budget_exceeded', message: 'x' } } },
     ])
     const user = userEvent.setup()
     render(
       <AiProviders>
-        <SummaryCard organizationId="org-summary-budget" kind="customers" />
+        <SummaryCard organizationId="org-summary-budget" kind="activity" />
       </AiProviders>,
     )
 

@@ -13,14 +13,19 @@ import './ai.css'
  *
  * The numbers come first, from `facts`, and are formatted locally (including
  * Arabic digits); the model's sentence follows as plain text. When the backend
- * says the text is a deterministic fallback, the AI label is omitted because no
- * model wrote it.
+ * says the text is the deterministic template (`fallback: true`), the AI label
+ * is omitted because no model wrote it.
  */
 
-const MONEY_KEY = /(total|amount|revenue|balance)$/i
+/** Amounts arrive in integer millimes, the invoice representation. */
+const MONEY_KEY = /Millimes$/
+/** `asOf`, `windowStart`, `oldestDueDate` are ISO calendar dates. */
+const DATE_KEY = /(Date|Start)$|^asOf$/
+/** Describe the request, not the workspace. */
+const METADATA = new Set(['kind', 'role', 'locale', 'currency'])
 
 export function SummaryCard({ organizationId, kind }: { organizationId: string; kind: SummaryKind }) {
-  const { m, currency, number, dateTime } = useI18n()
+  const { m, locale, currency, number, date, dateTime } = useI18n()
   const [summary, setSummary] = useState<AiSummary | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
@@ -28,24 +33,42 @@ export function SummaryCard({ organizationId, kind }: { organizationId: string; 
 
   // Read explicitly so the unused-key script can see every label.
   const copy: Record<SummaryKind, { title: string; subtitle: string }> = {
-    organization: { title: m.ai.summary.organization.title, subtitle: m.ai.summary.organization.subtitle },
-    invoices: { title: m.ai.summary.invoices.title, subtitle: m.ai.summary.invoices.subtitle },
-    customers: { title: m.ai.summary.customers.title, subtitle: m.ai.summary.customers.subtitle },
+    overview: { title: m.ai.summary.overview.title, subtitle: m.ai.summary.overview.subtitle },
+    receivables: { title: m.ai.summary.receivables.title, subtitle: m.ai.summary.receivables.subtitle },
+    activity: { title: m.ai.summary.activity.title, subtitle: m.ai.summary.activity.subtitle },
   }
   const labels: Record<string, string> = {
-    overdueInvoices: m.ai.facts.overdueInvoices,
-    outstandingTotal: m.ai.facts.outstandingTotal,
-    paidThisMonth: m.ai.facts.paidThisMonth,
-    draftInvoices: m.ai.facts.draftInvoices,
-    totalCustomers: m.ai.facts.totalCustomers,
-    newCustomers: m.ai.facts.newCustomers,
+    customerCount: m.ai.facts.customerCount,
+    invoiceCount: m.ai.facts.invoiceCount,
+    draftInvoiceCount: m.ai.facts.draftInvoiceCount,
+    sentInvoiceCount: m.ai.facts.sentInvoiceCount,
+    paidInvoiceCount: m.ai.facts.paidInvoiceCount,
+    overdueInvoiceCount: m.ai.facts.overdueInvoiceCount,
+    openInvoiceCount: m.ai.facts.openInvoiceCount,
+    dueSoonInvoiceCount: m.ai.facts.dueSoonInvoiceCount,
+    outstandingMillimes: m.ai.facts.outstandingMillimes,
+    overdueMillimes: m.ai.facts.overdueMillimes,
+    dueSoonMillimes: m.ai.facts.dueSoonMillimes,
+    paidThisMonthMillimes: m.ai.facts.paidThisMonthMillimes,
+    paidMillimes: m.ai.facts.paidMillimes,
+    windowDays: m.ai.facts.windowDays,
+    invoicesCreated: m.ai.facts.invoicesCreated,
+    invoicesSent: m.ai.facts.invoicesSent,
+    invoicesPaid: m.ai.facts.invoicesPaid,
+    customersCreated: m.ai.facts.customersCreated,
+    asOf: m.ai.facts.asOf,
+    oldestDueDate: m.ai.facts.oldestDueDate,
+    windowStart: m.ai.facts.windowStart,
+    customerNames: m.ai.facts.customerNames,
   }
 
-  function formatFact(factKey: string, value: string | number) {
+  function formatFact(factKey: string, value: string | number | string[]) {
+    if (Array.isArray(value)) return value.join(', ')
     if (MONEY_KEY.test(factKey)) {
       const parsed = Number(value)
-      if (Number.isFinite(parsed)) return currency(parsed)
+      if (Number.isFinite(parsed)) return currency(parsed / 1000)
     }
+    if (DATE_KEY.test(factKey) && typeof value === 'string') return date(value)
     if (typeof value === 'number') return number(value, 0)
     return value
   }
@@ -56,7 +79,7 @@ export function SummaryCard({ organizationId, kind }: { organizationId: string; 
     setPending(true)
     setNotice(null)
     try {
-      setSummary(await requestSummary(organizationId, kind))
+      setSummary(await requestSummary(organizationId, kind, { locale }))
     } catch (caught) {
       if (isAbortError(caught)) return
       setSummary(null)
@@ -68,7 +91,8 @@ export function SummaryCard({ organizationId, kind }: { organizationId: string; 
   }
 
   const headingId = `ai-summary-${kind}`
-  const facts = summary === null ? [] : Object.entries(summary.facts)
+  const facts =
+    summary === null ? [] : Object.entries(summary.facts).filter(([factKey]) => !METADATA.has(factKey))
 
   return (
     <section className="panel ai-summary" aria-labelledby={headingId}>
@@ -109,7 +133,7 @@ export function SummaryCard({ organizationId, kind }: { organizationId: string; 
           )}
           <p className="ai-summary-text">{summary.text}</p>
           <div className="ai-summary-meta">
-            {summary.fallback !== true && <span className="ai-generated-label">{m.ai.assistant.label}</span>}
+            {!summary.fallback && <span className="ai-generated-label">{m.ai.assistant.label}</span>}
             <span className="ai-summary-date">{m.ai.summary.generatedAt(dateTime(summary.generatedAt))}</span>
           </div>
         </>

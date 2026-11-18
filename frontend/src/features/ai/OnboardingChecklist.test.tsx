@@ -9,17 +9,19 @@ afterEach(() => {
 })
 
 describe('OnboardingChecklist', () => {
-  it('counts the completed steps and marks them for assistive technology', async () => {
+  it('localizes the steps and announces the server-computed progress', async () => {
     installFetch([
       {
         path: '/onboarding',
         method: 'GET',
         json: {
           steps: [
-            { key: 'organization', label: 'Create the workspace', completed: true },
-            { key: 'customer', label: 'Add a first customer', completed: false },
-            { key: 'invoice', label: 'Send an invoice', completed: false },
+            { id: 'invite_team', done: true },
+            { id: 'add_customer', done: false },
+            { id: 'create_invoice', done: false },
           ],
+          completed: 1,
+          total: 3,
         },
       },
     ])
@@ -32,15 +34,20 @@ describe('OnboardingChecklist', () => {
 
     expect(await screen.findByRole('heading', { name: 'Set up your workspace' })).toBeVisible()
     expect(screen.getByText('1 of 3 done')).toBeVisible()
-    expect(screen.getByText('Create the workspace')).toBeVisible()
+    expect(screen.getByText('Invite a teammate')).toBeVisible()
+    expect(screen.getByText('Add a customer')).toBeVisible()
     // The row state is announced even though the tick itself is decorative.
     expect(screen.getByText('Done')).toBeVisible()
     expect(screen.getAllByText('Not done yet')).toHaveLength(2)
   })
 
-  it('falls back to the step key when the server sends no label', async () => {
+  it('falls back to the step id when this build has no copy for it', async () => {
     installFetch([
-      { path: '/onboarding', method: 'GET', json: { steps: [{ key: 'invite_teammate', completed: false }] } },
+      {
+        path: '/onboarding',
+        method: 'GET',
+        json: { steps: [{ id: 'archive_workspace', done: false }], completed: 0, total: 1 },
+      },
     ])
 
     render(
@@ -49,11 +56,13 @@ describe('OnboardingChecklist', () => {
       </AiProviders>,
     )
 
-    expect(await screen.findByText('invite_teammate')).toBeVisible()
+    expect(await screen.findByText('archive_workspace')).toBeVisible()
   })
 
   it('renders nothing for an empty checklist', async () => {
-    const fetchMock = installFetch([{ path: '/onboarding', method: 'GET', json: { steps: [] } }])
+    const fetchMock = installFetch([
+      { path: '/onboarding', method: 'GET', json: { steps: [], completed: 0, total: 0 } },
+    ])
 
     render(
       <AiProviders>

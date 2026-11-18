@@ -32,7 +32,7 @@ export default function AssistantLauncher({ organizationId }: { organizationId: 
         <Icon name="sparkle" size={17} />
         <span>{m.ai.assistant.open}</span>
       </button>
-      {open && <AssistantPanel onClose={() => setOpen(false)} />}
+      {open && <AssistantPanel organizationId={organizationId} onClose={() => setOpen(false)} />}
     </>
   )
 }

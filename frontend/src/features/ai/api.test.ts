@@ -55,37 +55,60 @@ describe('AI endpoints', () => {
     })
   })
 
-  it('asks the guide endpoint with the question', async () => {
+  it('asks the guide endpoint with the question, tenant and locale', async () => {
     const fetch = installFetch([
-      { path: '/api/ai/guide', method: 'POST', json: { answer: 'Choose Mark paid.', sources: [] } },
+      {
+        path: '/api/ai/guide',
+        method: 'POST',
+        json: { answer: 'Choose Mark paid.', sources: [{ id: 'invoice-lifecycle', title: 'Invoices' }] },
+      },
     ])
 
-    await askGuide('How do I mark an invoice paid?')
+    const answer = await askGuide('How do I mark an invoice paid?', { organizationId: 'org 1', locale: 'fr' })
+    expect(answer.sources).toEqual([{ id: 'invoice-lifecycle', title: 'Invoices' }])
     expect(requests(fetch)[0]).toMatchObject({
       method: 'POST',
       path: '/api/ai/guide',
-      body: { question: 'How do I mark an invoice paid?' },
+      body: { question: 'How do I mark an invoice paid?', organizationId: 'org 1', locale: 'fr' },
     })
   })
 
   it('reads the onboarding checklist', async () => {
     const fetch = installFetch([
-      { path: '/onboarding', method: 'GET', json: { steps: [{ key: 'customer', completed: true }] } },
+      {
+        path: '/onboarding',
+        method: 'GET',
+        json: { steps: [{ id: 'add_customer', done: true }], completed: 1, total: 5 },
+      },
     ])
 
-    await getOnboarding('org-1')
+    await expect(getOnboarding('org-1')).resolves.toEqual({
+      steps: [{ id: 'add_customer', done: true }],
+      completed: 1,
+      total: 5,
+    })
     expect(requests(fetch)[0]).toMatchObject({ method: 'GET', path: '/api/organizations/org-1/onboarding' })
   })
 
-  it('requests a summary of one kind', async () => {
+  it('requests a summary of one kind in the active language', async () => {
     const fetch = installFetch([
-      { path: '/ai/summaries/invoices', method: 'POST', json: { text: 'x', generatedAt: '2026-12-01T10:00:00+00:00', facts: {} } },
+      {
+        path: '/ai/summaries/receivables',
+        method: 'POST',
+        json: {
+          text: 'x',
+          generatedAt: '2026-12-01T10:00:00+00:00',
+          fallback: false,
+          facts: { kind: 'receivables', role: 'Owner', locale: 'ar', currency: 'TND', customerNames: [] },
+        },
+      },
     ])
 
-    await requestSummary('org-1', 'invoices')
+    await requestSummary('org-1', 'receivables', { locale: 'ar' })
     expect(requests(fetch)[0]).toMatchObject({
       method: 'POST',
-      path: '/api/organizations/org-1/ai/summaries/invoices',
+      path: '/api/organizations/org-1/ai/summaries/receivables',
+      body: { locale: 'ar' },
     })
   })
 })
@@ -106,7 +129,9 @@ describe('AI error mapping', () => {
   it.each(cases)('maps %i %s to the %s code', async (status, code, expected) => {
     installFetch([{ path: '/api/ai/guide', method: 'POST', status, json: { error: { code, message: 'x' } } }])
 
-    const failure = await askGuide('question').catch((error: unknown) => error)
+    const failure = await askGuide('question', { organizationId: 'org-1', locale: 'en' }).catch(
+      (error: unknown) => error,
+    )
     expect(failure).toBeInstanceOf(AiError)
     expect((failure as AiError).code).toBe(expected)
     expect((failure as AiError).status).toBe(status)
@@ -138,15 +163,17 @@ describe('AI error mapping', () => {
     const controller = new AbortController()
     controller.abort()
 
-    const failure = await askGuide('question', controller.signal).catch((error: unknown) => error)
+    const failure = await askGuide('question', { organizationId: 'org-1', locale: 'en', signal: controller.signal }).catch(
+      (error: unknown) => error,
+    )
     expect(failure).toBeInstanceOf(DOMException)
     expect(failure).not.toBeInstanceOf(AiError)
   })
 
   it('falls back to the status when the envelope has no code', async () => {
-    installFetch([{ path: '/ai/summaries/customers', method: 'POST', status: 402, json: {} }])
+    installFetch([{ path: '/ai/summaries/activity', method: 'POST', status: 402, json: {} }])
 
-    const failure = await requestSummary('org-1', 'customers').catch((error: unknown) => error)
+    const failure = await requestSummary('org-1', 'activity', { locale: 'en' }).catch((error: unknown) => error)
     expect((failure as AiError).code).toBe('ai_budget_exceeded')
   })
 })

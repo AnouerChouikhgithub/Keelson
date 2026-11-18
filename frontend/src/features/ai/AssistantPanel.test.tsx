@@ -20,7 +20,7 @@ const approvedStatus = {
 
 const guideAnswer = {
   answer: 'Open the invoice and choose Mark paid.',
-  sources: [{ title: 'Invoices', reference: 'invoices.send' }],
+  sources: [{ id: 'invoice-lifecycle', title: 'Invoices' }],
 }
 
 /** An opener button, so focus restoration can be asserted on a real element. */
@@ -29,7 +29,7 @@ function Harness() {
   return (
     <>
       <button type="button" onClick={() => setOpen(true)}>Open assistant</button>
-      {open && <AssistantPanel onClose={() => setOpen(false)} />}
+      {open && <AssistantPanel organizationId="org-panel" onClose={() => setOpen(false)} />}
     </>
   )
 }
@@ -124,8 +124,12 @@ describe('AssistantPanel', () => {
     expect(screen.getByText('AI-generated')).toBeVisible()
     expect(screen.getByText('Sources')).toBeVisible()
     expect(screen.getByText('Invoices')).toBeVisible()
-    expect(screen.getByText('invoices.send')).toBeVisible()
-    expect(requests(fetchMock)[0]?.body).toEqual({ question: 'How do I mark an invoice paid?' })
+    expect(screen.getByText('invoice-lifecycle')).toBeVisible()
+    expect(requests(fetchMock)[0]?.body).toEqual({
+      question: 'How do I mark an invoice paid?',
+      organizationId: 'org-panel',
+      locale: 'en',
+    })
   })
 
   it('asks the same question again when regenerating', async () => {
@@ -144,7 +148,11 @@ describe('AssistantPanel', () => {
     await user.click(screen.getByRole('button', { name: 'Ask again' }))
 
     await waitFor(() => expect(requests(fetchMock)).toHaveLength(2))
-    expect(requests(fetchMock)[1]?.body).toEqual({ question: 'Where are my invoices?' })
+    expect(requests(fetchMock)[1]?.body).toEqual({
+      question: 'Where are my invoices?',
+      organizationId: 'org-panel',
+      locale: 'en',
+    })
   })
 
   it('shows the localized message when the server has not implemented the guide yet', async () => {

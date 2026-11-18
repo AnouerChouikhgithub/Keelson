@@ -33,12 +33,13 @@ export type AiSettingsInput = {
 }
 
 /**
- * An internal identifier such as `invoices.send`, never a URL: the contract
- * forbids provider links, so the panel renders these as text, not anchors.
+ * An internal documentation id such as `invoice-lifecycle`, never a URL: the
+ * contract forbids provider links, so the panel renders these as text, not
+ * anchors.
  */
 type AiSource = {
+  id: string
   title: string
-  reference: string
 }
 
 export type AiGuideAnswer = {
@@ -47,38 +48,56 @@ export type AiGuideAnswer = {
   sources: AiSource[]
 }
 
-export type SummaryKind = 'organization' | 'invoices' | 'customers'
+/** The three languages the guide and the summaries are written in. */
+export type AiLocale = 'en' | 'fr' | 'ar'
+
+/** The closed set the backend accepts as a path segment. */
+export type SummaryKind = 'overview' | 'receivables' | 'activity'
+
+/**
+ * Everything the summary text was allowed to say.
+ *
+ * Counts are integers; a key ending in `Millimes` is an amount in thousandths
+ * of `currency`; ISO dates are `YYYY-MM-DD`; `customerNames` holds at most five
+ * display names. `kind`, `role`, `locale` and `currency` describe the request
+ * rather than the workspace, so the card filters them out of the figures.
+ */
+type SummaryFacts = {
+  kind: SummaryKind
+  role: string
+  locale: AiLocale
+  currency: string
+  customerNames: string[]
+} & Record<string, string | number | string[]>
 
 export type AiSummary = {
   /** Sanitized plain text. Rendered as a React text node only. */
   text: string
   generatedAt: string
-  /** Aggregates the summary was built from, so the UI never parses the prose. */
-  facts: Record<string, string | number>
   /**
-   * Not part of the response shown in `docs/api/ai.md`, but the sprint brief
-   * requires the AI label to be hidden when the text is a deterministic
-   * fallback rather than model output. Absent means "model output".
+   * `true` when the deterministic template replaced an unusable model answer
+   * (provider outage, empty answer, or a figure the facts cannot derive). The
+   * response is still `200`, so the card hides the AI label in that case.
    */
-  fallback?: boolean
+  fallback: boolean
+  /** Aggregates the text was built from, so the UI never parses the prose. */
+  facts: SummaryFacts
 }
 
 /**
- * One onboarding step.
- *
- * `docs/api/ai.md` does not describe `GET …/onboarding` (the foundation branch
- * only stubs guide and summaries), so this is the smallest shape the checklist
- * needs: a stable machine key, an optional server-supplied label and the state.
- * The PR records the assumption so the backend owner can confirm it.
+ * One onboarding step: a stable id the UI localizes, and the fact-derived
+ * state. The response also carries `completed` and `total`, which the card uses
+ * as the authoritative progress so its counter cannot disagree with the API.
  */
-export type OnboardingStep = {
-  key: string
-  label?: string | null
-  completed: boolean
+type OnboardingStep = {
+  id: string
+  done: boolean
 }
 
 export type OnboardingChecklistData = {
   steps: OnboardingStep[]
+  completed: number
+  total: number
 }
 
 export type AiErrorCode =
@@ -174,8 +193,16 @@ export function updateAiSettings(organizationId: string, input: AiSettingsInput)
   return aiRequest<AiSettings>(settingsPath(organizationId), { method: 'PUT', body: input })
 }
 
-export function askGuide(question: string, signal?: AbortSignal): Promise<AiGuideAnswer> {
-  return aiRequest<AiGuideAnswer>('/api/ai/guide', { method: 'POST', body: { question }, signal })
+export function askGuide(
+  question: string,
+  options: { organizationId: string; locale: AiLocale; signal?: AbortSignal },
+): Promise<AiGuideAnswer> {
+  const { organizationId, locale, signal } = options
+  return aiRequest<AiGuideAnswer>('/api/ai/guide', {
+    method: 'POST',
+    body: { question, organizationId, locale },
+    signal,
+  })
 }
 
 export function getOnboarding(organizationId: string, signal?: AbortSignal): Promise<OnboardingChecklistData> {
@@ -188,10 +215,11 @@ export function getOnboarding(organizationId: string, signal?: AbortSignal): Pro
 export function requestSummary(
   organizationId: string,
   kind: SummaryKind,
-  signal?: AbortSignal,
+  options: { locale: AiLocale; signal?: AbortSignal },
 ): Promise<AiSummary> {
+  const { locale, signal } = options
   return aiRequest<AiSummary>(
     `/api/organizations/${encodeURIComponent(organizationId)}/ai/summaries/${kind}`,
-    { method: 'POST', signal },
+    { method: 'POST', body: { locale }, signal },
   )
 }
