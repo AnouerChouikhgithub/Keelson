@@ -11,12 +11,13 @@ use Symfony\Component\HttpFoundation\Session\SessionInterface;
  * The counter that ties a session to the password it was opened with.
  *
  * A session's token outlives a password change on its own. Symfony's
- * `ContextListener` compares the password hash it finds in the session with the
- * one it just loaded from the database — which signs the session out only when
- * those are different objects. The request that changes the password has already
- * refreshed the token, so the session it writes carries the *new* hash, and the
- * other sessions of that account keep working. A password reset that does not end
- * the session it was meant to end is the hole this closes.
+ * `ContextListener` compares the password hash stored in the session's token with
+ * the one it loads from the database, but it can only do that when the two values
+ * differ: the request that changes the password refreshes its own token first, so
+ * the session it writes is compared against itself and keeps authenticating — and
+ * in a process where the session store and the entity manager share one object,
+ * the old hash the comparison would need never exists at all. A reset that does
+ * not end the session it was meant to end is the hole this closes.
  *
  * So the version lives outside the token: an integer on `principals`, an integer
  * in the session. Login records it, anything that rewrites the password
