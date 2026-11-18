@@ -17,6 +17,7 @@ import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useI18n } from '../i18n/I18nContext'
 import { locales, messages } from '../i18n'
 import { useWorkspace } from '../app/WorkspaceContext'
+import { AiSettingsSection } from '../features/ai/AiSettingsSection'
 import './simple.css'
 
 const SUBDOMAIN = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/
@@ -184,6 +185,8 @@ export default function Settings() {
           </div>
         )}
       </section>
+
+      <AiSettingsSection organizationId={membership.id} role={membership.role} />
 
       {isOwner && (
         <section className="panel settings-card danger-zone" aria-labelledby="danger-title">

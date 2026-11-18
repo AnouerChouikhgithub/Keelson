@@ -13,6 +13,7 @@ export type FetchRoute = {
   /** Defaults to any method. */
   method?: string
   status?: number
+  /** A fixed body, or a function evaluated per request (a stateful stub). */
   json?: unknown
   /** Used verbatim instead of building a JSON response. */
   response?: Response
@@ -31,7 +32,10 @@ export function installFetch(routes: FetchRoute[]) {
     const route = routes.find((candidate) => matches(candidate, method, path))
     if (route === undefined) throw new Error(`Unstubbed request: ${method} ${path}`)
     if (route.response !== undefined) return route.response
-    return new Response(JSON.stringify(route.json ?? {}), {
+    // A function body is called for every request, so a test can model a value
+    // that changes between calls (a status that flips after a write).
+    const body = typeof route.json === 'function' ? (route.json as () => unknown)() : route.json
+    return new Response(JSON.stringify(body ?? {}), {
       status: route.status ?? 200,
       headers: { 'Content-Type': 'application/json' },
     })

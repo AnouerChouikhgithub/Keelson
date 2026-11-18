@@ -22,10 +22,31 @@ export function clearApiCache(): void {
   cache.clear()
 }
 
-/** Drops cached reads for one key, or for every key with a prefix. */
+/**
+ * Mounted hooks that want to hear about invalidation.
+ *
+ * Dropping the cache entry is not enough on its own: a mounted hook keeps the
+ * value it fetched in its own state and would keep rendering it until it
+ * remounted. Notifying it is what makes a write in one component show up in
+ * another mounted one — the header assistant appearing as soon as an owner
+ * enables AI in settings is exactly that case.
+ */
+const invalidationListeners = new Set<{ key: string; notify: () => void }>()
+
+function matchesKey(key: string, keyOrPrefix: string): boolean {
+  return key === keyOrPrefix || key.startsWith(`${keyOrPrefix}:`)
+}
+
+/**
+ * Drops cached reads for one key, or for every key with a prefix, and refetches
+ * every mounted reader of them.
+ */
 export function invalidateResource(keyOrPrefix: string): void {
   for (const key of cache.keys()) {
-    if (key === keyOrPrefix || key.startsWith(`${keyOrPrefix}:`)) cache.delete(key)
+    if (matchesKey(key, keyOrPrefix)) cache.delete(key)
+  }
+  for (const listener of invalidationListeners) {
+    if (matchesKey(listener.key, keyOrPrefix)) listener.notify()
   }
 }
 
@@ -88,6 +109,23 @@ export function useApiResource<T>(
     cache.delete(key)
     setEntry(null)
     setReloadCount((count) => count + 1)
+  }, [key])
+
+  // Invalidation from elsewhere re-runs the loader: the cache entry is already
+  // gone, so clearing the local copy and bumping the counter is what replaces
+  // the stale value instead of leaving it on screen.
+  useEffect(() => {
+    const listener = {
+      key,
+      notify: () => {
+        setEntry(null)
+        setReloadCount((count) => count + 1)
+      },
+    }
+    invalidationListeners.add(listener)
+    return () => {
+      invalidationListeners.delete(listener)
+    }
   }, [key])
 
   return { state, reload }

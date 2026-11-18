@@ -1,4 +1,4 @@
-import { Suspense, useEffect, useMemo, useState } from 'react'
+import { Suspense, lazy, useEffect, useMemo, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation, useMatch, useNavigate } from 'react-router'
 import { presentError } from '../api/presentError'
 import type { OrganizationMembership } from '../api/types'
@@ -18,6 +18,9 @@ import { initialsOf } from '../utils/initials'
 import { pageLabel } from './CurrentPage'
 import { useOrganizations } from './useOrganizations'
 import './AppShell.css'
+
+// Its own chunk: the shell must not pay for the AI feature in the entry file.
+const AssistantLauncher = lazy(() => import('../features/ai/AssistantLauncher'))
 
 const navItems: { segment: string; icon: IconName; labelKey: 'dashboard' | 'invoices' | 'customers' | 'team' | 'audit' | 'settings' }[] = [
   { segment: 'dashboard', icon: 'grid', labelKey: 'dashboard' },
@@ -221,6 +224,11 @@ export function AppShell() {
               <strong aria-current="page">{page}</strong>
             </nav>
             <div className="topbar-actions">
+              {orgId !== null && (
+                <Suspense fallback={null}>
+                  <AssistantLauncher organizationId={orgId} />
+                </Suspense>
+              )}
               <button
                 className="search-trigger"
                 type="button"

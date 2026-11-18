@@ -1,0 +1,172 @@
+/*
+ * AI surfaces: the header trigger, the assistant drawer, the dashboard cards
+ * and the workspace AI settings. Colours come from `theme/tokens.css` only;
+ * layout uses logical properties so the drawer and cards mirror in Arabic.
+ */
+
+/* --- Header trigger --- */
+.ai-trigger {
+  display: inline-flex;
+  align-items: center;
+  min-height: 38px;
+  padding: 0 var(--space-3);
+  gap: var(--space-2);
+  color: var(--color-primary);
+  background: var(--color-primary-soft);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: var(--text-caption);
+  font-weight: var(--weight-semibold);
+}
+.ai-trigger:hover { border-color: var(--color-primary); }
+
+/* --- Assistant drawer --- */
+.ai-panel { display: grid; align-content: start; gap: var(--space-4); }
+.ai-panel-header h2 { margin: 0; font-size: var(--text-title); line-height: var(--leading-title); }
+.ai-panel-header p { margin: var(--space-1) 0 0; color: var(--color-text-muted); font-size: var(--text-caption); }
+
+.ai-answer { display: grid; gap: var(--space-3); }
+.ai-answer-body {
+  display: grid;
+  padding: var(--space-3);
+  gap: var(--space-2);
+  background: var(--color-background);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+/* Plain text only: newlines are preserved without any HTML or markdown. */
+.ai-answer-text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.ai-generated-label {
+  width: fit-content;
+  margin: 0;
+  padding: 1px var(--space-2);
+  color: var(--color-primary);
+  background: var(--color-primary-soft);
+  border-radius: var(--radius-full);
+  font-size: 11px;
+  font-weight: var(--weight-semibold);
+}
+.ai-pending, .ai-hint { margin: 0; color: var(--color-text-muted); font-size: var(--text-caption); }
+.ai-notice { margin: 0; color: var(--color-danger); font-size: var(--text-caption); }
+
+.ai-sources { display: grid; gap: var(--space-1); }
+.ai-sources-title {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.ai-sources ul { display: grid; margin: 0; padding-inline-start: var(--space-4); gap: var(--space-1); }
+.ai-sources li { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-2); font-size: var(--text-caption); }
+.ai-sources code { color: var(--color-text-muted); font-family: var(--font-mono); font-size: 11px; }
+
+.ai-composer { display: grid; gap: var(--space-2); }
+.ai-composer textarea {
+  width: 100%;
+  padding: var(--space-3);
+  color: var(--color-text);
+  background: var(--color-surface-elevated);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  font-size: var(--text-caption);
+  line-height: var(--leading-caption);
+  resize: vertical;
+}
+.ai-composer textarea:focus { outline: 2px solid var(--color-focus); outline-offset: 1px; }
+.ai-composer .button { justify-self: start; }
+/* The send arrow points forward, so it points the other way in Arabic. */
+[dir='rtl'] .ai-composer .icon { transform: scaleX(-1); }
+
+/* --- Dashboard cards --- */
+.dashboard-ai { display: grid; gap: var(--space-4); }
+
+.ai-onboarding, .ai-summary { display: grid; gap: var(--space-3); }
+
+.ai-progress {
+  flex: 0 0 auto;
+  padding: 3px var(--space-2);
+  color: var(--color-text-secondary);
+  background: var(--color-background);
+  border-radius: var(--radius-full);
+  font-size: 12px;
+  font-weight: var(--weight-semibold);
+  white-space: nowrap;
+}
+.ai-progress-done { color: var(--color-success); background: var(--color-success-soft); }
+.ai-progress-bar { width: 100%; height: 6px; accent-color: var(--color-primary); }
+
+.ai-checklist { display: grid; margin: 0; padding: 0; gap: var(--space-1); list-style: none; }
+.ai-checklist-row {
+  display: flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 var(--space-2);
+  gap: var(--space-2);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-caption);
+}
+.ai-checklist-row.done .ai-checklist-label { color: var(--color-text-muted); text-decoration: line-through; }
+.ai-check {
+  display: grid;
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+  place-items: center;
+  color: var(--color-primary-contrast);
+  background: var(--color-background);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-xs);
+}
+.ai-checklist-row.done .ai-check { background: var(--color-primary); border-color: var(--color-primary); }
+.ai-checklist-label { flex: 1; }
+
+.ai-summary-facts { display: grid; margin: 0; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--space-2); }
+.ai-summary-facts div {
+  padding: var(--space-3);
+  background: var(--color-background);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+.ai-summary-facts dt {
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.ai-summary-facts dd {
+  margin: var(--space-1) 0 0;
+  color: var(--color-text);
+  font-size: var(--text-heading);
+  font-weight: var(--weight-semibold);
+}
+.ai-summary-text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.ai-summary-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.ai-summary-date { color: var(--color-text-muted); font-size: 11px; }
+
+/* --- Workspace AI settings --- */
+.ai-settings-form { grid-template-columns: 1fr; }
+.ai-settings-toggle { display: grid; gap: var(--space-1); }
+.ai-checkbox { display: flex; align-items: center; gap: var(--space-2); font-size: var(--text-caption); font-weight: var(--weight-medium); }
+.ai-checkbox input { width: 18px; height: 18px; accent-color: var(--color-primary); }
+.ai-settings-form .ai-hint { margin: 0; margin-inline-start: calc(18px + var(--space-2)); color: var(--color-text-muted); font-size: 12px; }
+.ai-consent {
+  margin: 0;
+  padding: var(--space-3);
+  color: var(--color-text-secondary);
+  background: var(--color-background);
+  border-inline-start: 3px solid var(--color-primary);
+  border-radius: var(--radius-xs);
+  font-size: var(--text-caption);
+  line-height: var(--leading-caption);
+}
+.ai-budget-remaining { margin: 0; color: var(--color-text-muted); font-size: var(--text-caption); }
+
+@media (max-width: 720px) {
+  .ai-trigger { min-width: var(--tap-target); justify-content: center; padding: 0; }
+  .ai-trigger span { display: none; }
+  .ai-summary-facts { grid-template-columns: 1fr; }
+}

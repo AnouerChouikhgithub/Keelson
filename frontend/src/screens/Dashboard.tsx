@@ -15,6 +15,9 @@ import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useI18n } from '../i18n/I18nContext'
 import { initialsOf } from '../utils/initials'
 import { useWorkspace } from '../app/WorkspaceContext'
+import { OnboardingChecklist } from '../features/ai/OnboardingChecklist'
+import { SummaryCard } from '../features/ai/SummaryCard'
+import { canUseAi, useAiStatus } from '../features/ai/useAiStatus'
 import './Dashboard.css'
 
 type MonthBucket = { key: string; year: number; month: number; paid: number }
@@ -59,6 +62,9 @@ export default function Dashboard() {
   const today = new Date()
   const thisMonthKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`
   useDocumentTitle(m.page.dashboard)
+  // One status read for both cards; it renders nothing when AI is off or the
+  // call fails, which is what the brief asks for.
+  const aiStatus = useAiStatus(membership.id)
 
   if (invoices.state.status === 'loading') {
     return (
@@ -121,6 +127,13 @@ export default function Dashboard() {
           <Icon name="plus" size={18} /> {m.dashboard.createInvoice}
         </Link>
       </section>
+
+      {canUseAi(aiStatus) && (
+        <div className="dashboard-ai">
+          <OnboardingChecklist organizationId={membership.id} />
+          <SummaryCard organizationId={membership.id} kind="overview" />
+        </div>
+      )}
 
       <section className="metrics-grid" aria-label={m.dashboard.overviewAria}>
         <article className="metric-card">
