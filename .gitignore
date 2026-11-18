@@ -41,3 +41,6 @@ Thumbs.db
 test-results/
 playwright-report/
 blob-report/
+
+# audit screenshots (untracked, never part of the release)
+.pr-screenshots/

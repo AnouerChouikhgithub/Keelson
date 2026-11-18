@@ -43,22 +43,23 @@ custom property `--color-primary` in `frontend/src/theme/tokens.css`; keep all c
 in that file). Plain CSS with logical properties — no CSS framework is installed.
 Keep the UI clean, modern and accessible (WCAG AA contrast).
 
-## Verified baseline (2026-11-17, v1.0.0)
+## Verified baseline (2026-11-17, v1.0.1)
 
 - Frontend: React 19.3.1, Vite 8.3.4, TypeScript 6.0.3, ESLint 10.13.0 with
   `typescript-eslint` 8.71.2, Vitest 5.1.0, jsdom 27, Testing Library, knip 6.
   TypeScript is deliberately pinned below 6.1 because `typescript-eslint` 8.71.2
   supports `>=4.8.4 <6.1.0`; do not move it back to 7.x until that peer range
-  widens. `tsc -b`, `pnpm run lint`, `pnpm test` (98 tests in 15 files: node and
-  jsdom projects), `pnpm run build` and `pnpm run check:bundle` (entry 358.6 kB of a
-  420 kB budget) all pass. `pnpm exec knip` and `node scripts/unused-i18n.mjs`
+  widens. `tsc -b`, `pnpm run lint`, `pnpm test` (node and jsdom projects),
+  `pnpm run build` and `pnpm run check:bundle` (entry 358.6 kB of a 420 kB budget)
+  all pass. Test counts are printed by `bash bin/test-counts.sh`; do not copy a
+  number into a document. `pnpm exec knip` and `node scripts/unused-i18n.mjs`
   report nothing.
 - Backend dependencies: Symfony 7.4, Doctrine ORM/DBAL/Migrations plus the Doctrine
   bundles, `symfony/security-bundle`, `symfony/security-csrf`, `symfony/validator`,
   `symfony/rate-limiter`, `symfony/mailer`, `symfony/yaml`. No identity-provider
   bundle, no JWT library, no API Platform, no Stripe, no Messenger.
 - Tests: `php bin/phpunit` against the disposable `backend/bin/test-db.sh`
-  PostgreSQL 16 container gives **214 tests / 1192 assertions, exit 0**. Static
+  PostgreSQL 16 container (counts: `bash bin/test-counts.sh`, exit 0). Static
   analysis: `composer stan` — PHPStan level 8 with `shipmonk/dead-code-detector`
   and **no baseline** — reports no errors; `composer cs` is clean.
   `tests/Unit/Repository/TenantScopedRepositoryTest.php` and `tests/Integration/*`
@@ -68,13 +69,15 @@ Keep the UI clean, modern and accessible (WCAG AA contrast).
   `pcov`. **This checkout has neither, so coverage was not measured locally** — do
   not claim a percentage you did not produce.
 - Browser suite: `pnpm --dir e2e test` — 7 journeys, one worker, traces on failure.
-- Known limitation: `php bin/console doctrine:schema:validate --env=test` fails
-  while introspecting the database with `An index with name "idx_6a2f2f95a5a280d"
-  was already defined on table "invoices"`. DBAL 4.5 synthesizes that name for the
-  `fk_invoices_customer` local columns and the migration declares the same name
-  (`migrations/Version20261023170000.php`), so hydration sees it twice. Mapping
-  validation (`--skip-sync`) passes. Do not use `schema:update`/`migrations:diff`
-  against this database until it is resolved.
+- Schema checks: mapping validation (`doctrine:schema:validate --skip-sync`)
+  passes and is what CI gates on. The full sync check **reports a diff by design**:
+  the `sessions` table, the GIN `pg_trgm` indexes and the partial indexes have no
+  ORM mapping. It no longer aborts — the introspection crash (`An index with name
+  "idx_6a2f2f95a5a280d" was already defined`) was caused by PostgreSQL folding the
+  uppercase name DBAL generates for `invoices.customer_id`; migration
+  `Version20261117180000` renames the index to `idx_invoices_customer`. Still do
+  not treat `migrations:diff`/`schema:update` output as an instruction.
+  `doctrine:migrations:up-to-date` passes and is also gated in CI.
 - Environment: `ext-sodium` is enabled on this host through the machine-local CLI ini
   (`…/php/cli/php-phase7.ini`, `extension=php_sodium.dll`). `composer install` and
   `composer check-platform-reqs` exit 0. That ini lives outside the repository, so a
@@ -85,7 +88,9 @@ Keep the UI clean, modern and accessible (WCAG AA contrast).
   environment, migrations, backup/restore, rollback and scheduled work;
   `CONTRIBUTING.md`, `SECURITY.md`, `CHANGELOG.md` and `docs/limitations.md` complete
   the set; `docs/openapi.yaml` is the API contract, kept in step with the router by
-  `tests/Unit/Docs/OpenApiContractTest.php`; `docs/adr/` holds five decisions.
+  `tests/Unit/Docs/OpenApiContractTest.php`; `docs/adr/` holds six decisions;
+  `docs/release/FINAL-RELEASE-READINESS-REPORT.md` records the release decision
+  and its evidence.
 
 ## Local setup
 
@@ -96,11 +101,17 @@ Keep the UI clean, modern and accessible (WCAG AA contrast).
 - Backend: `cd backend && composer install`. Keep local values in the ignored
   `backend/.env.local`; never commit secrets or reuse customer/production
   credentials.
-- Backend checks that need no database: `composer validate --no-check-publish`,
+- Backend checks that need no database: `composer validate --strict`,
   `php bin/console lint:yaml config --env=test`,
   `php bin/console lint:container --env=test`,
-  `php bin/console debug:router --env=test`, `composer audit`, `composer stan`,
-  `composer cs`, and `php bin/console app:config:check`.
+  `php bin/console debug:router --env=test`, `composer audit --locked`,
+  `doctrine:schema:validate --skip-sync`, `doctrine:migrations:up-to-date` (the last
+  two need the test database), `composer stan`, `composer cs`, and
+  `php bin/console app:config:check`.
+- `composer cs` on a **CRLF** checkout reports every file as fixable because the
+  fixer rewrites line endings; that is a Windows worktree artifact, not a style
+  result. On Linux (CI) it is clean. To check locally, copy `src tests migrations
+  bin` somewhere, strip `\r`, and run the fixer on the copy.
 - Full suite: `bash bin/test-db.sh start && php bin/phpunit && bash bin/test-db.sh stop`
   (from `backend/`). The helper refuses to start while `.env.test.local` exists;
   `stop` removes it.

@@ -16,6 +16,31 @@ class MembershipRepository extends ServiceEntityRepository
         parent::__construct($registry, Membership::class);
     }
 
+    /**
+     * Serialises owner-sensitive changes for one organization.
+     *
+     * A transaction-scoped PostgreSQL advisory lock, keyed on the tenant id, so
+     * two requests that could each remove the last Owner run one after the
+     * other. The second one re-reads the roster *after* it acquires the lock and
+     * therefore sees the first one's committed result.
+     *
+     * It takes the lock instead of locking the memberships it is about to change
+     * because the dangerous case is two *different* membership rows being
+     * demoted concurrently; a row lock on either one would not conflict.
+     */
+    public function acquireOwnerGuard(string $organizationId): void
+    {
+        $connection = $this->getEntityManager()->getConnection();
+        if (!$connection->isTransactionActive()) {
+            throw new \LogicException('Owner-sensitive changes must run inside a transaction.');
+        }
+
+        $connection->fetchOne(
+            'SELECT pg_advisory_xact_lock(hashtext(:scope))',
+            ['scope' => sprintf('organization-owners:%s', $organizationId)],
+        );
+    }
+
     public function findForOrganizationAndPrincipal(string $organizationId, string $principalId): ?Membership
     {
         return $this->createQueryBuilder('membership')

@@ -1,4 +1,6 @@
 {
+    "name": "keelson/backend",
+    "description": "Keelson multi-tenant SaaS API: organizations, memberships, invitations, invoicing and audit.",
     "type": "project",
     "license": "proprietary",
     "minimum-stability": "stable",

@@ -7,11 +7,11 @@
 > code is what it is, what a denial means, how a flow was verified — and it is kept
 > for that reasoning, not as a second source of truth. Sections written during an
 > earlier sprint keep their own wording; where a number disagreed with the suite it
-> was updated on 2026-11-17 (214 tests / 1192 assertions).
+> was updated on 2026-11-17 (counts: `bash bin/test-counts.sh`).
 
 **Verified on 2026-11-16** by reading `backend/src/Controller/`, `backend/src/Repository/`,
 `backend/src/Service/`, `backend/src/Security/` and `config/packages/security.yaml`, by running the
-backend suite (`php bin/phpunit` → 214 tests / 1192 assertions, exit 0) and by exercising every
+backend suite (`php bin/phpunit`, exit 0 — counts from `bash bin/test-counts.sh`) and by exercising every
 sign-in flow with `curl` against a local server with Mailpit. This document describes **behaviour
 that exists today**, not a target design. Anything the frontend needs but the backend does not
 provide is listed in [Gaps](#gaps-and-how-each-was-classified).
@@ -422,7 +422,7 @@ retries a mutation automatically.
 - Shapes and validation: the controllers, `InputHydrator`, `JsonBody`, `ApiErrorResponse`,
   `InvoiceSerializer`, `InvoiceCalculator`, `InvoiceInput`, `Customer`, `CustomerRepository`,
   `InvoiceRepository`, `InvoiceVoter`, `security.yaml`, `CsrfProtectionListener`.
-- Behaviour: `php bin/phpunit` → **214 tests / 1192 assertions**, exit 0, against the helper's
+- Behaviour: `php bin/phpunit` exits 0 against the helper's
   disposable PostgreSQL 16 container (never the Compose database). At 1.0.0 the same behaviour is
   also exercised end to end by the seven Playwright journeys in `e2e/tests/`.
 - Manual round trip: register → Mailpit → verify → login → `GET /api/session` → invoice `POST`
@@ -583,3 +583,33 @@ partial unique index on pending invitations per `(organization_id, lower(email))
 200 invoices with one short transaction per batch. It is idempotent (each batch re-selects only
 `sent` invoices past their due date), creates the audit event and the `invoice_overdue`
 notifications, and can be run at any frequency. Schedule it once a day; see the README.
+
+## 10. Release hardening (2026-11-17)
+
+Two behaviours changed in ways a client can observe.
+
+**Registration subdomain collision.** Registration still answers
+`201 {"status":"verification_sent"}` for an address that already exists (it must
+not reveal that), but a *generated subdomain* that cannot be allocated is a
+different failure. If all 50 candidate subdomains derived from the organization
+name are taken, the request answers:
+
+```json
+{ "error": { "code": "subdomain_unavailable", "message": "That organization name is in use; choose another and retry." } }
+```
+
+and nothing is created: no principal, no organization, no token, no email. The
+same code is returned if the subdomain insert loses a race with a concurrent
+registration that used the same name. A client may treat it as a validation error
+on `organizationName`.
+
+**Token redemption.** `POST /api/auth/verify-email` and
+`POST /api/auth/reset-password` redeem their token with a single conditional
+`UPDATE ... RETURNING`, inside the same transaction as the account change. A
+second request carrying the same link answers `400 invalid_token`; a failed
+account change rolls the consumption back, so the link remains usable. The
+response shapes are unchanged.
+
+**401 handling.** Any authenticated endpoint may answer `401 unauthenticated`
+when the session has expired. The SPA reacts by re-reading `GET /api/session`
+rather than assuming a signed-out state.

@@ -12,6 +12,7 @@ use App\Http\JsonBody;
 use App\Input\MemberRoleInput;
 use App\Repository\MembershipRepository;
 use App\Security\OrganizationVoter;
+use App\Service\TransactionBoundary;
 use App\Util\Uuid;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
@@ -31,6 +32,12 @@ use Symfony\Component\Routing\Attribute\Route;
  * Anyone may leave an organization themselves — removing your own membership is
  * how "leave" is expressed, and it is allowed even for a Viewer, except for the
  * last Owner, who would leave the tenant ownerless.
+ *
+ * Owner-sensitive changes run under a per-organization advisory lock
+ * ({@see MembershipRepository::acquireOwnerGuard()}), inside a transaction. Two
+ * Owners demoting each other at the same time therefore cannot both observe "one
+ * other Owner remains" and leave the tenant with none: the second request
+ * re-reads the roster after the first committed and is refused.
  */
 #[Route('/api/organizations/{organizationId}/members')]
 final class MemberController extends AbstractController
@@ -41,6 +48,7 @@ final class MemberController extends AbstractController
         private readonly EntityManagerInterface $entityManager,
         private readonly MembershipRepository $memberships,
         private readonly InputHydrator $hydrator,
+        private readonly TransactionBoundary $transactions,
     ) {
     }
 
@@ -74,27 +82,33 @@ final class MemberController extends AbstractController
         $this->assertId($organizationId);
         $this->assertId($membershipId);
         $principal = $this->currentPrincipal();
-        $requester = $this->requesterMembership($organizationId, $principal);
-        if (!$requester->canAdminister()) {
-            throw ApiException::notFound();
-        }
-
-        $target = $this->memberships->findForOrganizationById($organizationId, $membershipId, $principal->getId());
-        if (null === $target) {
-            throw ApiException::notFound();
-        }
-
+        // Validated before the transaction: a malformed body must not take a lock.
         $input = $this->hydrator->hydrate(MemberRoleInput::class, JsonBody::decode($request));
-        $this->assertMayManage($requester, $target, $input->role);
 
-        if ($target->isOwner() && 'Owner' !== $input->role && 0 === $this->memberships->countActiveOwners($organizationId, $target->getId())) {
-            throw ApiException::lastOwner();
-        }
+        return $this->transactions->run(function () use ($organizationId, $membershipId, $principal, $input): JsonResponse {
+            $this->memberships->acquireOwnerGuard($organizationId);
+            $requester = $this->requesterMembership($organizationId, $principal);
+            if (!$requester->canAdminister()) {
+                throw ApiException::notFound();
+            }
 
-        $target->changeRole($input->role);
-        $this->entityManager->flush();
+            $target = $this->memberships->findForOrganizationById($organizationId, $membershipId, $principal->getId());
+            if (null === $target) {
+                throw ApiException::notFound();
+            }
 
-        return $this->json(['member' => $this->serialize($target)], Response::HTTP_OK, ['Cache-Control' => 'no-store, private']);
+            $this->assertMayManage($requester, $target, $input->role);
+
+            // Checked after the lock, so the count includes every committed change.
+            if ($target->isOwner() && 'Owner' !== $input->role && 0 === $this->memberships->countActiveOwners($organizationId, $target->getId())) {
+                throw ApiException::lastOwner();
+            }
+
+            $target->changeRole($input->role);
+            $this->entityManager->flush();
+
+            return $this->json(['member' => $this->serialize($target)], Response::HTTP_OK, ['Cache-Control' => 'no-store, private']);
+        });
     }
 
     #[Route('/{membershipId}', name: 'app_api_members_delete', methods: ['DELETE'])]
@@ -103,29 +117,34 @@ final class MemberController extends AbstractController
         $this->assertId($organizationId);
         $this->assertId($membershipId);
         $principal = $this->currentPrincipal();
-        $requester = $this->requesterMembership($organizationId, $principal);
 
-        $target = $this->memberships->findForOrganizationById($organizationId, $membershipId, $principal->getId());
-        if (null === $target) {
-            throw ApiException::notFound();
-        }
+        return $this->transactions->run(function () use ($organizationId, $membershipId, $principal): Response {
+            $this->memberships->acquireOwnerGuard($organizationId);
+            $requester = $this->requesterMembership($organizationId, $principal);
 
-        $isSelf = $target->getPrincipal()->getId() === $principal->getId();
-        if (!$isSelf) {
-            if (!$requester->canAdminister()) {
+            $target = $this->memberships->findForOrganizationById($organizationId, $membershipId, $principal->getId());
+            if (null === $target) {
                 throw ApiException::notFound();
             }
-            $this->assertMayManage($requester, $target, null);
-        }
 
-        if ($target->isOwner() && 0 === $this->memberships->countActiveOwners($organizationId, $target->getId())) {
-            throw ApiException::lastOwner();
-        }
+            $isSelf = $target->getPrincipal()->getId() === $principal->getId();
+            if (!$isSelf) {
+                if (!$requester->canAdminister()) {
+                    throw ApiException::notFound();
+                }
+                $this->assertMayManage($requester, $target, null);
+            }
 
-        $this->entityManager->remove($target);
-        $this->entityManager->flush();
+            // Checked after the lock, so the count includes every committed change.
+            if ($target->isOwner() && 0 === $this->memberships->countActiveOwners($organizationId, $target->getId())) {
+                throw ApiException::lastOwner();
+            }
 
-        return new Response(null, Response::HTTP_NO_CONTENT);
+            $this->entityManager->remove($target);
+            $this->entityManager->flush();
+
+            return new Response(null, Response::HTTP_NO_CONTENT);
+        });
     }
 
     /**
