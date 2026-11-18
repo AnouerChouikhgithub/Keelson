@@ -10,11 +10,11 @@ use App\Entity\Organization;
 use App\Entity\Principal;
 use App\Exception\ApiException;
 use App\Input\RegisterInput;
+use App\Mail\DeferredMailer;
 use App\Repository\PrincipalRepository;
 use App\Util\Subdomain;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\ORM\EntityManagerInterface;
-use Symfony\Component\Mailer\MailerInterface;
 use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
 
 /**
@@ -23,8 +23,10 @@ use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
  * All three rows and the verification token are written in one transaction: a
  * principal without an organization could not use the product, and an
  * organization without an owner would be unreachable. The verification email is
- * sent only after that transaction committed, because mail is not transactional
- * and a failed send must not leave a half-created account.
+ * built only after that transaction committed and queued on {@see DeferredMailer}
+ * for the end of the request, because mail is not transactional: a failed send
+ * must not leave a half-created account, and it must not make an existing
+ * address measurably slower than a new one.
  *
  * If the address is already registered the method returns normally and sends
  * nothing, so the caller's response is identical for a new and an existing
@@ -46,7 +48,7 @@ final class RegistrationService
         private readonly UserPasswordHasherInterface $passwordHasher,
         private readonly TransactionBoundary $transactions,
         private readonly AuthTokenService $tokens,
-        private readonly MailerInterface $mailer,
+        private readonly DeferredMailer $mailer,
         private readonly MailFactory $mails,
     ) {
     }

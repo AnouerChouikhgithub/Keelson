@@ -1,11 +1,24 @@
 framework:
     rate_limiter:
-        # Failed sign-in attempts for one address. Five per minute is the
-        # product policy; the sixth is answered 429 with Retry-After.
+        # Failed sign-in attempts for one address *as used from one client
+        # address*. Five per minute is the product policy; the sixth from the
+        # same pair is answered 429 with Retry-After. Keying on the pair is what
+        # stops a stranger from locking an account out with five requests: their
+        # failures fill their own bucket, not the account's.
         login_email:
             policy: 'fixed_window'
             limit: 5
             interval: '1 minute'
+
+        # Ceiling on one address whatever client address the attempts come
+        # from. High enough (50 an hour) that a legitimate user is not locked out
+        # by one attacker's five requests, low enough that a distributed grind
+        # against a known address is still bounded. A successful sign-in does not
+        # reset it.
+        login_account:
+            policy: 'fixed_window'
+            limit: 50
+            interval: '1 hour'
 
         # A wider bucket per client address so a single host cannot grind
         # through many accounts. Deliberately loose: offices and test suites
