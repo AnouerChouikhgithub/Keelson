@@ -121,9 +121,11 @@ Request:
   one is `404`, like every tenant route.
 
 Retrieval scores the locale's articles with BM25 and keeps the top three the caller's
-role may see. When nothing clears the relevance floor the answer is a fixed message in
-the caller's locale with `sources: []` and **no provider call**, so an uncovered
-question spends nothing.
+role may see. An article counts as related only when the question shares **at least two
+distinct terms** with it and the score clears the relevance floor; one shared word is
+not evidence of topicality. When nothing clears it the answer is a fixed message in the
+caller's locale with `sources: []` and **no provider call**, so an uncovered question
+spends nothing. The off-topic evaluation set measures exactly that (see `docs/ai.md`).
 
 Success response `200`:
 
@@ -220,13 +222,20 @@ is not a failure: it produces the template with `fallback: true`.
 
 `ai_requests` deliberately stores **no prompt and no answer text**: feature, status,
 model, token counts, latency and an error code are enough to audit spend without
-retaining customer content.
+retaining customer content. An operator reads it with
+`php bin/console app:ai:usage --organization=<uuid> --days=30`.
 
 ## Row-level security
 
-PostgreSQL RLS does not exist on this branch (see `docs/adr/0003-postgresql-row-level-security.md`).
-`organization_ai_settings` and `ai_requests` are therefore isolated by the application
-layer only, exactly like the other tenant tables: reads are scoped by the membership
-resolved before any query. When RLS lands, both tables need an `organization_id` policy
-matching the rest of the schema. Both carry an `organization_id` index so a policy
-filter and tenant-scoped reports stay cheap.
+`organization_ai_settings` and `ai_requests` are tenant tables: both are `ENABLE` **and**
+`FORCE ROW LEVEL SECURITY` with the standard
+`organization_id = current_setting('app.organization_id')` policy
+(`Version20261201130000`), like `customers`, `invoices`, `invitations` and
+`notifications`. See `docs/adr/0003-postgresql-row-level-security.md`.
+
+`POST /api/ai/guide` names its organization in the body and has no `{organizationId}`
+route attribute, so no listener sets the context for it; `AiGateway` activates the tenant
+itself (`inTenant()`), after proving the caller is an active member, with
+`set_config(..., true)` scoped to the enclosing transaction. Without that context an
+unscoped read returns no rows and an unscoped write is rejected. Both tables carry an
+`organization_id` index, so the policy filter and tenant-scoped reports stay cheap.

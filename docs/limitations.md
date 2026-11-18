@@ -6,11 +6,11 @@ it means for whoever deploys Keelson.
 ## Security and tenancy
 
 - **Row-level security covers the tenant tables, not the identity tables.**
-  `customers`, `invoices`, `invitations` and `notifications` are `ENABLE` **and**
-  `FORCE ROW LEVEL SECURITY` with a policy on the transaction-local
-  `app.organization_id`; `principals`, `memberships`, `auth_tokens` and `sessions`
-  deliberately are not, because they are read before a tenant is known. Isolation
-  for those stays application-layer. See
+  `customers`, `invoices`, `invitations`, `notifications`, `organization_ai_settings`
+  and `ai_requests` are `ENABLE` **and** `FORCE ROW LEVEL SECURITY` with a policy on
+  the transaction-local `app.organization_id`; `principals`, `memberships`,
+  `auth_tokens` and `sessions` deliberately are not, because they are read before a
+  tenant is known. Isolation for those stays application-layer. See
   [adr/0003](adr/0003-postgresql-row-level-security.md).
 - **An unscoped query returns no rows, not all rows.** That is the point, but it
   means a console command or a fixture that touches a tenant table must use
@@ -137,3 +137,34 @@ than they show:
 - **The production stack is proven with Compose locally**, not on the eventual
   host; the real host decides `TRUSTED_PROXIES`/`TRUSTED_HEADERS` and where TLS
   terminates.
+
+## AI
+
+- **The assistant retrieves, it does not reason over tenant data.** `POST /api/ai/guide`
+  answers from the bundled documentation only; it never reads a customer, an invoice or
+  a member row. That is a property of the design, not a filter that could be widened
+  later without a new review.
+- **The evaluation measures retrieval, not answer quality.** The expected article must
+  rank first and the off-topic set must not reach a provider. Whether a real model writes
+  a *good* answer is what the manual real-provider workflow reports, and its numbers
+  depend on the vendor and the model.
+- **CI always runs the deterministic fake provider.** `AI_PROVIDER=fake` produces fixed
+  text, so the suite proves the plumbing, the safety rules and the cost accounting — not
+  what a live model would say.
+- **One shared budget per organization, per month.** There is no per-feature, per-role or
+  per-principal budget: a summary and a guide question spend from the same allowance.
+- **No streaming, no tool calling, no conversation memory.** Each call is one prompt and
+  one answer; the assistant does not remember the previous question.
+- **Cost is visible, not alerted.** Thresholds (20,000 tokens/day, 80% of budget) are
+  printed by `app:ai:usage`; there is no push notification, email or metrics exporter
+  attached to them, so someone has to look at the command.
+- **A reservation can outlive its process.** A call killed mid-flight (deploy, OOM)
+  cannot release its estimate, so `reserved_tokens` stays high until the monthly period
+  rolls over. It costs headroom, never money; the manual repair is in
+  [runbooks/ai.md](runbooks/ai.md).
+- **The ledger is kept indefinitely.** `ai_requests` has no pruning job. It holds no
+  prompt and no answer, but it does grow, and a retention policy has to delete old rows
+  deliberately.
+- **English, French and Arabic only.** The corpus, the retrieval tokenizer and the
+  localized "not covered" message exist for those three; another locale would need
+  articles, not just a translation.

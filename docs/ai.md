@@ -1,0 +1,148 @@
+# AI features
+
+Status: **implemented and measured.** Two features ship: the documentation assistant
+(`POST /api/ai/guide`) and the workspace summaries
+(`POST /api/organizations/{organizationId}/ai/summaries/{kind}`). Both reach a provider
+only through `App\Ai\AiGateway`, so the deployment switch, the organization opt-in, the
+rate limits, the budget and the ledger apply identically to each. The HTTP contract is
+[docs/api/ai.md](api/ai.md); this page is the design and the operating numbers.
+
+Nothing here is a general-purpose chat. The assistant answers from the bundled
+documentation and says so when the documentation does not cover the question; the
+summaries describe aggregates the caller can already see on screen. Neither feature
+invents tenant facts: the guide is never given tenant data at all, and a summary that
+mentions a figure the request could not derive is replaced by a deterministic template
+(`fallback: true`).
+
+## The chain every call goes through
+
+1. **Active membership.** A foreign or unknown organization is `404`, like every other
+   tenant route. There is no "forbidden" and no tenant enumeration.
+2. **Global switch.** `AI_ENABLED=false` stops every call for every tenant, before a
+   provider is resolved.
+3. **Organization opt-in.** The tenant's stored `enabled` flag. New organizations start
+   disabled and with a budget of `0`.
+4. **Rate limits.** `limiter.ai_principal` (20 calls / 5 minutes per principal) and
+   `limiter.ai_organization` (200 calls / 5 minutes per organization). A refusal is
+   `429 ai_rate_limited` with `Retry-After`.
+5. **Budget reservation.** One conditional `UPDATE ... RETURNING` on
+   `organization_ai_settings` reserves an estimate (`prompt characters / 4 + maxTokens`)
+   and commits before the provider is called. The predicate is the entire budget rule,
+   so PostgreSQL arbitrates two concurrent requests and a nearly empty budget cannot
+   fund both.
+6. **Provider call.** `AI_PROVIDER=fake` in tests and CI, `openai` (any
+   OpenAI-compatible `AI_BASE_URL`) in production-like environments.
+7. **Settlement.** A second transaction replaces the estimate with the real token
+   counts, appends the `ai_requests` ledger row and logs tokens and latency only.
+
+A failure at step 6 releases the reservation and writes a `failed` row with an error
+code, so an outage neither bills the tenant nor hides that an attempt happened. An
+answer that sanitizes down to nothing is treated as a failure (`503 ai_unavailable`),
+not as an empty success.
+
+## Retrieval: what the guide answers
+
+Each locale has its own article set under `backend/resources/guide/{en,fr,ar}`. A
+question is tokenized, scored with BM25 against the locale's articles, and the top three
+articles the caller's role may see become the sources.
+
+An article is only related when the question shares **at least two distinct terms**
+with it and the score clears `0.5`. One shared word is not evidence of topicality:
+before that rule the question *"Write a poem about the sea."* matched an article through
+the ordinary word "about" with a score of 2.4, which was enough to spend a real provider
+call on a question the corpus cannot answer. The off-topic evaluation set now measures
+this directly: 30 questions across the three languages, each of which must produce the
+fixed "not covered" message with **no provider call and no ledger row**.
+
+When nothing clears the floor the answer is a constant, localized message with
+`sources: []`. That is a deliberate product decision: an answer built on a barely
+related article is worse than "I don't have documentation for that".
+
+## Prompts and output
+
+- The prompt is a fixed instruction plus data blocks wrapped in
+  `<<<UNTRUSTED_DATA ... UNTRUSTED_DATA>>>`. Everything a tenant controls — a question,
+  a customer name, an invoice note, a member's display name — goes inside a block and is
+  labelled as data.
+- `PromptBuilder` removes control characters, zero-width and bidi characters, and
+  neutralises any delimiter written inside a field, so a field cannot close the block
+  and start issuing instructions. Newlines and tabs survive because they are meaningful
+  in an invoice note. Each field is capped at 2000 characters.
+- `OutputSanitizer` decodes entities, strips HTML and script/style bodies, removes
+  markdown images (a remote fetch, i.e. a tracking pixel), reduces markdown links to
+  their label, removes bare URLs and caps the text at 4000 characters. The client still
+  renders it as text — the sanitizer is defence in depth, not permission to use
+  `innerHTML`.
+
+Input hygiene is not a security boundary. The answer is untrusted text and is treated
+as such.
+
+## Cost
+
+- **Default budget: `0`.** `monthly_token_budget` defaults to zero in the schema, which
+  is what keeps the feature off until an Owner or Admin configures it. A suggested
+  starting allowance is **50,000 tokens per month** — a few hundred guide answers or a
+  few dozen summaries; the number an operator picks is theirs, and nothing in the code
+  enforces the suggestion.
+- **Alert thresholds** (`App\Ai\AiBudgetPolicy`): more than **20,000 tokens in one day**
+  (40% of that suggested allowance) or **80% of the monthly budget** spent. They are
+  printed by `app:ai:usage`, not pushed anywhere: there is no alerting integration.
+- The ledger is `ai_requests`: one row per attempt with `organization_id`,
+  `principal_id`, `feature`, `status` (`succeeded`/`failed`), `model`,
+  `prompt_tokens`, `completion_tokens`, `total_tokens`, `latency_ms`, `error_code` and
+  `created_at`. **No prompt and no answer text is stored.** That is what makes spend
+  auditable without retaining customer content.
+
+### `app:ai:usage`
+
+```bash
+php bin/console app:ai:usage                                # every active organization, 7 days
+php bin/console app:ai:usage --organization=<uuid> --days=30
+php bin/console app:ai:usage --organization=<uuid> --json    # same numbers, machine-readable
+```
+
+It prints, per organization: the stored opt-in and monthly budget, the tokens used and
+remaining, and one row per UTC day with request counts, failures and the three token
+counters. Days are UTC because `created_at` is; a local report will disagree near
+midnight at the edges of the window. `--days` accepts 1 to 366. A malformed
+`--organization` is a usage error (exit `2`), never a report.
+
+The command reads through `TenantContext`, so each tenant's rows are read inside that
+tenant's row-level-security context rather than filtered by a `WHERE` clause alone.
+
+## How it is verified
+
+| Where | What it proves |
+| --- | --- |
+| `backend/tests/Ai/Eval/` (`--group ai-eval`) | 40 guide questions per language (120 total) each assert the expected article ranks first; 30 off-topic questions assert the not-covered message with no provider call; one fixture per summary kind asserts the exact facts the prompt may use. |
+| CI backend job | The `ai-eval` group runs with `FakeAiProvider`, so it is deterministic and offline; it is part of the normal suite, not a separate gate. |
+| `.github/workflows/ai-eval.yml` | Manual `workflow_dispatch` only. Uses the real provider through the secret `AI_API_KEY`, runs the same suite, prints a pass-rate table per set from the JUnit names (question ids, never prompts or answers) and fails below `--minimum` (default 90%). No `pull_request` trigger exists, so a fork cannot reach the secret. |
+| `backend/tests/Ai/RedTeam/` | Injection through the question, a customer name, an invoice note and a member name; a body naming another organization; a 100 KB question; control and bidi characters; a provider answering with HTML, a link, a markdown image or invented numbers. Each asserts the exact safe outcome. |
+| `backend/tests/Ai/Drills/` | Timeout, `429`, `500`, malformed JSON and an empty answer; `AI_ENABLED=false`; two real database connections racing a nearly empty budget. |
+
+The eval measures **retrieval**, not answer quality: the expected article must be
+`sources[0]`. Cross-provider answer comparison is what the manual workflow is for, and it
+is deliberately not a CI gate — a pass rate that depends on a vendor's model would make
+the pipeline non-deterministic.
+
+## Failure behaviour
+
+| Situation | Caller sees | Ledger |
+| --- | --- | --- |
+| `AI_ENABLED=false` or organization disabled | `403 ai_disabled` | nothing |
+| Reservation refused | `402 ai_budget_exceeded` | nothing |
+| Rate limit hit | `429 ai_rate_limited` + `Retry-After` | nothing |
+| Provider timeout / 5xx after retry / unparseable body | `503 ai_unavailable` | `failed` row with the reason |
+| Answer sanitizes to empty | `503 ai_unavailable` (`malformed`) | `failed` row |
+| Provider outage during a summary | `200` with `fallback: true` | `failed` row |
+
+Summaries degrade; the guide refuses. A summary has a deterministic template that says
+the same true facts, so falling back is better than a 503. The guide has nothing true to
+fall back to.
+
+## What is not built
+
+See [limitations.md](limitations.md): no streaming, no tool/function calling, no
+per-feature budgets, no prompt caching, no alerting integration, no admin screen for
+usage (the console command is the interface), and no supported locale beyond `en`, `fr`
+and `ar`.

@@ -109,6 +109,37 @@ disposable PostgreSQL 16 instance:
 Not exercised: off-host retention, encryption at rest, and a restore onto the
 eventual production host.
 
+## AI features (sprint `g-ai-release`)
+
+Two features ship behind `App\Ai\AiGateway`: the documentation assistant
+(`POST /api/ai/guide`) and the workspace summaries
+(`POST /api/organizations/{organizationId}/ai/summaries/{kind}`). The design, the
+operating numbers and the failure table are in [../ai.md](../ai.md); what leaves the
+process is in [../privacy-data-flow.md](../privacy-data-flow.md); the on-call actions are
+in [../runbooks/ai.md](../runbooks/ai.md); the review and its findings are in
+[../review/ai-review.md](../review/ai-review.md).
+
+Evidence, measured on this branch:
+
+| Check | Command | Result |
+| --- | --- | --- |
+| AI suite (eval + red team + drills) | `php bin/phpunit tests/Ai` | `OK (161 tests, 1809 assertions)` |
+| Evaluation set | `php bin/phpunit --group ai-eval` | `OK (129 tests, 1653 assertions)` — 120 guide questions (40 × en/fr/ar), 30 off-topic questions, the summary fixtures |
+| Backend suite | `php bin/phpunit` | 590 tests; 6 failures, all reproduced unchanged on `main` at `2dea860` (see *Known limitations*) |
+| Static analysis | `composer stan` | 4 errors, all pre-existing in `src/Security/AuthAttemptLimiter.php` and identical on `2dea860`; nothing from the AI code |
+| Style | `php-cs-fixer --dry-run` on LF copies of `src tests migrations bin` | `Found 0 of 251 files that can be fixed` |
+| Frontend | `pnpm exec tsc -b`, `pnpm run lint`, `pnpm run build` | clean |
+| Bundle | `pnpm run check:bundle` | entry 375.4 kB of 420 kB, total 492.2 kB of 800 kB |
+| Frontend tests | `pnpm test` | 103 tests pass; the command exits `1` on 14 undici "unhandled error" reports, reproduced identically on `2dea860` |
+| Browser journeys | `pnpm --dir e2e test` | **not run for this sprint** — it needs the full stack (API, SPA, Mailpit, throwaway database) and this sprint changed no route a journey exercises |
+
+Two findings were fixed with a test each, and both are described in
+[../review/ai-review.md](../review/ai-review.md): the AI tables had no row-level-security
+policy (Critical, `Version20261201130000`), and the gateway did not verify that a request
+belonged to the caller it was given (Medium). The off-topic evaluation also caught a High
+finding — a single shared word was enough to spend a provider call — which is why
+`GuideIndex` now requires two distinct matched terms.
+
 ## Remaining external dependencies
 
 1. **TLS termination and host configuration.** The images speak HTTP; HSTS and
@@ -127,10 +158,11 @@ eventual production host.
 
 ## Known limitations, accepted (not defects)
 
-- No PostgreSQL row-level security: isolation is enforced by repositories and
-  voters. ADR 0003 rejects RLS for 1.0.x; the privilege split that a future RLS
-  migration needs is already in place. Cross-tenant behaviour is covered by
-  `RouteIdorTest` and `TenantScopedRepositoryTest`.
+- Row-level security is enabled and forced on the six tenant tables (the four from
+  1.0.x plus `organization_ai_settings` and `ai_requests`), and asserted by
+  `tests/Integration/RowLevelSecurityTest.php` through a dedicated non-`BYPASSRLS`
+  probe. The database suite still connects as the schema owner, which bypasses the
+  policies, so it does not exercise them globally.
 - No billing, no MFA/SSO, no email change, no session-management screen, no metrics
   exporter, no queue worker — see [../limitations.md](../limitations.md).
 - The full `doctrine:schema:validate` sync check reports a diff by design: the
@@ -138,6 +170,15 @@ eventual production host.
 - `composer cs` on a CRLF Windows checkout flags every file; it is clean on LF and in
   CI. Documented in `AGENTS.md`.
 - Coverage was not measured locally (no `pcov`); CI measures and gates it.
+- Six tests fail on this machine and are **not** introduced by this sprint: four
+  lock-timeout concurrency tests (`CustomerDeletionConcurrencyTest`,
+  `InvoiceDraftConcurrencyTest`, `InvoiceNumberAllocationTest`,
+  `LastOwnerProtectionTest`), `SyntheticFixtureLoaderTest`, and
+  `PasswordResetTest::testResettingEndsTheSessionThatWasAlreadySignedIn`. All six were
+  reproduced on a clean checkout of `main` at `2dea860`, on the same Windows/Docker
+  PostgreSQL, before any AI work was present. `pnpm test` in the frontend shows the same
+  relationship: 103 tests pass and the command exits `1` on undici teardown errors that
+  also occur at `2dea860`.
 
 Nothing in this release is reported as passing that was not executed. The one
 deliberate exception is a dependency advisory with no available fix, which is

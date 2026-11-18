@@ -27,7 +27,9 @@ is the prerequisite (2) needs.
 Ship both layers, with the database as the guarantee:
 
 - Migration `Version20261121120000` enables **and forces** row-level security on
-  `customers`, `invoices`, `invitations` and `notifications`, each with
+  `customers`, `invoices`, `invitations` and `notifications`, and
+  `Version20261201130000` applies the same policy to `organization_ai_settings` and
+  `ai_requests`, each with
 
   ```sql
   USING (organization_id = current_setting('app.organization_id', true)::uuid)
