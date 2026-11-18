@@ -16,6 +16,9 @@ use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
  * The AI settings endpoint follows the organization rules: Owner and Admin manage it,
  * everyone else gets the same `404` as a foreign tenant. Enabling AI is a policy
  * change, so it must leave a security event.
+ *
+ * The guide endpoint used to be asserted here as a stub; it is implemented in its own
+ * suite (tests/Integration/GuideApiTest), so only the summaries remain routed stubs.
  */
 final class AiSettingsApiTest extends WebTestCase
 {
@@ -174,13 +177,9 @@ final class AiSettingsApiTest extends WebTestCase
         self::assertResponseStatusCodeSame(404);
     }
 
-    public function testTheGenerativeEndpointsAreRoutedStubs(): void
+    public function testTheSummariesAreStillRoutedStubs(): void
     {
         $this->client->loginUser($this->principals['Member']);
-
-        $this->send('POST', '/api/ai/guide', ['question' => 'How do I mark an invoice paid?']);
-        self::assertResponseStatusCodeSame(501);
-        self::assertSame('not_implemented', $this->payload()['error']['code']);
 
         $this->send('POST', $this->summariesPath($this->organization));
         self::assertResponseStatusCodeSame(501);

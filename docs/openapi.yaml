@@ -1198,6 +1198,44 @@ paths:
           $ref: '#/components/responses/Unauthenticated'
         '404':
           $ref: '#/components/responses/NotFound'
+  /api/organizations/{organizationId}/onboarding:
+    parameters:
+      - $ref: '#/components/parameters/OrganizationId'
+    get:
+      tags: [Dashboard]
+      summary: The getting-started checklist, computed from database counts.
+      description: |
+        Every step is a count, never a stored flag, so the checklist survives a reload and
+        agrees with what the organization actually contains. Any active member may read it;
+        the step ids are stable and the client translates them.
+      responses:
+        '200':
+          description: The five steps and how many are done.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [steps, completed, total]
+                properties:
+                  steps:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, done]
+                      properties:
+                        id:
+                          type: string
+                          enum: [invite_team, add_customer, create_invoice, send_invoice, record_payment]
+                        done:
+                          type: boolean
+                  completed:
+                    type: integer
+                  total:
+                    type: integer
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /api/notifications:
     get:
       tags: [Notifications]
@@ -1323,7 +1361,16 @@ paths:
   /api/ai/guide:
     post:
       tags: [AI]
-      summary: Ask the product assistant (stub, 501).
+      summary: Ask the product assistant, grounded in the bundled documentation.
+      description: |
+        Retrieval scores the documentation for the requested locale and keeps the top three
+        articles the caller's role may see; only those articles, the role and the question are
+        sent to the model. A question the documentation does not cover is answered with a fixed
+        message in the caller's locale and `sources` is empty: no model call, no spend.
+
+        The assistant never reads tenant rows. `organizationId` is optional and selects the
+        tenant whose settings, budget and rate limits apply; without it the caller's oldest
+        active organization is used.
       parameters:
         - $ref: '#/components/parameters/CsrfToken'
       requestBody:
@@ -1336,10 +1383,18 @@ paths:
               properties:
                 question:
                   type: string
-                  maxLength: 2000
+                  minLength: 3
+                  maxLength: 500
+                locale:
+                  type: string
+                  enum: [en, fr, ar]
+                  default: en
+                organizationId:
+                  type: string
+                  format: uuid
       responses:
         '200':
-          description: Plain-text answer and its internal sources.
+          description: Plain-text answer and up to three documentation sources.
           content:
             application/json:
               schema:
@@ -1350,26 +1405,43 @@ paths:
                     type: string
                   sources:
                     type: array
+                    maxItems: 3
                     items:
                       type: object
-                      required: [title, reference]
+                      required: [id, title]
                       properties:
+                        id:
+                          type: string
                         title:
                           type: string
-                        reference:
-                          type: string
+        '400':
+          description: The organization id is not a UUID (`invalid_id`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '401':
           $ref: '#/components/responses/Unauthenticated'
+        '402':
+          description: The organization has used its monthly token budget (`ai_budget_exceeded`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: CSRF rejected, or AI is disabled (`ai_disabled`).
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
         '429':
           $ref: '#/components/responses/RateLimited'
-        '501':
-          description: The generator is not implemented yet (`not_implemented`).
+        '503':
+          description: The provider failed (`ai_unavailable`); the reservation is released.
           content:
             application/json:
               schema:

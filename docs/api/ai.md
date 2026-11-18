@@ -1,10 +1,10 @@
 # AI API contract
 
-Status: **foundation only.** The provider boundary, budget accounting, rate limits and
-safety helpers exist; the two generative endpoints (`/api/ai/guide` and the organization
-summaries) are routed stubs that answer `501`. This document is the contract other
-tracks code against, so the request and response shapes below are fixed even where the
-implementation is not there yet.
+Status: **foundation plus the product assistant.** The provider boundary, budget
+accounting, rate limits and safety helpers exist, and `/api/ai/guide` answers from the
+bundled documentation. The organization summaries are still routed stubs that answer
+`501`. This document is the contract other tracks code against, so the request and
+response shapes below are fixed even where the implementation is not there yet.
 
 Nothing in this API is public: every endpoint requires an authenticated session and
 every organization-scoped endpoint requires an **active membership** of the tenant in
@@ -104,28 +104,47 @@ Errors: `401`, `403` (`csrf_invalid`), `404`, `422`.
 
 ## `POST /api/ai/guide`
 
-**Stub — answers `501`.** Reserved contract for the assistant that answers questions
-about the product and the caller's own data.
+The product assistant. It answers from the bundled documentation only — never from
+tenant data — and it names the articles it used.
 
 Request:
 
 ```json
-{"question": "How do I mark an invoice paid?"}
+{"question": "How do I mark an invoice paid?", "locale": "en"}
 ```
 
-Success response `200` (once implemented):
+- `question` is a string of 3 to 500 characters.
+- `locale` is `en`, `fr` or `ar` and defaults to `en`. It selects the documentation
+  and the language of the fixed "not covered" answer; the model is told to answer in it.
+- `organizationId` is optional and selects the tenant whose settings, budget and rate
+  limits apply. Without it, the caller's oldest active organization is used; a foreign
+  one is `404`, like every tenant route.
+
+Retrieval scores the locale's articles with BM25 and keeps the top three the caller's
+role may see. When nothing clears the relevance floor the answer is a fixed message in
+the caller's locale with `sources: []` and **no provider call**, so an uncovered
+question spends nothing.
+
+Success response `200`:
 
 ```json
 {
   "answer": "Open the invoice and choose Mark paid.",
-  "sources": [
-    {"title": "Invoices", "reference": "invoices.send"}
-  ]
+  "sources": [{"id": "invoice-lifecycle", "title": "Invoices"}]
 }
 ```
 
-- `answer` is plain text: no HTML, no links and no markdown images.
-- `sources` never carries a provider URL; `reference` is an internal identifier.
+- `answer` is sanitized plain text: no HTML, no links, no markdown images, capped at
+  4000 characters.
+- `sources` holds at most three entries and never a provider URL.
+
+The prompt is a constant system rule plus two delimited data blocks — the articles, and
+the role with the question — so text inside a question cannot become an instruction. A
+Viewer cannot retrieve an Owner/Admin article, so the answer is built without it.
+
+Errors: `400 invalid_id`, `401`, `402 ai_budget_exceeded`, `403 ai_disabled` or
+`csrf_invalid`, `404`, `422 validation_failed`, `429 ai_rate_limited` (with
+`Retry-After`), `503 ai_unavailable`.
 
 ## `POST /api/organizations/{organizationId}/ai/summaries/{kind}`
 
