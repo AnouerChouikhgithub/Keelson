@@ -1,0 +1,5 @@
+services:
+    # One generator today. The alias is explicit so a test can substitute a
+    # scripted (or deliberately lying) generator without editing the wiring the
+    # application runs on.
+    App\Summary\SummaryTextGenerator: '@App\Summary\AiSummaryTextGenerator'
