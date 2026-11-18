@@ -32,6 +32,10 @@ test('enables AI, asks the assistant and generates a summary', async ({ page }) 
 
   const verifyPath = await waitForMailLink(email, '/verify-email')
   await page.goto(verifyPath)
+  // Confirming the link also sets the password the owner signs in with, so the
+  // journey follows the same form a person submits.
+  await page.getByLabel('Password', { exact: true }).fill(DEMO_PASSWORD)
+  await page.getByRole('button', { name: 'Confirm my email' }).click()
   await expect(page.getByRole('heading', { name: 'Email confirmed' })).toBeVisible()
 
   await signIn(page, email)

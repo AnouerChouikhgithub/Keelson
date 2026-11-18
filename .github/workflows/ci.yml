@@ -285,6 +285,11 @@ jobs:
           FRONTEND_URL="http://localhost:5173"
           DEFAULT_URI="http://localhost:5173"
           REQUIRE_VERIFIED_EMAIL=true
+          # The AI journey must actually run, not skip: this is the only place the
+          # assistant and the summary are exercised end to end. `fake` is the
+          # deterministic provider, so no credential is involved.
+          AI_ENABLED=true
+          AI_PROVIDER=fake
           DOTENV
           php bin/console doctrine:migrations:migrate --no-interaction
           php bin/console app:fixtures:load --force
