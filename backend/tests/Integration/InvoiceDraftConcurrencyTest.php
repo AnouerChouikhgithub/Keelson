@@ -176,6 +176,13 @@ final class InvoiceDraftConcurrencyTest extends WebTestCase
                 sprintf('Expected a lock-wait timeout, got %s: %s', $exception::class, $exception->getMessage()),
             );
         } finally {
+            // `catchExceptions(false)` skips the kernel's exception listeners, so
+            // the failed edit left its transaction open and aborted; tearDown
+            // would then collide with it.
+            $main = $this->entityManager->getConnection();
+            if ($main->isTransactionActive()) {
+                $main->rollBack();
+            }
             $other->rollBack();
             $statusAfter = (string) $other->fetchOne('SELECT status FROM invoices WHERE id = ?', [$invoiceId]);
             $subtotalAfter = (string) $other->fetchOne('SELECT subtotal FROM invoices WHERE id = ?', [$invoiceId]);
