@@ -13,6 +13,7 @@ use App\Entity\Organization;
 use App\Entity\Principal;
 use App\Service\InvoiceAuditLogger;
 use App\Service\InvoiceCalculator;
+use App\Tenancy\TenantContext;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
 
@@ -38,6 +39,7 @@ final class SyntheticFixtureLoader
         private readonly FixtureTargetGuard $targetGuard,
         private readonly UserPasswordHasherInterface $passwordHasher,
         private readonly InvoiceAuditLogger $audits,
+        private readonly TenantContext $tenants,
         private readonly string $environment,
         private readonly ?string $password = null,
     ) {
@@ -124,104 +126,115 @@ final class SyntheticFixtureLoader
         $customers = [];
         foreach ($definitions['customers'] as $definition) {
             $organization = $organizations[$definition['organization']];
-            $customer = $this->entityManager->getRepository(Customer::class)
-                ->findOneBy(['organization' => $organization, 'name' => $definition['name']]);
-            if (null === $customer) {
-                $customer = new Customer($organization, $definition['name'], $definition['email'], $definition['phone'], $definition['billingAddress']);
-                $this->entityManager->persist($customer);
-                ++$stats['created']['customers'];
-            } else {
-                ++$stats['skipped']['customers'];
-            }
-            $customers[$definition['key']] = $customer;
+            // Row-level security is part of the schema, so the seeder states which
+            // tenant every row belongs to instead of relying on a privileged role.
+            $customers[$definition['key']] = $this->tenants->run($organization->getId(), function () use ($definition, $organization, &$stats): Customer {
+                $customer = $this->entityManager->getRepository(Customer::class)
+                    ->findOneBy(['organization' => $organization, 'name' => $definition['name']]);
+                if (null === $customer) {
+                    $customer = new Customer($organization, $definition['name'], $definition['email'], $definition['phone'], $definition['billingAddress']);
+                    $this->entityManager->persist($customer);
+                    ++$stats['created']['customers'];
+                } else {
+                    ++$stats['skipped']['customers'];
+                }
+                $this->entityManager->flush();
+
+                return $customer;
+            });
         }
-        $this->entityManager->flush();
 
         $today = new \DateTimeImmutable('today');
         foreach ($definitions['invoices'] as $definition) {
             $organizationKey = $definition['organization'];
             $organization = $organizations[$organizationKey];
-            $exists = $this->entityManager->getRepository(Invoice::class)
-                ->findOneBy(['organization' => $organization, 'number' => $definition['number']]);
-            if (null !== $exists) {
-                ++$stats['skipped']['invoices'];
-                continue;
-            }
-            $actor = $principals[$actorKeys[$organizationKey]];
-            $calculation = $this->calculator->calculate($definition['lineItems'], $definition['taxRate'], $definition['discountAmount']);
-            $issuedAt = $today->modify(sprintf('%+d days', $definition['issueOffsetDays']));
-            $invoice = new Invoice(
-                $organization,
-                $customers[$definition['customer']],
-                $definition['number'],
-                $actor->getId(),
-                $issuedAt,
-                $today->modify(sprintf('%+d days', $definition['dueOffsetDays'])),
-                $calculation['lineItems'],
-                $calculation['taxRate'],
-                $calculation['discountAmount'],
-                $calculation['subtotal'],
-                $calculation['taxAmount'],
-                $calculation['total'],
-                // Created, sent and paid dates follow the invoice's own timeline
-                // instead of all landing on the seeding second.
-                $issuedAt,
-            );
-            $this->entityManager->persist($invoice);
-            // Same service the API uses for every mutation, so the seeded trail
-            // is indistinguishable in shape from a real one.
-            $this->audits->record($organization, $actor, 'invoice.created', $invoice->getId(), $customers[$definition['customer']]->getId(), [], $issuedAt);
-            switch ($definition['status']) {
-                case 'draft':
-                    break;
-                case 'sent':
-                    $invoice->send($issuedAt);
-                    $this->audits->record($organization, $actor, 'invoice.sent', $invoice->getId(), null, [], $issuedAt);
-                    break;
-                case 'overdue':
-                    $invoice->send($issuedAt);
-                    $this->audits->record($organization, $actor, 'invoice.sent', $invoice->getId(), null, [], $issuedAt);
-                    if (!$invoice->markOverdue($today)) {
-                        throw new \InvalidArgumentException('An overdue fixture invoice needs a due date before today.');
-                    }
-                    break;
-                case 'paid':
-                    $invoice->send($issuedAt);
-                    $this->audits->record($organization, $actor, 'invoice.sent', $invoice->getId(), null, [], $issuedAt);
-                    $paidAt = $invoice->getDueDate()->modify('-2 days');
-                    $invoice->markPaid($paidAt);
-                    $this->audits->record($organization, $actor, 'invoice.paid', $invoice->getId(), null, [], $paidAt);
-                    break;
-                default:
-                    throw new \InvalidArgumentException(sprintf('Fixture invoice status "%s" is not supported.', $definition['status']));
-            }
-            ++$stats['created']['invoices'];
+            $created = $this->tenants->run($organization->getId(), function () use ($definition, $organization, $organizationKey, $principals, $actorKeys, $customers, $today): bool {
+                $exists = $this->entityManager->getRepository(Invoice::class)
+                    ->findOneBy(['organization' => $organization, 'number' => $definition['number']]);
+                if (null !== $exists) {
+                    return false;
+                }
+                $actor = $principals[$actorKeys[$organizationKey]];
+                $calculation = $this->calculator->calculate($definition['lineItems'], $definition['taxRate'], $definition['discountAmount']);
+                $issuedAt = $today->modify(sprintf('%+d days', $definition['issueOffsetDays']));
+                $invoice = new Invoice(
+                    $organization,
+                    $customers[$definition['customer']],
+                    $definition['number'],
+                    $actor->getId(),
+                    $issuedAt,
+                    $today->modify(sprintf('%+d days', $definition['dueOffsetDays'])),
+                    $calculation['lineItems'],
+                    $calculation['taxRate'],
+                    $calculation['discountAmount'],
+                    $calculation['subtotal'],
+                    $calculation['taxAmount'],
+                    $calculation['total'],
+                    // Created, sent and paid dates follow the invoice's own timeline
+                    // instead of all landing on the seeding second.
+                    $issuedAt,
+                );
+                $this->entityManager->persist($invoice);
+                // Same service the API uses for every mutation, so the seeded trail
+                // is indistinguishable in shape from a real one.
+                $this->audits->record($organization, $actor, 'invoice.created', $invoice->getId(), $customers[$definition['customer']]->getId(), [], $issuedAt);
+                switch ($definition['status']) {
+                    case 'draft':
+                        break;
+                    case 'sent':
+                        $invoice->send($issuedAt);
+                        $this->audits->record($organization, $actor, 'invoice.sent', $invoice->getId(), null, [], $issuedAt);
+                        break;
+                    case 'overdue':
+                        $invoice->send($issuedAt);
+                        $this->audits->record($organization, $actor, 'invoice.sent', $invoice->getId(), null, [], $issuedAt);
+                        if (!$invoice->markOverdue($today)) {
+                            throw new \InvalidArgumentException('An overdue fixture invoice needs a due date before today.');
+                        }
+                        break;
+                    case 'paid':
+                        $invoice->send($issuedAt);
+                        $this->audits->record($organization, $actor, 'invoice.sent', $invoice->getId(), null, [], $issuedAt);
+                        $paidAt = $invoice->getDueDate()->modify('-2 days');
+                        $invoice->markPaid($paidAt);
+                        $this->audits->record($organization, $actor, 'invoice.paid', $invoice->getId(), null, [], $paidAt);
+                        break;
+                    default:
+                        throw new \InvalidArgumentException(sprintf('Fixture invoice status "%s" is not supported.', $definition['status']));
+                }
+                $this->entityManager->flush();
+
+                return true;
+            });
+            ++$stats[$created ? 'created' : 'skipped']['invoices'];
         }
-        $this->entityManager->flush();
 
         foreach ($definitions['invitations'] as $definition) {
             $organization = $organizations[$definition['organization']];
-            $exists = $this->entityManager->getRepository(Invitation::class)
-                ->findOneBy(['organization' => $organization, 'email' => $definition['email']]);
-            if (null !== $exists) {
-                ++$stats['skipped']['invitations'];
-                continue;
-            }
-            // A known token makes the public accept link usable locally; the row
-            // still stores only its digest, exactly like a real invitation.
-            $token = 'fixture-invitation-'.$definition['key'];
-            $invitation = new Invitation(
-                $organization,
-                $definition['email'],
-                $definition['role'],
-                hash('sha256', $token),
-                $principals[$definition['invitedBy']],
-                (new \DateTimeImmutable())->modify(sprintf('%+d days', $definition['expiresInDays'])),
-            );
-            $this->entityManager->persist($invitation);
-            ++$stats['created']['invitations'];
+            $created = $this->tenants->run($organization->getId(), function () use ($definition, $organization, $principals): bool {
+                $exists = $this->entityManager->getRepository(Invitation::class)
+                    ->findOneBy(['organization' => $organization, 'email' => $definition['email']]);
+                if (null !== $exists) {
+                    return false;
+                }
+                // A known token makes the public accept link usable locally; the row
+                // still stores only its digest, exactly like a real invitation.
+                $token = 'fixture-invitation-'.$definition['key'];
+                $invitation = new Invitation(
+                    $organization,
+                    $definition['email'],
+                    $definition['role'],
+                    hash('sha256', $token),
+                    $principals[$definition['invitedBy']],
+                    (new \DateTimeImmutable())->modify(sprintf('%+d days', $definition['expiresInDays'])),
+                );
+                $this->entityManager->persist($invitation);
+                $this->entityManager->flush();
+
+                return true;
+            });
+            ++$stats[$created ? 'created' : 'skipped']['invitations'];
         }
-        $this->entityManager->flush();
 
         // The expired invitation is created inside its window (the entity refuses
         // a past expiry) and then aged by the loader, which is the only way to
@@ -230,38 +243,44 @@ final class SyntheticFixtureLoader
             if (!$definition['expired']) {
                 continue;
             }
-            $this->entityManager->getConnection()->executeStatement(
-                'UPDATE invitations SET expires_at = now() - interval \'3 days\' WHERE organization_id = ? AND email = ? AND expires_at > now()',
-                [$organizations[$definition['organization']]->getId(), $definition['email']],
-            );
+            $organization = $organizations[$definition['organization']];
+            $this->tenants->run($organization->getId(), function () use ($organization, $definition): void {
+                $this->entityManager->getConnection()->executeStatement(
+                    'UPDATE invitations SET expires_at = now() - interval \'3 days\' WHERE organization_id = ? AND email = ? AND expires_at > now()',
+                    [$organization->getId(), $definition['email']],
+                );
+            });
         }
 
         foreach ($definitions['notifications'] as $definition) {
             $organization = $organizations[$definition['organization']];
             $principal = $principals[$definition['principal']];
-            // `fixtureKey` is the natural key: the loader can tell its own rows
-            // apart from anything the application created, without a schema
-            // column that exists only for fixtures.
-            $exists = $this->entityManager->getConnection()->fetchOne(
-                "SELECT 1 FROM notifications WHERE principal_id = ? AND data->>'fixtureKey' = ? LIMIT 1",
-                [$principal->getId(), $definition['key']],
-            );
-            if (false !== $exists) {
-                ++$stats['skipped']['notifications'];
-                continue;
-            }
-            $createdAt = (new \DateTimeImmutable())->modify(sprintf('-%d days', $definition['daysAgo']))->setTime(9, 30);
-            $notification = new Notification($principal, $organization, $definition['type'], [
-                'fixtureKey' => $definition['key'],
-                'organizationName' => $organization->getName(),
-            ], $createdAt);
-            if ($definition['read']) {
-                $notification->markRead($createdAt->modify('+2 hours'));
-            }
-            $this->entityManager->persist($notification);
-            ++$stats['created']['notifications'];
+            $created = $this->tenants->run($organization->getId(), function () use ($definition, $organization, $principal): bool {
+                // `fixtureKey` is the natural key: the loader can tell its own rows
+                // apart from anything the application created, without a schema
+                // column that exists only for fixtures.
+                $exists = $this->entityManager->getConnection()->fetchOne(
+                    "SELECT 1 FROM notifications WHERE principal_id = ? AND data->>'fixtureKey' = ? LIMIT 1",
+                    [$principal->getId(), $definition['key']],
+                );
+                if (false !== $exists) {
+                    return false;
+                }
+                $createdAt = (new \DateTimeImmutable())->modify(sprintf('-%d days', $definition['daysAgo']))->setTime(9, 30);
+                $notification = new Notification($principal, $organization, $definition['type'], [
+                    'fixtureKey' => $definition['key'],
+                    'organizationName' => $organization->getName(),
+                ], $createdAt);
+                if ($definition['read']) {
+                    $notification->markRead($createdAt->modify('+2 hours'));
+                }
+                $this->entityManager->persist($notification);
+                $this->entityManager->flush();
+
+                return true;
+            });
+            ++$stats[$created ? 'created' : 'skipped']['notifications'];
         }
-        $this->entityManager->flush();
 
         foreach ($definitions['principals'] as $definition) {
             $stats['accounts'][] = [

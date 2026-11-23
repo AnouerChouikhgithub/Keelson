@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Command;
 
 use App\DataFixtures\FixtureTargetGuard;
+use App\Tenancy\TenantContext;
 use Doctrine\DBAL\Connection;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
@@ -39,6 +40,7 @@ final class BulkFixturesCommand extends Command
     public function __construct(
         private readonly Connection $connection,
         private readonly FixtureTargetGuard $targetGuard,
+        private readonly TenantContext $tenants,
         private readonly string $environment,
     ) {
         parent::__construct();
@@ -103,8 +105,16 @@ final class BulkFixturesCommand extends Command
         }
 
         $started = microtime(true);
-        $createdCustomers = $this->seedCustomers((string) $organization['id'], $customers);
-        $createdInvoices = $this->seedInvoices((string) $organization['id'], (string) $creator, $invoices);
+        // Bulk rows are inserted through DBAL, but the policies are on the table:
+        // the writes still have to declare the tenant they belong to.
+        $createdCustomers = $this->tenants->run(
+            (string) $organization['id'],
+            fn (): int => $this->seedCustomers((string) $organization['id'], $customers),
+        );
+        $createdInvoices = $this->tenants->run(
+            (string) $organization['id'],
+            fn (): int => $this->seedInvoices((string) $organization['id'], (string) $creator, $invoices),
+        );
         $elapsed = microtime(true) - $started;
 
         $io->table(

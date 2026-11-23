@@ -5,21 +5,45 @@ it means for whoever deploys Keelson.
 
 ## Security and tenancy
 
-- **No row-level security.** Isolation is enforced by repositories and voters, not
-  by PostgreSQL. A query added later that forgets the tenant filter is a data leak;
-  the protection is review plus the cross-tenant tests in
-  `tests/Unit/Repository/TenantScopedRepositoryTest.php` and
-  `tests/Integration/RouteIdorTest.php`. See
+- **Row-level security covers the tenant tables, not the identity tables.**
+  `customers`, `invoices`, `invitations`, `notifications`, `organization_ai_settings`
+  and `ai_requests` are `ENABLE` **and** `FORCE ROW LEVEL SECURITY` with a policy on
+  the transaction-local `app.organization_id`; `principals`, `memberships`,
+  `auth_tokens` and `sessions` deliberately are not, because they are read before a
+  tenant is known. Isolation for those stays application-layer. See
   [adr/0003](adr/0003-postgresql-row-level-security.md).
+- **An unscoped query returns no rows, not all rows.** That is the point, but it
+  means a console command or a fixture that touches a tenant table must use
+  `App\Tenancy\TenantContext::run()`; without it the write is rejected and the read
+  is empty.
+- **`/readyz` fails when the connecting role bypasses the policies.** A superuser or
+  a role with `BYPASSRLS` is exempt from every policy, so the probe answers `503`
+  with `checks.rowLevelSecurity = bypass`. The dev Compose database's `app` role is
+  the bootstrap **superuser**, so a plain local stack answers `503` there; the
+  production split in [deployment.md](deployment.md) is what makes it `ok`.
+- **The database suite still runs as the schema owner in CI.** That role is a
+  superuser, so it bypasses the policies and the suite does not exercise them
+  globally; the RLS behaviour is asserted by
+  `tests/Integration/RowLevelSecurityTest.php` on a dedicated non-`BYPASSRLS` probe
+  connection. Running the whole suite as `keelson_app` needs every suite that seeds
+  tenant rows to wrap those writes in `TenantContext` — a follow-up, not a claim.
+  `invoice_lines` has no table today (line items live in `invoices.line_items`); the
+  migration applies the policy if one is ever introduced.
 - **A denial is a `404`.** Members of another organization get "not found", never
   "forbidden". That is deliberate (no tenant enumeration), but it means logs and
   users cannot distinguish "does not exist" from "not yours".
 - **No multi-factor authentication**, no social login and no enterprise SSO.
 - **No email-change flow.** An address is fixed at registration; only the display
   name and password can change.
-- **No session-management screen.** A password change invalidates other sessions
-  through the stored hash, but there is no "signed-in devices" list and no "sign
-  out everywhere" button.
+- **No session-management screen.** Changing or resetting the password ends the
+  account's other sessions — each records `principals.session_version` at login and
+  the request listener ends whatever disagrees — but there is no "signed-in devices"
+  list and no "sign out everywhere" button.
+- **Session revocation starts now.** A session opened before `session_version`
+  existed carries no recorded value and adopts the current one on its first request,
+  so an earlier reset cannot end it retroactively. The same applies to a session a
+  test client plants directly (`loginUser()`), which never passes through the login
+  handler that stamps the version.
 - **Rate limits are per process and per minute** (sign-in by address and by client
   address). They use Symfony's rate limiter with the configured cache; a
   multi-instance deployment shares them only if that cache is shared.
@@ -119,3 +143,34 @@ than they show:
 - **The production stack is proven with Compose locally**, not on the eventual
   host; the real host decides `TRUSTED_PROXIES`/`TRUSTED_HEADERS` and where TLS
   terminates.
+
+## AI
+
+- **The assistant retrieves, it does not reason over tenant data.** `POST /api/ai/guide`
+  answers from the bundled documentation only; it never reads a customer, an invoice or
+  a member row. That is a property of the design, not a filter that could be widened
+  later without a new review.
+- **The evaluation measures retrieval, not answer quality.** The expected article must
+  rank first and the off-topic set must not reach a provider. Whether a real model writes
+  a *good* answer is what the manual real-provider workflow reports, and its numbers
+  depend on the vendor and the model.
+- **CI always runs the deterministic fake provider.** `AI_PROVIDER=fake` produces fixed
+  text, so the suite proves the plumbing, the safety rules and the cost accounting — not
+  what a live model would say.
+- **One shared budget per organization, per month.** There is no per-feature, per-role or
+  per-principal budget: a summary and a guide question spend from the same allowance.
+- **No streaming, no tool calling, no conversation memory.** Each call is one prompt and
+  one answer; the assistant does not remember the previous question.
+- **Cost is visible, not alerted.** Thresholds (20,000 tokens/day, 80% of budget) are
+  printed by `app:ai:usage`; there is no push notification, email or metrics exporter
+  attached to them, so someone has to look at the command.
+- **A reservation can outlive its process.** A call killed mid-flight (deploy, OOM)
+  cannot release its estimate, so `reserved_tokens` stays high until the monthly period
+  rolls over. It costs headroom, never money; the manual repair is in
+  [runbooks/ai.md](runbooks/ai.md).
+- **The ledger is kept indefinitely.** `ai_requests` has no pruning job. It holds no
+  prompt and no answer, but it does grow, and a retention policy has to delete old rows
+  deliberately.
+- **English, French and Arabic only.** The corpus, the retrieval tokenizer and the
+  localized "not covered" message exist for those three; another locale would need
+  articles, not just a translation.

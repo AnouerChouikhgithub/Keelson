@@ -109,7 +109,7 @@ final class AiGatewayTest extends KernelTestCase
         $this->entityManager->flush();
 
         try {
-            $this->gateway->complete($stranger, $this->organization->getId(), $this->request(10));
+            $this->gateway->complete($stranger, $this->organization->getId(), $this->request(10, $stranger));
             self::fail('A non-member must not reach the gateway rules.');
         } catch (ApiException $exception) {
             self::assertSame('not_found', $exception->getErrorCode());
@@ -205,7 +205,7 @@ final class AiGatewayTest extends KernelTestCase
         self::assertNotNull($rows[0]['latency_ms'], 'The ledger records the call duration.');
     }
 
-    private function request(int $maxTokens = 100): AiRequest
+    private function request(int $maxTokens = 100, ?Principal $principal = null): AiRequest
     {
         return new AiRequest(
             'guide',
@@ -213,7 +213,7 @@ final class AiGatewayTest extends KernelTestCase
             'How do I mark an invoice paid?',
             $maxTokens,
             $this->organization->getId(),
-            $this->principal->getId(),
+            ($principal ?? $this->principal)->getId(),
         );
     }
 

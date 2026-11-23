@@ -1,3 +1,4 @@
+import { ai } from './ai'
 import { acceptInvitation, auth } from './auth'
 import { account, onboarding, settings } from './settings'
 import { common, errors, nav, notFound, page, profile, roles, search, session, status, theme, toast, api } from './common'
@@ -16,7 +17,7 @@ export const ar = {
   profile,
   session,
   status,
-  roles,
+  roles,
   toast,
   errors,
   notFound,
@@ -30,4 +31,5 @@ export const ar = {
   onboarding,
   settings,
   account,
+  ai,
 }

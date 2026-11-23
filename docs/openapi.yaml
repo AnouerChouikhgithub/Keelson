@@ -118,14 +118,19 @@ paths:
     post:
       tags: [Auth]
       summary: Confirm an address from a verification link.
-      description: Unknown, expired (24 h) and already-used tokens are all `400 invalid_token`.
+      description: |
+        Unknown, expired (24 h) and already-used tokens are all `400 invalid_token`.
+        The request carries the password the address owner chooses for the account: it replaces any
+        password stored when the address was registered, so an account somebody else registered first
+        cannot be signed into with their password. A missing or malformed password is `422` and leaves
+        the link usable.
       security: []
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/TokenRequest'
+              $ref: '#/components/schemas/VerifyEmailRequest'
       responses:
         '204':
           description: The address is now verified.
@@ -1857,6 +1862,17 @@ components:
       properties:
         token:
           type: string
+    VerifyEmailRequest:
+      type: object
+      required: [token, password]
+      description: The token from the verification link and the password the mailbox owner chooses.
+      properties:
+        token:
+          type: string
+        password:
+          type: string
+          minLength: 10
+          maxLength: 72
     Session:
       type: object
       required: [authenticated]

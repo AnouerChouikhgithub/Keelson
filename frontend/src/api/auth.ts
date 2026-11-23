@@ -37,9 +37,15 @@ export async function register(input: SignUpInput): Promise<void> {
   await request<void>('/api/auth/register', { method: 'POST', body: input })
 }
 
-/** `POST /api/auth/verify-email` — resolves when the address is confirmed. */
-export async function verifyEmail(token: string): Promise<void> {
-  await request<void>('/api/auth/verify-email', { method: 'POST', body: { token } })
+/**
+ * `POST /api/auth/verify-email` — confirms the address and sets its password.
+ *
+ * The password is required: the link proves the mailbox is reachable, and the
+ * address owner chooses the password there rather than accepting the one stored
+ * by whoever registered the address first.
+ */
+export async function verifyEmail(token: string, password: string): Promise<void> {
+  await request<void>('/api/auth/verify-email', { method: 'POST', body: { token, password } })
 }
 
 /** `POST /api/auth/resend-verification` — always resolves; nothing is revealed. */

@@ -146,6 +146,29 @@ final class HardeningTest extends WebTestCase
         self::assertStringNotContainsString($principal->getEmail(), $stored, 'The trail keeps a fingerprint, not the address.');
     }
 
+    /**
+     * The per-address budget must be the account's budget: capitalizing the
+     * address is the cheapest way to mint a fresh bucket out of one account.
+     *
+     * A padded address is a `422` from the validator, so what an accepted
+     * request can vary is the case.
+     */
+    public function testTheForgotPasswordBudgetSharesOneBucketAcrossAddressVariants(): void
+    {
+        $email = 'hardening-'.$this->suffix.'-case@example.test';
+        $variants = [$email, strtoupper($email), ucfirst($email), strtolower($email), $email];
+
+        foreach ($variants as $index => $variant) {
+            $this->client->request('POST', '/api/auth/forgot-password', server: self::JSON + ['REMOTE_ADDR' => '10.8.1.'.($index + 1)], content: json_encode(['email' => $variant], \JSON_THROW_ON_ERROR));
+            self::assertResponseStatusCodeSame(202, sprintf('Request %d is inside the budget.', $index + 1));
+        }
+
+        $this->client->request('POST', '/api/auth/forgot-password', server: self::JSON + ['REMOTE_ADDR' => '10.8.1.9'], content: json_encode(['email' => strtoupper($email)], \JSON_THROW_ON_ERROR));
+
+        self::assertResponseStatusCodeSame(429);
+        self::assertSame('rate_limited', $this->payload()['error']['code']);
+    }
+
     private function createPrincipal(string $email): Principal
     {
         $principal = new Principal($email, 'Hardening User');

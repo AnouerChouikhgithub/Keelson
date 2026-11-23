@@ -11,6 +11,25 @@ use Doctrine\Persistence\ManagerRegistry;
 /** @extends ServiceEntityRepository<OrganizationAiSettings> */
 final class OrganizationAiSettingsRepository extends ServiceEntityRepository
 {
+    /**
+     * The whole budget decision, in one statement.
+     *
+     * Public because a concurrency test has to drive the *same* statement from two
+     * independent connections: a copy of this SQL in a test would prove that the copy is
+     * atomic, not that the application is.
+     */
+    public const RESERVE_SQL = 'UPDATE organization_ai_settings
+             SET period = :period,
+                 used_tokens = CASE WHEN period = :period THEN used_tokens ELSE 0 END,
+                 reserved_tokens = (CASE WHEN period = :period THEN reserved_tokens ELSE 0 END) + :estimate,
+                 updated_at = :now
+             WHERE organization_id = :organizationId
+               AND enabled = TRUE
+               AND (CASE WHEN period = :period THEN used_tokens ELSE 0 END)
+                 + (CASE WHEN period = :period THEN reserved_tokens ELSE 0 END)
+                 + :estimate <= monthly_token_budget
+             RETURNING id';
+
     public function __construct(ManagerRegistry $registry)
     {
         parent::__construct($registry, OrganizationAiSettings::class);
@@ -44,17 +63,7 @@ final class OrganizationAiSettingsRepository extends ServiceEntityRepository
         }
 
         $inserted = $this->getEntityManager()->getConnection()->fetchOne(
-            'UPDATE organization_ai_settings
-             SET period = :period,
-                 used_tokens = CASE WHEN period = :period THEN used_tokens ELSE 0 END,
-                 reserved_tokens = (CASE WHEN period = :period THEN reserved_tokens ELSE 0 END) + :estimate,
-                 updated_at = :now
-             WHERE organization_id = :organizationId
-               AND enabled = TRUE
-               AND (CASE WHEN period = :period THEN used_tokens ELSE 0 END)
-                 + (CASE WHEN period = :period THEN reserved_tokens ELSE 0 END)
-                 + :estimate <= monthly_token_budget
-             RETURNING id',
+            self::RESERVE_SQL,
             [
                 'period' => $period,
                 'estimate' => $estimate,

@@ -16,12 +16,25 @@ use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
  * Registering creates a usable account: a principal, its first organization and
  * the owner membership, in one transaction, and a verification link the address
  * owner can redeem.
+ *
+ * Redeeming that link also sets the password. Registration already stores a hash,
+ * but the person who submitted the address is not necessarily the person who
+ * owns the mailbox: without the password on the verification request, whoever
+ * registered an address first could sign in with the password they chose as soon
+ * as the real owner clicked the link (account pre-hijacking).
  */
 final class RegistrationFlowTest extends WebTestCase
 {
     use InteractsWithAuthEmails;
 
     private const ORIGIN = ['HTTP_ORIGIN' => 'http://localhost'];
+    private const PASSWORD = 'Correct-Horse-9';
+
+    /**
+     * Chosen by the mailbox owner on the verification screen, and different from
+     * the password stored when the address was registered.
+     */
+    private const CHOSEN_PASSWORD = 'Mailbox-Owner-42';
 
     private EntityManagerInterface $entityManager;
     private KernelBrowser $client;
@@ -100,7 +113,7 @@ final class RegistrationFlowTest extends WebTestCase
         );
         self::assertSame(hash('sha256', $token), $stored);
 
-        $this->post('/api/auth/verify-email', ['token' => $token]);
+        $this->verify($token);
         self::assertResponseStatusCodeSame(204);
 
         $this->entityManager->clear();
@@ -154,15 +167,82 @@ final class RegistrationFlowTest extends WebTestCase
         self::assertEmailCount(0);
     }
 
-    public function testTheVerificationLinkWorksOnlyOnce(): void
+    /**
+     * The hash stored at registration is inert until the mailbox is confirmed.
+     *
+     * This is the second half of the pre-hijacking defence: even the password
+     * whoever registered the address chose cannot open the account.
+     */
+    public function testTheHashStoredAtRegistrationCannotSignInBeforeVerification(): void
+    {
+        $this->register();
+        self::assertResponseStatusCodeSame(201);
+
+        $this->login($this->email, self::PASSWORD);
+
+        self::assertResponseStatusCodeSame(403);
+        self::assertSame('email_not_verified', $this->payload()['error']['code']);
+    }
+
+    public function testAVerificationLinkIsNotConsumedWhenThePasswordIsMissing(): void
     {
         $this->register();
         $token = $this->lastEmailToken();
 
         $this->post('/api/auth/verify-email', ['token' => $token]);
+
+        self::assertResponseStatusCodeSame(422);
+        $payload = $this->payload();
+        self::assertSame('validation_failed', $payload['error']['code']);
+        self::assertArrayHasKey('password', $payload['error']['fields'], 'The password field must be named in the answer.');
+
+        // The link was not burned by the rejected attempt.
+        $this->entityManager->clear();
+        $stillUnverified = $this->principals()->findOneByEmail($this->email);
+        self::assertInstanceOf(Principal::class, $stillUnverified);
+        self::assertFalse($stillUnverified->isEmailVerified());
+
+        $this->verify($token);
+        self::assertResponseStatusCodeSame(204);
+    }
+
+    /**
+     * Pre-hijacking, end to end: an attacker registers a victim's address with a
+     * password they know, the victim confirms the address, and the attacker's
+     * password must be gone.
+     */
+    public function testVerificationReplacesThePasswordStoredByWhoeverRegisteredTheAddress(): void
+    {
+        $this->register();
+        self::assertResponseStatusCodeSame(201);
+        $token = $this->lastEmailToken();
+
+        // The password the attacker chose is inert before confirmation…
+        $this->login($this->email, self::PASSWORD);
+        self::assertResponseStatusCodeSame(403);
+
+        // …and the mailbox owner replaces it while confirming.
+        $this->verify($token, self::CHOSEN_PASSWORD);
         self::assertResponseStatusCodeSame(204);
 
-        $this->post('/api/auth/verify-email', ['token' => $token]);
+        $this->login($this->email, self::PASSWORD);
+        self::assertResponseStatusCodeSame(401, 'The password chosen by whoever registered the address must no longer work.');
+        self::assertSame('invalid_credentials', $this->payload()['error']['code']);
+
+        $this->login($this->email, self::CHOSEN_PASSWORD);
+        self::assertResponseStatusCodeSame(200);
+        self::assertTrue($this->payload()['authenticated']);
+    }
+
+    public function testTheVerificationLinkWorksOnlyOnce(): void
+    {
+        $this->register();
+        $token = $this->lastEmailToken();
+
+        $this->verify($token);
+        self::assertResponseStatusCodeSame(204);
+
+        $this->verify($token);
         self::assertResponseStatusCodeSame(400);
         self::assertSame('invalid_token', $this->payload()['error']['code']);
     }
@@ -176,7 +256,7 @@ final class RegistrationFlowTest extends WebTestCase
         $tokens = self::getContainer()->get(\App\Service\AuthTokenService::class);
         $resetToken = $tokens->issue($principal, \App\Entity\AuthToken::TYPE_RESET);
 
-        $this->post('/api/auth/verify-email', ['token' => $resetToken]);
+        $this->verify($resetToken);
         self::assertResponseStatusCodeSame(400);
         self::assertSame('invalid_token', $this->payload()['error']['code']);
     }
@@ -195,11 +275,11 @@ final class RegistrationFlowTest extends WebTestCase
             new \DateTimeImmutable('-25 hours'),
         );
 
-        $this->post('/api/auth/verify-email', ['token' => $expired]);
+        $this->verify($expired);
         self::assertResponseStatusCodeSame(400);
         $expiredBody = $this->payload();
 
-        $this->post('/api/auth/verify-email', ['token' => 'never-issued']);
+        $this->verify('never-issued');
         self::assertResponseStatusCodeSame(400);
         self::assertSame($expiredBody, $this->payload(), 'An expired link must answer like an unknown one.');
 
@@ -209,8 +289,6 @@ final class RegistrationFlowTest extends WebTestCase
         self::assertFalse($stillUnverified->isEmailVerified());
     }
 
-    private const PASSWORD = 'Correct-Horse-9';
-
     private function register(): void
     {
         $this->post('/api/auth/register', [
@@ -219,6 +297,21 @@ final class RegistrationFlowTest extends WebTestCase
             'organizationName' => $this->organizationName,
             'displayName' => 'Amina Owner',
         ]);
+    }
+
+    private function verify(string $token, string $password = self::CHOSEN_PASSWORD): void
+    {
+        $this->post('/api/auth/verify-email', ['token' => $token, 'password' => $password]);
+    }
+
+    private function login(string $email, string $password): void
+    {
+        $this->client->request(
+            'POST',
+            '/api/auth/login',
+            server: ['CONTENT_TYPE' => 'application/json', 'REMOTE_ADDR' => '10.9.0.1'] + self::ORIGIN,
+            content: json_encode(['email' => $email, 'password' => $password], \JSON_THROW_ON_ERROR),
+        );
     }
 
     /** @param array<string, mixed> $body */

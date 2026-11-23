@@ -47,6 +47,14 @@ class Principal implements UserInterface, PasswordAuthenticatedUserInterface
     #[ORM\Column(name: 'last_login_at', type: 'datetimetz_immutable', nullable: true)]
     private ?\DateTimeImmutable $lastLoginAt = null;
 
+    /**
+     * Incremented whenever the password is rewritten. A session records the value
+     * it was opened with and stops authenticating when it moves; see
+     * {@see \App\Security\SessionVersion}.
+     */
+    #[ORM\Column(name: 'session_version', options: ['default' => 0])]
+    private int $sessionVersion = 0;
+
     #[ORM\Column(name: 'created_at', type: 'datetimetz_immutable')]
     private \DateTimeImmutable $createdAt;
 
@@ -137,6 +145,23 @@ class Principal implements UserInterface, PasswordAuthenticatedUserInterface
     public function recordLogin(?\DateTimeImmutable $now = null): void
     {
         $this->lastLoginAt = $now ?? new \DateTimeImmutable();
+    }
+
+    public function getSessionVersion(): int
+    {
+        return $this->sessionVersion;
+    }
+
+    /**
+     * Signs every other session of this account out on its next request.
+     *
+     * Only the version is bumped here; the session that performed the change
+     * records the new value itself, which is how it survives (see
+     * {@see \App\Security\SessionVersion}).
+     */
+    public function invalidateSessions(): void
+    {
+        ++$this->sessionVersion;
     }
 
     public function changeDisplayName(?string $displayName, ?\DateTimeImmutable $now = null): void

@@ -77,11 +77,11 @@ final class ResendVerificationTest extends WebTestCase
         $secondToken = $this->lastEmailToken();
         self::assertNotSame($firstToken, $secondToken, 'A resend must issue a new token.');
 
-        $this->post('/api/auth/verify-email', ['token' => $secondToken]);
+        $this->post('/api/auth/verify-email', ['token' => $secondToken, 'password' => self::PASSWORD]);
         self::assertResponseStatusCodeSame(204);
 
         // The superseded link is dead even though it had not been used.
-        $this->post('/api/auth/verify-email', ['token' => $firstToken]);
+        $this->post('/api/auth/verify-email', ['token' => $firstToken, 'password' => self::PASSWORD]);
         self::assertResponseStatusCodeSame(400);
         self::assertSame('invalid_token', $this->payload()['error']['code']);
     }
@@ -98,7 +98,7 @@ final class ResendVerificationTest extends WebTestCase
     public function testAConfirmedAddressGetsNoMail(): void
     {
         $this->register();
-        $this->post('/api/auth/verify-email', ['token' => $this->lastEmailToken()]);
+        $this->post('/api/auth/verify-email', ['token' => $this->lastEmailToken(), 'password' => self::PASSWORD]);
         self::assertResponseStatusCodeSame(204);
 
         $this->resend($this->email);

@@ -21,6 +21,9 @@ coverage/
 backend/.env.*
 !backend/.env.example
 !backend/.env.test
+# The shared, secret-free defaults stay tracked on purpose (see AGENTS.md).
+# Un-ignored explicitly so `git ls-files -ci --exclude-standard` can be a CI gate.
+!backend/.env
 *.pem
 backend/config/jwt/*.pem
 
@@ -44,3 +47,6 @@ blob-report/
 
 # audit screenshots (untracked, never part of the release)
 .pr-screenshots/
+
+# the working audit report: findings live in docs/release/, the file itself does not
+AUDIT-REPORT.md
