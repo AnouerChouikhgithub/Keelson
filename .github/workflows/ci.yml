@@ -48,6 +48,10 @@ jobs:
             exit 1
           fi
           echo 'No tracked-but-ignored paths.'
+      # A tracked file may show the *shape* of a secret (.env.example) but never
+      # carry one. The scan also refuses a private key block and a provider token.
+      - name: Fail when a tracked file carries a credential
+        run: bash bin/secret-scan.sh
 
   frontend:
     name: Frontend (types, lint, tests, build, bundle budget)

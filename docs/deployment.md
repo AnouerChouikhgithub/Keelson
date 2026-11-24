@@ -43,7 +43,7 @@ known one.
 | --- | --- | --- |
 | `APP_ENV` | `prod` | anything else turns on debug behaviour |
 | `APP_DEBUG` | `0` | must be `0` in production; the validator refuses otherwise |
-| `APP_SECRET` | 32+ random bytes | per environment, never reused; rotating it signs everyone out |
+| `APP_SECRET` | 32+ random bytes | per environment, never reused; rotation is required after any exposure and does **not** by itself end sessions — see `docs/runbooks/secret-rotation.md` |
 | `DATABASE_URL` | `postgresql://keelson_app:***@db:5432/keelson?serverVersion=16&charset=utf8` | the **runtime** role |
 | `DEFAULT_URI` | `https://app.example.com` | absolute links from CLI commands |
 | `FRONTEND_URL` | `https://app.example.com` | links in verification/reset mail; must be `https://` in production |
@@ -194,8 +194,10 @@ exercised here.
 2. **Schema changed too**: restore the dump taken before the deploy into a fresh
    database and point the previous image at it. Migrations in this repository are
    forward-only; a `down()` that drops data is not a rollback plan.
-3. Keep `APP_SECRET` stable across a rollback: changing it invalidates every
-   session and every CSRF token in flight.
+3. `APP_SECRET` does not have to stay stable across a rollback: sessions and CSRF
+   tokens live in the `sessions` table and survive a rotation (measured in
+   `docs/runbooks/secret-rotation.md`). Rotate it when it may have leaked, not as a
+   rollback step.
 
 ## 7. Scheduled work
 
