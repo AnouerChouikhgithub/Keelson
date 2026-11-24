@@ -29,7 +29,7 @@ mentions a figure the request could not derive is replaced by a deterministic te
    `organization_ai_settings` reserves an estimate (`prompt characters / 4 + maxTokens`)
    and commits before the provider is called. The predicate is the entire budget rule,
    so PostgreSQL arbitrates two concurrent requests and a nearly empty budget cannot
-   fund both.
+   fund both. The same gate is evaluated for a cache hit; see **Caching and the budget**.
 6. **Provider call.** `AI_PROVIDER=fake` in tests and CI, `openai` (any
    OpenAI-compatible `AI_BASE_URL`) in production-like environments.
 7. **Settlement.** A second transaction replaces the estimate with the real token
@@ -39,6 +39,33 @@ A failure at step 6 releases the reservation and writes a `failed` row with an e
 code, so an outage neither bills the tenant nor hides that an attempt happened. An
 answer that sanitizes down to nothing is treated as a failure (`503 ai_unavailable`),
 not as an empty success.
+
+## Caching and the budget
+
+A summary is cached for fifteen minutes in `cache.ai_summary`, keyed on the tenant,
+the caller's role, the summary kind and a digest of the facts. The cache saves a
+provider call — it never bypasses a gate.
+
+Both refusals are decided **before** the cache lookup, so a cached answer cannot
+outlive an organization's opt-out or its budget:
+
+- `AI_ENABLED=false` or an organization that has not opted in is `403 ai_disabled`,
+  cache hit or not;
+- a tenant with **no budget left** (or a budget of `0`, the schema default) is
+  `402 ai_budget_exceeded`, cache hit or not.
+
+This is policy **B** in the review that found the inconsistency: every summary
+request requires available budget, including cached ones. The alternatives were a
+cached answer that is free to read after the budget is gone (A) and a third,
+explicit cache-access policy (C). Both would let the most common way to stop AI for
+a tenant — set its budget to `0` — keep serving model-generated prose, while
+`POST /api/ai/guide` refuses with the same exhausted allowance; B is the only rule
+that reads the same for both features. A cache hit reserves nothing and writes no
+ledger row: the ledger records provider attempts, and there was none.
+
+The cache key starts with the organization id, so two tenants with identical facts
+share nothing. `backend/tests/Integration/Summary/SummaryBudgetPolicyTest.php` pins
+that with two tenants whose facts are byte-identical.
 
 ## Retrieval: what the guide answers
 
@@ -130,7 +157,7 @@ the pipeline non-deterministic.
 | Situation | Caller sees | Ledger |
 | --- | --- | --- |
 | `AI_ENABLED=false` or organization disabled | `403 ai_disabled` | nothing |
-| Reservation refused | `402 ai_budget_exceeded` | nothing |
+| Budget exhausted (fresh summary or cached summary) | `402 ai_budget_exceeded` | nothing |
 | Rate limit hit | `429 ai_rate_limited` + `Retry-After` | nothing |
 | Provider timeout / 5xx after retry / unparseable body | `503 ai_unavailable` | `failed` row with the reason |
 | Answer sanitizes to empty | `503 ai_unavailable` (`malformed`) | `failed` row |

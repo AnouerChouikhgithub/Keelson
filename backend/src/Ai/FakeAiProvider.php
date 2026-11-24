@@ -23,6 +23,18 @@ final class FakeAiProvider implements AiProvider
     /** A successful response whose text is only whitespace: a provider's content filter. */
     public const FAILURE_EMPTY = 'empty_answer';
 
+    /**
+     * Hex digits mapped to letters, so the answer's digest is never a figure.
+     *
+     * A digest is an identifier, but `GroundingCheck` only strips identifiers that
+     * carry a separator; a bare run such as `05744677` looks exactly like an invented
+     * amount, so the fake answer would be rejected and replaced by the template on
+     * any day whose digest happened to start with eight digits. Spelling the digest
+     * in letters keeps the fake answer grounded whoever runs the suite, which is the
+     * whole point of a deterministic provider.
+     */
+    private const DIGEST_LETTERS = ['0' => 'a', '1' => 'b', '2' => 'c', '3' => 'd', '4' => 'e', '5' => 'f', '6' => 'g', '7' => 'h', '8' => 'i', '9' => 'j'];
+
     private const FAILURES = [
         self::FAILURE_NONE,
         self::FAILURE_TIMEOUT,
@@ -54,7 +66,7 @@ final class FakeAiProvider implements AiProvider
         $text = sprintf(
             'Fake AI answer for %s (%s).',
             $request->feature,
-            substr(hash('sha256', $request->prompt), 0, 12),
+            strtr(substr(hash('sha256', $request->prompt), 0, 12), self::DIGEST_LETTERS),
         );
 
         return new AiResponse(

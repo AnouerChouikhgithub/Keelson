@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace App\Summary;
 
 use App\Ai\AiFeatureFlags;
+use App\Ai\Exception\AiBudgetExceededException;
 use App\Ai\Exception\AiDisabledException;
 use App\Ai\Exception\AiUnavailableException;
+use App\Entity\OrganizationAiSettings;
 use App\Entity\Principal;
 use App\Repository\OrganizationAiSettingsRepository;
 use Psr\Cache\CacheItemPoolInterface;
@@ -16,12 +18,17 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
  * Facts → prose → proof, or the deterministic template.
  *
  * The order is the product rule: resolve the caller's membership and read the
- * facts (the voter already authorized the request), refuse when AI is off, reuse
- * a cached answer for exactly these facts, otherwise ask the gateway. An answer
- * is only shown when {@see GroundingCheck} can derive every figure in it; a
- * provider outage, an empty answer or an invented number all end in the same
- * place — the template, with `fallback: true` and HTTP 200, because the caller
- * asked for a summary and the facts are still theirs.
+ * facts (the voter already authorized the request), refuse when AI is off, refuse
+ * when the month's budget is gone, reuse a cached answer for exactly these facts,
+ * otherwise ask the gateway. An answer is only shown when {@see GroundingCheck} can
+ * derive every figure in it; a provider outage, an empty answer or an invented
+ * number all end in the same place — the template, with `fallback: true` and
+ * HTTP 200, because the caller asked for a summary and the facts are still theirs.
+ *
+ * The cache saves a provider call; it never bypasses a gate. Both refusals are
+ * decided before the lookup, so a cached answer cannot outlive an organization's
+ * opt-out or its budget (policy B in docs/ai.md), and the guide refuses with the
+ * same codes.
  *
  * Budget and rate-limit refusals are not swallowed: they are the contract's 402
  * and 429 and must reach the client.
@@ -49,7 +56,8 @@ final class SummaryService
     public function summarize(Principal $principal, string $organizationId, SummaryKind $kind, string $locale): array
     {
         $facts = $this->facts->build($organizationId, $principal->getId(), $kind, $locale);
-        $this->assertEnabled($organizationId);
+        $settings = $this->assertEnabled($organizationId);
+        $this->assertBudgetAvailable($settings);
 
         $cached = $this->cached($facts);
         if (null !== $cached) {
@@ -130,7 +138,7 @@ final class SummaryService
      * Refuses before serving a cache entry as well as before a provider call:
      * turning AI off must stop the feature, not just the spend.
      */
-    private function assertEnabled(string $organizationId): void
+    private function assertEnabled(string $organizationId): OrganizationAiSettings
     {
         if (!$this->flags->isGloballyEnabled()) {
             throw AiDisabledException::create();
@@ -139,6 +147,28 @@ final class SummaryService
         $settings = $this->settings->findForOrganization($organizationId);
         if (null === $settings || !$settings->isEnabled()) {
             throw AiDisabledException::create();
+        }
+
+        return $settings;
+    }
+
+    /**
+     * The budget gate covers a cache hit too, because the cache is an economy and
+     * not an entitlement.
+     *
+     * A cached answer costs no provider tokens, but it is model-generated tenant
+     * content, and the budget is the tenant's control over the feature. A tenant
+     * that set its budget to `0` — the schema default, which is how AI stays off
+     * before anyone configures it — or that spent the month's allowance must not
+     * keep reading summaries until the entry expires while
+     * `POST /api/ai/guide` answers `402`. The check is "any budget left", not the
+     * provider estimate: a cache hit consumes nothing, and the gateway keeps its
+     * own reservation rule for the call it actually makes.
+     */
+    private function assertBudgetAvailable(OrganizationAiSettings $settings): void
+    {
+        if (0 === $settings->remainingTokens((new \DateTimeImmutable())->format('Y-m'))) {
+            throw AiBudgetExceededException::create();
         }
     }
 
