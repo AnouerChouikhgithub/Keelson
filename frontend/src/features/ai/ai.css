@@ -50,6 +50,20 @@
 .ai-pending, .ai-hint { margin: 0; color: var(--color-text-muted); font-size: var(--text-caption); }
 .ai-notice { margin: 0; color: var(--color-danger); font-size: var(--text-caption); }
 
+/* The only AI affordance a workspace that has not opted in ever renders. */
+.ai-optin-hint {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  color: var(--color-text-secondary);
+  background: var(--color-primary-soft);
+  border-radius: var(--radius-full, 999px);
+  font-size: var(--text-caption);
+}
+.ai-optin-hint a { color: var(--color-primary); font-weight: var(--weight-semibold); }
+
 .ai-sources { display: grid; gap: var(--space-1); }
 .ai-sources-title {
   margin: 0;

@@ -33,7 +33,8 @@ final class SyntheticFixtureCatalog
      *     customers: list<array{key: string, organization: string, name: string, email: string, phone: ?string, billingAddress: ?array{street: string, city: string, postalCode: string, countryCode: string}}>,
      *     invoices: list<array{key: string, organization: string, customer: string, number: string, status: string, issueOffsetDays: int, dueOffsetDays: int, lineItems: list<array{description: string, quantity: string, unitPrice: string}>, taxRate: ?string, discountAmount: ?string}>,
      *     invitations: list<array{key: string, organization: string, email: string, role: string, invitedBy: string, expiresInDays: int, expired: bool}>,
-     *     notifications: list<array{key: string, organization: string, principal: string, type: string, read: bool, daysAgo: int}>
+     *     notifications: list<array{key: string, organization: string, principal: string, type: string, read: bool, daysAgo: int}>,
+     *     ai_settings: list<array{organization: string, enabled: bool, monthlyTokenBudget: int}>
      * }
      */
     public function definitions(): array
@@ -60,6 +61,12 @@ final class SyntheticFixtureCatalog
                 // One principal belongs to both organizations so tenant switching
                 // and the per-organization role difference can both be exercised.
                 ['organization' => 'contoso', 'principal' => 'member', 'role' => 'Member'],
+            ],
+            // The state every workspace is in until an Owner turns AI on: the row
+            // exists and is switched off. Seeded so the "available, not enabled"
+            // hint and the settings form can both be seen without editing data.
+            'ai_settings' => [
+                ['organization' => 'northwind', 'enabled' => false, 'monthlyTokenBudget' => 0],
             ],
             'customers' => [
                 ['key' => 'atlas', 'organization' => 'northwind', 'name' => 'Atlas Harbour Supplies (fixture)', 'email' => 'atlas@example.test', 'phone' => '+21600000011', 'billingAddress' => ['street' => '12 Rue du Port', 'city' => 'Tunis', 'postalCode' => '1000', 'countryCode' => 'tn']],

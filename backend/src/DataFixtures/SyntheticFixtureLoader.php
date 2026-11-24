@@ -10,6 +10,7 @@ use App\Entity\Invoice;
 use App\Entity\Membership;
 use App\Entity\Notification;
 use App\Entity\Organization;
+use App\Entity\OrganizationAiSettings;
 use App\Entity\Principal;
 use App\Service\InvoiceAuditLogger;
 use App\Service\InvoiceCalculator;
@@ -122,6 +123,28 @@ final class SyntheticFixtureLoader
             ++$stats['created']['memberships'];
         }
         $this->entityManager->flush();
+
+        foreach ($definitions['ai_settings'] as $definition) {
+            $organization = $organizations[$definition['organization']];
+            // Forced row-level security covers this table too, so the row is
+            // written inside the tenant context like every other tenant table.
+            $created = $this->tenants->run($organization->getId(), function () use ($definition, $organization): bool {
+                $exists = $this->entityManager->getRepository(OrganizationAiSettings::class)
+                    ->findOneBy(['organization' => $organization]);
+                if (null !== $exists) {
+                    return false;
+                }
+                $this->entityManager->persist(new OrganizationAiSettings(
+                    $organization,
+                    $definition['enabled'],
+                    $definition['monthlyTokenBudget'],
+                ));
+                $this->entityManager->flush();
+
+                return true;
+            });
+            ++$stats[$created ? 'created' : 'skipped']['ai_settings'];
+        }
 
         $customers = [];
         foreach ($definitions['customers'] as $definition) {

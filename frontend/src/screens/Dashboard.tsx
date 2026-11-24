@@ -15,6 +15,7 @@ import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useI18n } from '../i18n/I18nContext'
 import { initialsOf } from '../utils/initials'
 import { useWorkspace } from '../app/WorkspaceContext'
+import { AiOptInHint } from '../features/ai/AiOptInHint'
 import { OnboardingChecklist } from '../features/ai/OnboardingChecklist'
 import { SummaryCard } from '../features/ai/SummaryCard'
 import { canUseAi, useAiStatus } from '../features/ai/useAiStatus'
@@ -101,11 +102,15 @@ export default function Dashboard() {
         </Link>
       </section>
 
-      {canUseAi(aiStatus) && (
+      {canUseAi(aiStatus) ? (
         <div className="dashboard-ai">
           <OnboardingChecklist organizationId={membership.id} />
           <SummaryCard organizationId={membership.id} kind="overview" />
         </div>
+      ) : (
+        // Nothing to show, but an Owner may not know the feature exists: one
+        // line, only for the roles that can act on it.
+        <AiOptInHint organizationId={membership.id} role={membership.role} />
       )}
 
       <section className="metrics-grid" aria-label={m.dashboard.overviewAria}>

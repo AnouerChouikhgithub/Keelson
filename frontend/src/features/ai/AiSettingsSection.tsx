@@ -1,5 +1,6 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
+import { useLocation } from 'react-router'
 import { Field } from '../../components/Field'
 import { isApiError } from '../../api/errors'
 import { invalidateResource, useApiResource } from '../../api/useApiResource'
@@ -37,13 +38,22 @@ export function AiSettingsSection({
 
 function AiSettingsCard({ organizationId }: { organizationId: string }) {
   const { m } = useI18n()
+  const { hash } = useLocation()
+  const card = useRef<HTMLElement>(null)
   const load = useCallback((signal: AbortSignal) => getAiSettings(organizationId, signal), [organizationId])
   const resource = useApiResource(`ai-settings:${organizationId}`, load)
+
+  // The dashboard hint links here with `#ai-settings`. The card mounts only once
+  // the settings read is ready, so scrolling from its own effect is reliable — a
+  // router-level hash handler would run before the element existed.
+  useEffect(() => {
+    if (hash === '#ai-settings') card.current?.scrollIntoView({ block: 'start' })
+  }, [hash])
 
   if (resource.state.status !== 'ready') return null
 
   return (
-    <section className="panel settings-card ai-settings" aria-labelledby="ai-settings-title">
+    <section ref={card} id="ai-settings" className="panel settings-card ai-settings" aria-labelledby="ai-settings-title">
       <h2 id="ai-settings-title">{m.ai.settings.title}</h2>
       <p className="panel-help">{m.ai.settings.help}</p>
       <AiSettingsForm
