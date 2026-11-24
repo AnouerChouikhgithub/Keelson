@@ -18,8 +18,13 @@ const LOCALES = ['en', 'fr', 'ar'] as const
 for (const locale of LOCALES) {
   test(`dashboard stat values are never clipped — ${locale} @ 390px`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width: 390, height: 844 })
-    await useLocale(page, locale)
+    // Sign in first: the shared helper submits the form by its English labels,
+    // and `useLocale` writes storage that the *next* document load reads. Setting
+    // the locale before signing in would open a French sign-in form the helper
+    // cannot fill.
     await signIn(page, OWNER)
+    await useLocale(page, locale)
+    await page.goto('/')
 
     const values = page.locator('.metric-value')
     await expect(values.first()).toBeVisible()

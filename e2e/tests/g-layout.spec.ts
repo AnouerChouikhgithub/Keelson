@@ -56,7 +56,13 @@ for (const locale of LOCALES) {
         expect(labelBox!.y + labelBox!.height).toBeLessThanOrEqual(inputBox!.y + 2)
 
         // The control fills the card instead of its 180px intrinsic width.
-        expect(inputBox!.width).toBeGreaterThanOrEqual(fieldBox!.width - 2)
+        // A password field puts its visibility toggle in `.field-control` beside
+        // the input, so the *row* is what must span the field; the input keeps
+        // everything the toggle does not need.
+        const row = field.locator('.field-control').first()
+        const rowBox = (await row.count()) > 0 ? await row.boundingBox() : inputBox
+        expect(rowBox, 'the control row has a box').not.toBeNull()
+        expect(rowBox!.width).toBeGreaterThanOrEqual(fieldBox!.width - 2)
         expect(inputBox!.width).toBeGreaterThan(200)
 
         // Nothing spills sideways, which is what RTL mirroring would break first.
