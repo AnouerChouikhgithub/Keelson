@@ -35,12 +35,16 @@ Required to run:
 
 ```dotenv
 APP_SECRET="<random-local-value>"
-DATABASE_URL="postgresql://app:app@127.0.0.1:5433/keelson?serverVersion=16&charset=utf8"
+DATABASE_URL="postgresql://keelson_app:keelson_app@127.0.0.1:5433/keelson_dev?serverVersion=16&charset=utf8"
 ```
 
-`DATABASE_URL` matches the root Compose PostgreSQL service; start it from the
-repository root with `docker compose up -d` and never reset its persistent
-`db_data` volume.
+`DATABASE_URL` matches the root Compose PostgreSQL service and the least-privilege
+role the init script creates; start it from the repository root with
+`docker compose up -d`. DDL is the owner's job: `bin/dev-reset.sh` connects as
+`keelson_owner` for you, and a manual migration is
+`DATABASE_URL=postgresql://keelson_owner:keelson_owner@127.0.0.1:5433/keelson_dev?... php bin/console doctrine:migrations:migrate`
+(see the root README, "Roles and the local volume"). Never reset the persistent
+`db_data` volume of a database you need.
 
 Sign-in also needs these (see `backend/.env.example`):
 
