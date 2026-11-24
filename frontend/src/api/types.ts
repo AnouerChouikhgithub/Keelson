@@ -79,7 +79,7 @@ export type Invoice = {
  * computed by the server across the whole tenant, so nothing here is derived
  * from a page of rows.
  */
-export type DashboardMonthlyRevenue = { month: string; paidMillimes: number }
+type DashboardMonthlyRevenue = { month: string; paidMillimes: number }
 
 export type Dashboard = {
   outstandingMillimes: number

@@ -546,7 +546,7 @@ final class InvoiceApiController extends AbstractController
     }
 
     /**
-     * @param list<InvoiceAuditEvent> $events
+     * @param list<InvoiceAuditEvent>              $events
      * @param callable(InvoiceAuditEvent): ?string $id
      *
      * @return list<string>
