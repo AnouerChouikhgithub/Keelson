@@ -122,5 +122,16 @@ export const invoices = {
     emptyHint: 'Les changements de factures et de clients apparaissent ici.',
     loadFailed: 'Le journal d’audit n’a pas pu être chargé.',
     filterLabel: 'Filtrer par facture',
+    /** Une étiquette par action enregistrable ; la liste fermée est côté backend. */
+    actions: {
+      'customer.created': 'Client créé',
+      'customer.updated': 'Client modifié',
+      'customer.deleted': 'Client supprimé',
+      'invoice.created': 'Facture créée',
+      'invoice.updated': 'Facture modifiée',
+      'invoice.deleted': 'Facture supprimée',
+      'invoice.sent': 'Facture envoyée',
+      'invoice.paid': 'Facture payée',
+    } as Record<string, string>,
   },
 }

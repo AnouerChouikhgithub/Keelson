@@ -203,6 +203,10 @@ export type AuditEvent = {
   id: string
   invoiceId: string | null
   customerId: string | null
+  /** Resolved by the server for the page; null when the invoice is gone. */
+  invoiceNumber: string | null
+  /** Resolved by the server for the page; null when the customer is gone. */
+  customerName: string | null
   action: string
   actorPrincipalId: string | null
   metadata: Record<string, unknown> | null

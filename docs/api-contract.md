@@ -294,6 +294,36 @@ Only a foreign-key violation maps to `409`; other database errors propagate as `
 | DELETE | `/api/organizations/{organizationId}/invoices/{invoiceId}` | DELETE_DRAFT | `204` |
 | GET | `/api/organizations/{organizationId}/invoice-audit-events` | READ | `200` |
 
+### Audit event representation
+
+```json
+{
+  "items": [
+    {
+      "id": "…",
+      "invoiceId": "…",
+      "customerId": "…",
+      "invoiceNumber": "2026-000042",
+      "customerName": "Atlas Harbour Supplies",
+      "action": "invoice.sent",
+      "actorPrincipalId": "…",
+      "metadata": {},
+      "createdAt": "2026-11-20T09:00:00+00:00"
+    }
+  ],
+  "nextCursor": null
+}
+```
+
+- `action` is one of a **closed set** defined once in
+  `backend/src/Audit/InvoiceAuditAction.php`: `customer.created|updated|deleted` and
+  `invoice.created|updated|deleted|sent|paid`. The SPA localizes it and keeps the code
+  as a secondary line.
+- `invoiceNumber` and `customerName` are resolved by the server **for the page** (two
+  queries, never one per row) so the screen can show a number and a name. They are
+  `null` when the referenced row is gone: a deleted invoice keeps its event and only
+  its id remains.
+
 ### Invoice representation
 
 ```json

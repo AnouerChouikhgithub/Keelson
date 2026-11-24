@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
+use App\Audit\InvoiceAuditAction;
 use App\Entity\Customer;
 use App\Entity\Invoice;
 use App\Entity\InvoiceAuditEvent;
@@ -103,7 +104,7 @@ final class InvoiceApiController extends AbstractController
                 $this->entityManager->persist($customer);
                 // Business row and audit event share one flush and one transaction:
                 // a failed audit insert rolls the customer back with it.
-                $this->audit($organization, $principal, 'customer.created', null, $customer->getId());
+                $this->audit($organization, $principal, InvoiceAuditAction::CUSTOMER_CREATED, null, $customer->getId());
                 $this->entityManager->flush();
 
                 return $this->json(['customer' => $this->serializer->customer($customer)], Response::HTTP_CREATED);
@@ -158,7 +159,7 @@ final class InvoiceApiController extends AbstractController
                     array_key_exists('phone', $data) ? $data['phone'] : $customer->getPhone(),
                     array_key_exists('billingAddress', $data) ? $data['billingAddress'] : $customer->getBillingAddress(),
                 );
-                $this->audit($customer->getOrganization(), $principal, 'customer.updated', null, $customerId);
+                $this->audit($customer->getOrganization(), $principal, InvoiceAuditAction::CUSTOMER_UPDATED, null, $customerId);
                 $this->entityManager->flush();
 
                 return $this->json(['customer' => $this->serializer->customer($customer)]);
@@ -195,7 +196,7 @@ final class InvoiceApiController extends AbstractController
                     throw ApiException::conflict('Customer is referenced by invoices.');
                 }
                 $this->entityManager->remove($customer);
-                $this->audit($customer->getOrganization(), $principal, 'customer.deleted', null, $customerId);
+                $this->audit($customer->getOrganization(), $principal, InvoiceAuditAction::CUSTOMER_DELETED, null, $customerId);
                 $this->entityManager->flush();
 
                 return new Response(null, Response::HTTP_NO_CONTENT);
@@ -266,7 +267,7 @@ final class InvoiceApiController extends AbstractController
                     $calculation['taxAmount'], $calculation['total'],
                 );
                 $this->entityManager->persist($invoice);
-                $this->audit($organization, $principal, 'invoice.created', $invoice->getId(), $customer->getId());
+                $this->audit($organization, $principal, InvoiceAuditAction::INVOICE_CREATED, $invoice->getId(), $customer->getId());
                 $this->entityManager->flush();
 
                 return $this->json(['invoice' => $this->serializer->invoice($invoice)], Response::HTTP_CREATED);
@@ -337,7 +338,7 @@ final class InvoiceApiController extends AbstractController
                 }
                 $calculation = $parsed['calculation'];
                 $invoice->updateDraft($customer, $parsed['issueDate'], $parsed['dueDate'], $calculation['lineItems'], $calculation['taxRate'], $calculation['discountAmount'], $calculation['subtotal'], $calculation['taxAmount'], $calculation['total']);
-                $this->audit($invoice->getOrganization(), $principal, 'invoice.updated', $invoiceId, $customer->getId());
+                $this->audit($invoice->getOrganization(), $principal, InvoiceAuditAction::INVOICE_UPDATED, $invoiceId, $customer->getId());
                 $this->entityManager->flush();
 
                 return $this->json(['invoice' => $this->serializer->invoice($invoice)]);
@@ -387,7 +388,7 @@ final class InvoiceApiController extends AbstractController
                 throw ApiException::conflict('Only draft invoices may be deleted.');
             }
             $this->entityManager->remove($invoice);
-            $this->audit($invoice->getOrganization(), $principal, 'invoice.deleted', $invoiceId);
+            $this->audit($invoice->getOrganization(), $principal, InvoiceAuditAction::INVOICE_DELETED, $invoiceId);
             $this->entityManager->flush();
 
             return new Response(null, Response::HTTP_NO_CONTENT);
@@ -419,9 +420,17 @@ final class InvoiceApiController extends AbstractController
         $events = array_slice($events, 0, $limit);
         $lastEvent = $hasMore ? ($events[count($events) - 1] ?? null) : null;
 
+        // Readable references for the page, in two queries rather than one per
+        // row: the screen shows an invoice number and a customer name, and a
+        // hexadecimal id means nothing to the person reading the trail.
+        $invoiceNumbers = $this->invoiceNumbers($events);
+        $customerNames = $this->customerNames($events);
+
         return $this->json([
             'items' => array_map(static fn (InvoiceAuditEvent $event) => [
                 'id' => $event->getId(), 'invoiceId' => $event->getInvoiceId(), 'customerId' => $event->getCustomerId(),
+                'invoiceNumber' => null !== $event->getInvoiceId() ? ($invoiceNumbers[$event->getInvoiceId()] ?? null) : null,
+                'customerName' => null !== $event->getCustomerId() ? ($customerNames[$event->getCustomerId()] ?? null) : null,
                 'action' => $event->getAction(), 'actorPrincipalId' => $event->getActorPrincipalId(),
                 'metadata' => $event->getMetadata(), 'createdAt' => $event->getCreatedAt()->format(DATE_ATOM),
             ], $events),
@@ -450,7 +459,7 @@ final class InvoiceApiController extends AbstractController
                 }
                 $changed = 'send' === $transition ? $invoice->send() : $invoice->markPaid();
                 if ($changed) {
-                    $this->audit($invoice->getOrganization(), $principal, 'paid' === $transition ? 'invoice.paid' : 'invoice.sent', $invoiceId);
+                    $this->audit($invoice->getOrganization(), $principal, 'paid' === $transition ? InvoiceAuditAction::INVOICE_PAID : InvoiceAuditAction::INVOICE_SENT, $invoiceId);
                     if ('paid' === $transition) {
                         // The accountant who recorded the payment does not need to be
                         // told about it; the rest of the administration does.
@@ -489,6 +498,70 @@ final class InvoiceApiController extends AbstractController
                 throw ApiException::invalidId();
             }
         }
+    }
+
+    /**
+     * Invoice numbers for the events of one page, in one query.
+     *
+     * A deleted invoice is gone from `invoices`, so its event keeps a null number
+     * and the screen falls back to the id.
+     *
+     * @param list<InvoiceAuditEvent> $events
+     *
+     * @return array<string, string>
+     */
+    private function invoiceNumbers(array $events): array
+    {
+        $ids = self::distinctIds($events, static fn (InvoiceAuditEvent $event) => $event->getInvoiceId());
+        if ([] === $ids) {
+            return [];
+        }
+        $numbers = [];
+        foreach ($this->invoices->findBy(['id' => $ids]) as $invoice) {
+            $numbers[$invoice->getId()] = $invoice->getNumber();
+        }
+
+        return $numbers;
+    }
+
+    /**
+     * Customer names for the events of one page, in one query.
+     *
+     * @param list<InvoiceAuditEvent> $events
+     *
+     * @return array<string, string>
+     */
+    private function customerNames(array $events): array
+    {
+        $ids = self::distinctIds($events, static fn (InvoiceAuditEvent $event) => $event->getCustomerId());
+        if ([] === $ids) {
+            return [];
+        }
+        $names = [];
+        foreach ($this->customers->findBy(['id' => $ids]) as $customer) {
+            $names[$customer->getId()] = $customer->getName();
+        }
+
+        return $names;
+    }
+
+    /**
+     * @param list<InvoiceAuditEvent> $events
+     * @param callable(InvoiceAuditEvent): ?string $id
+     *
+     * @return list<string>
+     */
+    private static function distinctIds(array $events, callable $id): array
+    {
+        $ids = [];
+        foreach ($events as $event) {
+            $value = $id($event);
+            if (null !== $value && '' !== $value) {
+                $ids[$value] = true;
+            }
+        }
+
+        return array_keys($ids);
     }
 
     /**

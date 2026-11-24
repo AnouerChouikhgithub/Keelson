@@ -122,5 +122,16 @@ export const invoices = {
     emptyHint: 'تظهر تغييرات الفواتير والعملاء هنا.',
     loadFailed: 'تعذّر تحميل سجل التدقيق.',
     filterLabel: 'التصفية حسب الفاتورة',
+    /** تسمية واحدة لكل إجراء يمكن تسجيله؛ القائمة المغلقة في الخادم. */
+    actions: {
+      'customer.created': 'أُنشئ عميل',
+      'customer.updated': 'عُدّل عميل',
+      'customer.deleted': 'حُذف عميل',
+      'invoice.created': 'أُنشئت فاتورة',
+      'invoice.updated': 'عُدّلت فاتورة',
+      'invoice.deleted': 'حُذفت فاتورة',
+      'invoice.sent': 'أُرسلت فاتورة',
+      'invoice.paid': 'دُفعت فاتورة',
+    } as Record<string, string>,
   },
 }

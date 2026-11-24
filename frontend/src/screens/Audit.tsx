@@ -107,14 +107,25 @@ export default function Audit() {
             <tbody>
               {visible.map((event) => (
                 <tr key={event.id}>
-                  <td className="cell-strong">{event.action}</td>
+                  {/* The label is what a person reads; the stable code stays
+                      underneath, so an operator can still search for it. */}
+                  <td className="cell-strong">
+                    {m.invoices.audit.actions[event.action] ?? event.action}
+                    <span className="audit-code">{event.action}</span>
+                  </td>
                   <td>
                     {event.invoiceId
-                      ? <Link to={`/o/${membership.id}/invoices/${event.invoiceId}`}>{event.invoiceId.slice(0, 8)}</Link>
+                      ? (
+                        <Link to={`/o/${membership.id}/invoices/${event.invoiceId}`} title={event.invoiceId}>
+                          {event.invoiceNumber ?? event.invoiceId.slice(0, 8)}
+                        </Link>
+                      )
                       : '—'}
                   </td>
-                  <td>{event.customerId ? event.customerId.slice(0, 8) : '—'}</td>
-                  <td>{event.actorPrincipalId ? event.actorPrincipalId.slice(0, 8) : '—'}</td>
+                  <td>{event.customerName ?? (event.customerId ? event.customerId.slice(0, 8) : '—')}</td>
+                  <td title={event.actorPrincipalId ?? undefined}>
+                    {event.actorPrincipalId ? event.actorPrincipalId.slice(0, 8) : '—'}
+                  </td>
                   <td>{dateTime(event.createdAt)}</td>
                 </tr>
               ))}

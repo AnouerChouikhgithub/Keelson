@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\DataFixtures;
 
+use App\Audit\InvoiceAuditAction;
 use App\Entity\Customer;
 use App\Entity\Invitation;
 use App\Entity\Invoice;
@@ -200,27 +201,27 @@ final class SyntheticFixtureLoader
                 $this->entityManager->persist($invoice);
                 // Same service the API uses for every mutation, so the seeded trail
                 // is indistinguishable in shape from a real one.
-                $this->audits->record($organization, $actor, 'invoice.created', $invoice->getId(), $customers[$definition['customer']]->getId(), [], $issuedAt);
+                $this->audits->record($organization, $actor, InvoiceAuditAction::INVOICE_CREATED, $invoice->getId(), $customers[$definition['customer']]->getId(), [], $issuedAt);
                 switch ($definition['status']) {
                     case 'draft':
                         break;
                     case 'sent':
                         $invoice->send($issuedAt);
-                        $this->audits->record($organization, $actor, 'invoice.sent', $invoice->getId(), null, [], $issuedAt);
+                        $this->audits->record($organization, $actor, InvoiceAuditAction::INVOICE_SENT, $invoice->getId(), null, [], $issuedAt);
                         break;
                     case 'overdue':
                         $invoice->send($issuedAt);
-                        $this->audits->record($organization, $actor, 'invoice.sent', $invoice->getId(), null, [], $issuedAt);
+                        $this->audits->record($organization, $actor, InvoiceAuditAction::INVOICE_SENT, $invoice->getId(), null, [], $issuedAt);
                         if (!$invoice->markOverdue($today)) {
                             throw new \InvalidArgumentException('An overdue fixture invoice needs a due date before today.');
                         }
                         break;
                     case 'paid':
                         $invoice->send($issuedAt);
-                        $this->audits->record($organization, $actor, 'invoice.sent', $invoice->getId(), null, [], $issuedAt);
+                        $this->audits->record($organization, $actor, InvoiceAuditAction::INVOICE_SENT, $invoice->getId(), null, [], $issuedAt);
                         $paidAt = $invoice->getDueDate()->modify('-2 days');
                         $invoice->markPaid($paidAt);
-                        $this->audits->record($organization, $actor, 'invoice.paid', $invoice->getId(), null, [], $paidAt);
+                        $this->audits->record($organization, $actor, InvoiceAuditAction::INVOICE_PAID, $invoice->getId(), null, [], $paidAt);
                         break;
                     default:
                         throw new \InvalidArgumentException(sprintf('Fixture invoice status "%s" is not supported.', $definition['status']));
