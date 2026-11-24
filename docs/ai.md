@@ -9,10 +9,11 @@ rate limits, the budget and the ledger apply identically to each. The HTTP contr
 
 Nothing here is a general-purpose chat. The assistant answers from the bundled
 documentation and says so when the documentation does not cover the question; the
-summaries describe aggregates the caller can already see on screen. Neither feature
-invents tenant facts: the guide is never given tenant data at all, and a summary that
-mentions a figure the request could not derive is replaced by a deterministic template
-(`fallback: true`).
+summaries describe aggregates the caller can already see on screen. The guide is never
+given tenant data at all, and a summary is only returned when every quantity in it is
+provable from the facts object — otherwise it is replaced by a deterministic template
+(`fallback: true`). What that check does and does not cover is set out in **What
+\"provable\" means** below.
 
 ## The chain every call goes through
 
@@ -137,14 +138,49 @@ midnight at the edges of the window. `--days` accepts 1 to 366. A malformed
 The command reads through `TenantContext`, so each tenant's rows are read inside that
 tenant's row-level-security context rather than filtered by a `WHERE` clause alone.
 
+## What "provable" means
+
+`App\Summary\GroundingCheck` is the gate between a plausible summary and an invented
+one. It is deliberately a proof over the facts, not a second model, and it has two
+rules:
+
+1. **Every quantity must be derivable.** A quantity is a number written in digits
+   (`1 234,50`, `1,234.50`, `٣` — Arabic-Indic digits and the Arabic decimal separator
+   are folded first) or spelled out in English, French or Arabic words (zero to one
+   hundred, including `twenty-one`, `quatre-vingt-dix`, `deux cents`, `خمسة وعشرون`;
+   Arabic diacritics and tatweel are folded, and a leading `و` connector is skipped).
+   Each recovered quantity must equal, to one unit in its last written digit, a figure
+   in the facts, a millime amount converted to its currency unit, the sum or the
+   difference of two figures of the same kind, or the same for a percentage the facts
+   allow. `INV-2026-77` and a hex digest are identifiers, not quantities.
+2. **No vague quantity.** A fixed word list — English `half`, `most`, `majority`,
+   `almost all`, `nearly`, `about a third`; French `moitié`, `majorité`, `presque`,
+   `environ`, `tiers`; Arabic `نصف`, `معظم`, `أغلب`, `تقريبًا`, `ثلث` — is refused
+   outright, because no fact can prove it. A hit inside a customer name the model was
+   given is exempt: the name is quoted data, not a claim.
+
+Both rules run after the text is sanitised and before it is returned. A failure discards
+the whole answer and returns `SummaryFallback` with `fallback: true` — the same
+behaviour a provider failure gets.
+
+**What is not checked.** Wording outside the two rules is not checked: a qualitative
+claim ("your customers pay late"), a comparison of two provable figures, an ordinal
+("the third invoice") or a quantity spelled in a form the word lists do not cover is
+returned as written. The check proves numbers, not truth. Treat a summary as a
+well-formed restatement of the facts on screen, not as an audit of the business.
+
+The system prompt asks for the same thing the check enforces: every quantity in digits,
+never in words, and no vague quantifiers — so a model that follows the prompt is
+accepted on the first pass rather than being sent to the fallback.
+
 ## How it is verified
 
 | Where | What it proves |
 | --- | --- |
-| `backend/tests/Ai/Eval/` (`--group ai-eval`) | 40 guide questions per language (120 total) each assert the expected article ranks first; 30 off-topic questions assert the not-covered message with no provider call; one fixture per summary kind asserts the exact facts the prompt may use. |
+| `backend/tests/Ai/Eval/` (`--group ai-eval`) | 40 guide questions per language (120 total) each assert the expected article ranks first; 30 off-topic questions assert the not-covered message with no provider call; one fixture per summary kind asserts the exact facts the prompt may use; `GroundingEvalTest` pins the boundary itself — digits, spelled-out numbers, a contradiction and vague wording per language, plus the property that every deterministic template passes the check it sends answers to. |
 | CI backend job | The `ai-eval` group runs with `FakeAiProvider`, so it is deterministic and offline; it is part of the normal suite, not a separate gate. |
 | `.github/workflows/ai-eval.yml` | Manual `workflow_dispatch` only. Uses the real provider through the secret `AI_API_KEY`, runs the same suite, prints a pass-rate table per set from the JUnit names (question ids, never prompts or answers) and fails below `--minimum` (default 90%). No `pull_request` trigger exists, so a fork cannot reach the secret. |
-| `backend/tests/Ai/RedTeam/` | Injection through the question, a customer name, an invoice note and a member name; a body naming another organization; a 100 KB question; control and bidi characters; a provider answering with HTML, a link, a markdown image or invented numbers. Each asserts the exact safe outcome. |
+| `backend/tests/Ai/RedTeam/` | Injection through the question, a customer name, an invoice note and a member name; a body naming another organization; a 100 KB question; control and bidi characters; a provider answering with HTML, a link, a markdown image, invented numbers, a spelled-out figure or a vague quantity. Each asserts the exact safe outcome. |
 | `backend/tests/Ai/Drills/` | Timeout, `429`, `500`, malformed JSON and an empty answer; `AI_ENABLED=false`; two real database connections racing a nearly empty budget. |
 
 The eval measures **retrieval**, not answer quality: the expected article must be

@@ -27,17 +27,23 @@ final class SummaryPromptFactory
         'en' => 'You write a short workspace status summary for a signed-in team member. '
             .'Reply in English with 2 to 4 plain sentences. Use only the numbers, amounts and dates '
             .'that appear in the data block; never compute a new figure, never estimate, and never '
-            .'mention a customer who is not listed. Do not give advice, do not suggest next steps, '
-            .'and do not use markdown, lists or links.',
+            .'mention a customer who is not listed. Write every quantity as digits (3, not three) and '
+            .'never use a vague or approximate quantity word such as half, most, nearly, several or '
+            .'about. Do not give advice, do not suggest next steps, and do not use markdown, lists or '
+            .'links.',
         'fr' => 'Vous rédigez un bref résumé de l\'espace de travail pour un membre connecté. '
             .'Répondez en français, en 2 à 4 phrases simples. Utilisez uniquement les nombres, '
             .'montants et dates du bloc de données ; ne calculez aucune nouvelle valeur, n\'estimez '
-            .'rien et ne citez aucun client absent de la liste. Ne donnez pas de conseil, ne '
-            .'proposez pas d\'étape suivante et n\'utilisez ni markdown, ni liste, ni lien.',
+            .'rien et ne citez aucun client absent de la liste. Écrivez chaque quantité en chiffres '
+            .'(3, et non trois) et n\'employez aucun mot de quantité imprécis ou approximatif comme '
+            .'moitié, plupart, presque, plusieurs ou environ. Ne donnez pas de conseil, ne proposez '
+            .'pas d\'étape suivante et n\'utilisez ni markdown, ni liste, ni lien.',
         'ar' => 'أنت تكتب ملخصًا قصيرًا لحالة مساحة العمل لعضو مسجّل. اكتب بالعربية في جملتين إلى '
             .'أربع جمل بسيطة. استخدم فقط الأرقام والمبالغ والتواريخ الواردة في كتلة البيانات؛ '
-            .'لا تحسب أي رقم جديد، ولا تقدّر، ولا تذكر عميلًا غير مدرج. لا تقدّم نصائح ولا خطوات '
-            .'تالية، ولا تستخدم تنسيق ماركداون أو قوائم أو روابط.',
+            .'لا تحسب أي رقم جديد، ولا تقدّر، ولا تذكر عميلًا غير مدرج. اكتب كل كمية بالأرقام '
+            .'(3 وليس ثلاثة) ولا تستخدم أي كلمة كمية تقريبية أو غامضة مثل نصف أو معظم أو '
+            .'تقريباً أو عدة. لا تقدّم نصائح ولا خطوات تالية، ولا تستخدم تنسيق ماركداون أو قوائم '
+            .'أو روابط.',
     ];
 
     public function __construct(private readonly PromptBuilder $builder)

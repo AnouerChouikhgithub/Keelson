@@ -56,6 +56,13 @@ not an average: `customerNames` is truncated before the prompt is built. An oper
 does not want tenant names to leave the process can leave the summary feature disabled
 per organization; the guide does not need them.
 
+**Checked before it is shown**: every quantity the summary states — in digits or spelled
+out in English, French or Arabic — must be derivable from the facts above, and a fixed
+list of vague quantifiers (`half`, `most`, `presque`, `نصف` …) is refused. A summary that
+fails is replaced by a deterministic template, so nothing unprovable is displayed. This
+is a check on quantities, not on truth: qualitative wording is not examined. See
+[ai.md](ai.md#what-provable-means).
+
 **Stored by Keelson**: the same content-free ledger row as above.
 
 **Logged**: organization id, feature, token count, latency.
