@@ -90,27 +90,39 @@ Configuration lives in `phpunit.dist.xml` (`APP_ENV=test`, bootstrap
 `tests/bootstrap.php`).
 
 ```sh
-composer validate --no-check-publish
+composer validate --strict
+composer stan                     # PHPStan level 8, no baseline (phpstan.neon.dist)
+composer cs                       # php-cs-fixer
+php bin/phpunit                   # the whole suite, database included
+php bin/console doctrine:schema:validate --skip-sync --env=test
+php bin/console doctrine:migrations:up-to-date --env=test
 php bin/console lint:yaml config --env=test
 php bin/console lint:container --env=test
 php bin/console debug:router --env=test
-./vendor/bin/phpstan analyse      # level 5, phpstan-baseline.neon
-composer audit
-php bin/phpunit tests/Unit/Entity tests/Unit/Security tests/Unit/Service tests/Unit/Util tests/Unit/EventListener
+composer audit --locked
 ```
 
-The last command needs no database. The full suite adds
-`tests/Unit/Repository/TenantScopedRepositoryTest.php` and `tests/Integration/*`
-(invoice API and HTTP contract, draft-edit and customer-delete lock races,
-invoice-number allocation, overdue derivation, audit atomicity, the authorization
-matrix, logout, and the fixture loader). Those assert a PostgreSQL platform,
-insert rows and delete them in teardown, so they must never run against a shared,
-production or customer database.
+The suite has two halves. `tests/Unit/*` needs no database; `tests/Integration/*`
+asserts a PostgreSQL platform — row-level security included, so an unscoped query
+must return nothing — and covers the invoice API and HTTP contract, draft-edit and
+customer-delete lock races, invoice-number allocation, overdue derivation, audit
+atomicity and audit references, the authorization matrix, the AI token budget
+reservation, logout, and the fixture loader. Those tests insert rows and delete
+them in teardown, so they must never run against a shared, production or customer
+database: `bash bin/test-db.sh start` provisions the disposable one and
+`tests/bootstrap.php` points at it.
 
-Last full run (2026-11-16): **170 tests / 932 assertions, exit 0**. The suite now
-covers registration, email verification, login (including throttling and the
-unverified-address order), logout, password reset, CSRF, request-shape errors and
-the token service, in addition to the invoice API and concurrency suites.
+Do not quote a test count here. It is stale the moment someone adds a test, so the
+documented source is the script that runs both suites and prints their summaries:
+`bash ../bin/test-counts.sh` from this directory (`bash bin/test-counts.sh` at the
+repository root). It starts the disposable database if needed and leaves no
+container behind.
+
+The suite covers registration, email verification, login (including throttling and
+the unverified-address order), logout, password reset, CSRF, request-shape errors
+and the token service, in addition to the invoice, concurrency, tenancy and AI
+suites. `docs/review/RESOLUTION.md` and `docs/limitations.md` carry the current
+status statement; neither repeats a number that a script can print.
 
 Known limitation: `php bin/console doctrine:schema:validate --env=test` exits
 non-zero with `An index with name "idx_6a2f2f95a5a280d" was already defined on
@@ -223,9 +235,25 @@ four of them have a confirmed address and the shared password `Keelson-Demo-2026
 
 ## Not implemented
 
-PostgreSQL row-level security, invitation issuance/acceptance, organization
-lifecycle operations beyond reads, billing/subscription/usage enforcement,
-notification delivery, two-factor authentication, account linking and the SPA's
-sign-in screens (Sprint 3). Tenant isolation is application-layer scoping, not
-production hardening. No credentials or production configuration live in the
-repository.
+This is the short list; `docs/limitations.md` is the detailed one and
+`docs/review/RESOLUTION.md` records what the 1.0 audit found.
+
+- **Billing.** No subscriptions, plans, usage limits or Stripe integration.
+- **Multi-factor authentication**, social login and enterprise SSO.
+- **Email change.** An address is fixed at registration; only the display name and
+  password are editable.
+- **A session-management screen.** Changing or resetting a password ends every
+  session at once (`session_version`); individual sessions cannot be listed or
+  revoked.
+- **Invoice emailing.** `send` records the transition and its audit event; the PDF
+  is printed and sent by hand.
+- **Notification delivery beyond in-app.** No digest email, no webhook.
+- **Metrics, tracing and a queue.** Structured JSON logs and `/healthz`/`/readyz`
+  are the observability surface; the overdue job is a console command for cron.
+
+What *is* implemented, because it used to be on this list: PostgreSQL row-level
+security on the tenant tables (forced in the integration suite), invitation
+issuance and acceptance, the organization lifecycle, the SPA's sign-in and setup
+screens, and the AI assistance routes behind `AI_ENABLED`.
+
+No credentials or production configuration live in the repository.
