@@ -3,6 +3,11 @@ import { useI18n } from '../../i18n/I18nContext'
 import { locales, messages } from '../../i18n'
 import type { Locale } from '../../i18n'
 import './auth.css'
+// `.field` (label above control, control full width) is the shared form primitive,
+// but these screens build their fields by hand instead of rendering <Field>. The
+// stylesheet therefore has to be reachable from the frame every public screen
+// renders inside, otherwise the classes arrive with no rules behind them.
+import '../../components/Field.css'
 
 /**
  * The frame every public screen shares: a centred card on the app background,

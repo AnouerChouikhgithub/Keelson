@@ -25,6 +25,9 @@ export default defineConfig({
           environment: 'jsdom',
           include: ['src/**/*.test.tsx'],
           setupFiles: ['./src/test/setup.ts'],
+          // Stylesheets must reach jsdom, or a screen that renders a class no
+          // imported sheet defines cannot be told apart from a styled one.
+          css: true,
           // Every keystroke is a real event, and a jsdom file pays its own
           // environment boot; the default 5 s is tight when the pool runs a
           // worker per file on a busy machine.
