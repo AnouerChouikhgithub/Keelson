@@ -5,19 +5,35 @@ declare(strict_types=1);
 namespace App\Summary;
 
 /**
- * Proves that every figure in a generated summary is derivable from the facts.
+ * Proves that every quantitative claim in a generated summary is derivable from
+ * the facts.
  *
- * A model's prose is not evidence. This check walks the answer, pulls out every
- * number, percentage and currency amount — in English, French and Arabic
- * notation, including Arabic-Indic digits — and accepts it only when it equals a
- * fact, a two-fact sum or difference, or a two-fact percentage, within the
- * rounding the text itself displays (`1,234` may stand for 1234.4, `12.5%` may
- * stand for 12.47%). A figure that survives no derivation means the answer
- * invented something, and the caller replaces it with the deterministic
- * template instead of showing it.
+ * A model's prose is not evidence. This check walks the answer and refuses it
+ * unless every quantity in it can be derived. Three things count as a quantity
+ * claim:
+ *
+ *  - digits, in English, French and Arabic notation, including Arabic-Indic
+ *    digits and the locale's own separators;
+ *  - a number written in words ("five", "douze", "خمسة", "quatre-vingt-dix"),
+ *    composed the way the language composes them (up to hundreds and thousands);
+ *  - a percentage, whether written with `%` or with the language's percent word.
+ *
+ * Each claim must equal a fact, a two-fact sum or difference, or a two-fact
+ * percentage, within the rounding the text itself displays (`1,234` may stand for
+ * 1234.4, `12.5%` may stand for 12.47%). A figure that survives no derivation
+ * means the answer invented something, and the caller replaces it with the
+ * deterministic template instead of showing it.
+ *
+ * Vague quantity words ("most", "presque", "معظم") are refused outright: they
+ * make a claim the facts cannot prove, and there is no way to check one. The
+ * word lists are closed sets — wording outside them is not detected, which is a
+ * documented limitation rather than a promise ({@see docs/ai.md}).
  *
  * Identifiers (`INV-2026-77`, a hex digest) are removed before numbers are read:
- * they name a row, they do not make a claim about the facts.
+ * they name a row, they do not make a claim about the facts. Two documented
+ * exclusions keep legitimate prose from being refused: the French articles
+ * `un`/`une` count as the number 1 only inside a composition ("vingt et un"),
+ * and a percentage written in words is still checked as its plain value.
  *
  * Floats appear here only to compare ratios and rounded displays; the facts stay
  * integer millimes and no total is computed by this class.
@@ -26,13 +42,20 @@ final class GroundingCheck
 {
     /**
      * A number with optional grouping (`1 234,50`, `1,234.50`) and an optional
-     * percent sign. The lookbehind keeps digits inside an identifier
-     * (`INV-2026`, a hash) from counting as a figure.
+     * percent sign. The lookbehind keeps digits inside a Latin identifier
+     * (`INV-2026`, a hash) from counting as a figure, while still reading a number
+     * that Arabic attaches a proclitic to — the fallback template itself writes
+     * `و203٫250`, and "and 203.250" is one amount, not the number 250.
      */
-    private const NUMBER_PATTERN = '/(?<![\p{L}\p{N}_])[-−+]?(?:\d{1,3}(?:[\x{00A0}\x{202F} ]\d{3})+(?:[.,]\d+)?|\d+(?:[.,]\d+)*)(?:\s?[%٪])?/u';
+    private const NUMBER_PATTERN = '/(?<![A-Za-z0-9_])[-−+]?(?:\d{1,3}(?:[\x{00A0}\x{202F} ]\d{3})+(?:[.,]\d+)?|\d+(?:[.,]\d+)*)(?:\s?[%٪])?/u';
 
-    /** Alphanumeric runs that contain a letter and a separator: an identifier, not a figure. */
-    private const IDENTIFIER_PATTERN = '~(?<![A-Za-z0-9])(?=[A-Za-z0-9._/-]*[A-Za-z])[A-Za-z0-9]+(?:[-._/][A-Za-z0-9]+)+~u';
+    /**
+     * An identifier: a separator-joined run that carries both a letter and a
+     * digit (`INV-2026-77`, `a1b2-c3d4`). A digit-free hyphenated phrase is
+     * prose, not an identifier — `quatre-vingt-onze` and `twenty-one` are number
+     * words and must survive this removal to be read as claims.
+     */
+    private const IDENTIFIER_PATTERN = '~(?<![A-Za-z0-9])(?=[A-Za-z0-9._/-]*[A-Za-z])(?=[A-Za-z0-9._/-]*\d)[A-Za-z0-9]+(?:[-._/][A-Za-z0-9]+)+~u';
 
     /** @var array<string, string> */
     private const DIGITS = [
@@ -43,22 +66,132 @@ final class GroundingCheck
         '٫' => '.', '٬' => ',',
     ];
 
+    /**
+     * Quantity wording that cannot be proved from facts. Matched on the scanned
+     * text (customer names and dates removed), whole-word, case-insensitively.
+     * Multi-word entries make the risky single words safe: "about" is ordinary
+     * prose, "about a third" is a claim.
+     *
+     * @var array<string, list<string>>
+     */
+    private const VAGUE_TERMS = [
+        'en' => [
+            'half', 'most', 'majority', 'almost all', 'nearly', 'approximately',
+            'roughly', 'several', 'a third', 'two thirds', 'three quarters',
+            'a quarter', 'almost half', 'more than half', 'less than half',
+            'about a third', 'about half', 'the vast majority', 'a handful', 'dozens of',
+        ],
+        'fr' => [
+            'moitié', 'moitie', 'majorité', 'majorite', 'presque', 'la plupart',
+            'plusieurs', 'quelques', 'quasiment', 'approximativement', 'un tiers',
+            'deux tiers', 'trois quarts', 'un quart', 'une poignée', 'des dizaines de',
+        ],
+        'ar' => [
+            'نصف', 'معظم', 'اغلب', 'تقريبا', 'ثلث', 'ثلثان', 'ربع', 'الغالبيه',
+            'غالبيه', 'اكثر', 'بعض', 'قليل',
+        ],
+    ];
+
+    /**
+     * Number words, already in the normalised form the tokeniser produces
+     * (lower case; for Arabic: no diacritics or tatweel, alef variants folded to
+     * `ا`, `ة` folded to `ه`, `ى` to `ي`).
+     *
+     * @var array<string, array<string, int>>
+     */
+    private const WORD_VALUES = [
+        'en' => [
+            'zero' => 0, 'one' => 1, 'two' => 2, 'three' => 3, 'four' => 4, 'five' => 5,
+            'six' => 6, 'seven' => 7, 'eight' => 8, 'nine' => 9, 'ten' => 10,
+            'eleven' => 11, 'twelve' => 12, 'thirteen' => 13, 'fourteen' => 14,
+            'fifteen' => 15, 'sixteen' => 16, 'seventeen' => 17, 'eighteen' => 18,
+            'nineteen' => 19, 'twenty' => 20, 'thirty' => 30, 'forty' => 40,
+            'fifty' => 50, 'sixty' => 60, 'seventy' => 70, 'eighty' => 80, 'ninety' => 90,
+        ],
+        'fr' => [
+            'zéro' => 0, 'zero' => 0, 'deux' => 2, 'trois' => 3, 'quatre' => 4,
+            'cinq' => 5, 'six' => 6, 'sept' => 7, 'huit' => 8, 'neuf' => 9, 'dix' => 10,
+            'onze' => 11, 'douze' => 12, 'treize' => 13, 'quatorze' => 14, 'quinze' => 15,
+            'seize' => 16, 'vingt' => 20, 'trente' => 30, 'quarante' => 40,
+            'cinquante' => 50, 'soixante' => 60,
+            // `un`/`une` are handled by the caller: as articles they are not claims.
+            'un' => 1, 'une' => 1,
+        ],
+        'ar' => [
+            'صفر' => 0,
+            'واحد' => 1, 'واحده' => 1, 'احد' => 1,
+            'اثنان' => 2, 'اثنين' => 2, 'اثنتان' => 2, 'اثنتين' => 2, 'اثنا' => 2,
+            'ثلاثه' => 3, 'ثلاث' => 3,
+            'اربعه' => 4, 'اربع' => 4,
+            'خمسه' => 5, 'خمس' => 5,
+            'سته' => 6, 'ست' => 6,
+            'سبعه' => 7, 'سبع' => 7,
+            'ثمانيه' => 8, 'ثماني' => 8, 'ثمان' => 8,
+            'تسعه' => 9, 'تسع' => 9,
+            'عشره' => 10, 'عشر' => 10,
+            'احدعشر' => 11,
+            'عشرون' => 20, 'عشرين' => 20,
+            'ثلاثون' => 30, 'ثلاثين' => 30,
+            'اربعون' => 40, 'اربعين' => 40,
+            'خمسون' => 50, 'خمسين' => 50,
+            'ستون' => 60, 'ستين' => 60,
+            'سبعون' => 70, 'سبعين' => 70,
+            'ثمانون' => 80, 'ثمانين' => 80,
+            'تسعون' => 90, 'تسعين' => 90,
+        ],
+    ];
+
+    /**
+     * Multipliers. A scale word alone ("hundred", "mille") is 1 × the scale, and
+     * composes to the left the way the language does ("two hundred", "deux cents").
+     *
+     * @var array<string, array<string, int>>
+     */
+    private const SCALES = [
+        'en' => ['hundred' => 100, 'thousand' => 1000],
+        'fr' => ['cent' => 100, 'cents' => 100, 'mille' => 1000],
+        'ar' => [
+            'مئه' => 100, 'مايه' => 100, 'مائة' => 100,
+            'مئتان' => 200, 'مئتين' => 200, 'مائتان' => 200, 'مائتين' => 200,
+            'الف' => 1000, 'الاف' => 1000, 'الفان' => 2000, 'الفين' => 2000,
+        ],
+    ];
+
+    /** @var array<string, list<string>> */
+    private const CONNECTORS = [
+        'en' => ['and'],
+        'fr' => ['et'],
+        'ar' => ['و'],
+    ];
+
+    /** Percent wording that turns a number before it into a percentage claim. */
+    private const PERCENT_WORD_PATTERN = '/^\s*(?:%|٪|percent|per cent|pour cent|pourcent|بالمئه|في المئه|بالمائة)/iu';
+
     public function verify(string $text, WorkspaceFacts $facts): bool
     {
         $scan = $this->scanText($text, $facts);
 
-        if (0 === preg_match_all(self::NUMBER_PATTERN, $scan, $matches)) {
-            return true;
+        if ($this->hasVagueQuantity($scan, $facts->locale)) {
+            return false;
         }
 
         [$values, $percentages] = $this->candidates($facts);
 
-        foreach ($matches[0] as $token) {
-            $number = $this->parse((string) $token, $facts->locale);
-            if (null === $number) {
-                return false;
+        if (preg_match_all(self::NUMBER_PATTERN, $scan, $matches) > 0) {
+            foreach ($matches[0] as $token) {
+                $number = $this->parse((string) $token, $facts->locale);
+                if (null === $number) {
+                    return false;
+                }
+                if (!$this->matches($number['value'], $number['decimals'], $number['percent'] ? $percentages : $values)) {
+                    return false;
+                }
             }
-            if (!$this->matches($number['value'], $number['decimals'], $number['percent'] ? $percentages : $values)) {
+        }
+
+        foreach ($this->spelledNumbers($scan, $facts->locale) as $claim) {
+            $pool = $claim['percent'] ? $percentages : $values;
+            if (!$this->matches((float) $claim['value'], 0, $pool)) {
                 return false;
             }
         }
@@ -69,7 +202,7 @@ final class GroundingCheck
     /**
      * Removes the strings a model is allowed to quote verbatim, so their digits
      * are not mistaken for invented figures: listed customer names and the ISO
-     * dates the facts carry.
+     * dates the facts carry. Identifiers go too.
      */
     private function scanText(string $text, WorkspaceFacts $facts): string
     {
@@ -89,6 +222,177 @@ final class GroundingCheck
         $scan = preg_replace(self::IDENTIFIER_PATTERN, ' ', $scan) ?? $scan;
 
         return strtr($scan, self::DIGITS);
+    }
+
+    /** A vague quantity word cannot be proved at all, so its presence ends the check. */
+    private function hasVagueQuantity(string $scan, string $locale): bool
+    {
+        $terms = self::VAGUE_TERMS[$locale] ?? self::VAGUE_TERMS['en'];
+        $haystack = $this->normalizeText($scan, $locale);
+
+        foreach ($terms as $term) {
+            $needle = $this->normalizeText($term, $locale);
+            if ('' === $needle) {
+                continue;
+            }
+            $pattern = '~(?<![\p{L}\p{N}])'.preg_quote($needle, '~').'(?![\p{L}\p{N}])~iu';
+            if (1 === preg_match($pattern, $haystack)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Every number written in words, as a value and whether it is a percentage.
+     *
+     * The tokens are numbers, scale words and the language's connector; anything
+     * else ends the current number, which is how "twelve customers and three
+     * invoices" becomes two claims instead of one.
+     *
+     * @return list<array{value: int, percent: bool}>
+     */
+    private function spelledNumbers(string $text, string $locale): array
+    {
+        $values = self::WORD_VALUES[$locale] ?? self::WORD_VALUES['en'];
+        $scales = self::SCALES[$locale] ?? self::SCALES['en'];
+        $connectors = self::CONNECTORS[$locale] ?? [];
+
+        $pattern = 'ar' === $locale ? '/[\p{Arabic}\x{0640}]+/u' : '/[\p{L}]+(?:-[\p{L}]+)*/u';
+        if (0 === preg_match_all($pattern, $text, $matches, \PREG_OFFSET_CAPTURE)) {
+            return [];
+        }
+
+        $claims = [];
+        $total = 0;
+        $current = 0;
+        $active = false;
+        $end = 0;
+
+        foreach ($matches[0] as [$raw, $offset]) {
+            // A hyphenated compound is composed from its parts: quatre-vingt-dix.
+            foreach (explode('-', (string) $raw) as $part) {
+                $word = $this->normalizeWord($part, $locale);
+                if ('' === $word) {
+                    continue;
+                }
+                if ('ar' === $locale && str_starts_with($word, 'و') && mb_strlen($word) > 1) {
+                    // Arabic joins "and" to the next word: وعشرون.
+                    $stripped = mb_substr($word, 1);
+                    if (isset($values[$stripped]) || isset($scales[$stripped])) {
+                        $word = $stripped;
+                    }
+                }
+
+                if (in_array($word, $connectors, true)) {
+                    if ($active) {
+                        continue;
+                    }
+                    $this->flush($claims, $total, $current, $active, $text, $end);
+
+                    continue;
+                }
+
+                if (isset($scales[$word])) {
+                    $scale = $scales[$word];
+                    if ($scale >= 1000) {
+                        $total += ($active && $current > 0 ? $current : 1) * $scale;
+                        $current = 0;
+                    } else {
+                        $current = ($active && $current > 0 ? $current : 1) * $scale;
+                    }
+                    $active = true;
+                    $end = $offset + strlen((string) $raw);
+
+                    continue;
+                }
+
+                if (!isset($values[$word])) {
+                    $this->flush($claims, $total, $current, $active, $text, $end);
+
+                    continue;
+                }
+
+                $value = $values[$word];
+                if ('fr' === $locale && ('un' === $word || 'une' === $word) && !$active) {
+                    // "un client" is an article, not the figure 1. Inside a
+                    // composition ("vingt et un") it is a number.
+                    continue;
+                }
+
+                if (!$active) {
+                    $current = $value;
+                } elseif ('fr' === $locale && $current > 0 && $current < 10 && $value >= 20) {
+                    // French multiplies after a small unit: quatre-vingts, six-vingts.
+                    // Every multiplier word in the vocabulary (vingt, trente, quarante,
+                    // cinquante, soixante) is an exact ten, so no further test is needed.
+                    $current *= $value;
+                } else {
+                    // Additive: vingt-quatre, soixante-dix, quatre-vingt-dix,
+                    // خمسة وعشرون, dix-sept.
+                    $current += $value;
+                }
+                $active = true;
+                $end = $offset + strlen((string) $raw);
+            }
+        }
+
+        $this->flush($claims, $total, $current, $active, $text, $end);
+
+        return $claims;
+    }
+
+    /**
+     * @param list<array{value: int, percent: bool}> $claims
+     */
+    private function flush(array &$claims, int &$total, int &$current, bool &$active, string $text, int $end): void
+    {
+        if (!$active) {
+            return;
+        }
+
+        $claims[] = [
+            'value' => $total + $current,
+            'percent' => 1 === preg_match(self::PERCENT_WORD_PATTERN, substr($text, $end, 24)),
+        ];
+        $total = 0;
+        $current = 0;
+        $active = false;
+    }
+
+    /**
+     * Lower case, and for Arabic the folding that makes a word recognisable:
+     * no diacritics or tatweel, alef/hamza variants folded, ta marbuta to ha.
+     */
+    private function normalizeWord(string $word, string $locale): string
+    {
+        $word = mb_strtolower($word);
+        if ('ar' !== $locale) {
+            return $word;
+        }
+
+        $word = preg_replace('/[\x{0610}-\x{061A}\x{064B}-\x{065F}\x{0670}\x{06D6}-\x{06ED}\x{0640}]/u', '', $word) ?? $word;
+
+        return strtr($word, [
+            'أ' => 'ا', 'إ' => 'ا', 'آ' => 'ا', 'ٱ' => 'ا',
+            'ة' => 'ه', 'ى' => 'ي', 'ؤ' => 'و', 'ئ' => 'ي',
+        ]);
+    }
+
+    /** The same folding over a whole phrase, so the vague-word list matches it. */
+    private function normalizeText(string $text, string $locale): string
+    {
+        if ('ar' !== $locale) {
+            return mb_strtolower($text);
+        }
+
+        $folded = preg_replace('/[\x{0610}-\x{061A}\x{064B}-\x{065F}\x{0670}\x{06D6}-\x{06ED}\x{0640}]/u', '', $text) ?? $text;
+
+        return strtr(mb_strtolower($folded), [
+            'أ' => 'ا', 'إ' => 'ا', 'آ' => 'ا', 'ٱ' => 'ا',
+            'ة' => 'ه', 'ى' => 'ي', 'ؤ' => 'و', 'ئ' => 'ي',
+        ]);
     }
 
     /**

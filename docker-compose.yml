@@ -5,6 +5,12 @@
 # The credentials below are development placeholders and are also the defaults
 # in backend/.env.example. Production must supply its own values externally.
 #
+# Two roles, as in production: POSTGRES_USER owns the schema and runs migrations,
+# and the init script creates the least-privilege role the API serves as. Without
+# that split the dev server is a superuser, PostgreSQL skips row-level security for
+# it, and /readyz answers 503 `rowLevelSecurity: bypass` — the failure this split
+# exists to prevent.
+#
 # Ports are published on 127.0.0.1 only: a development database with a known
 # password must not be reachable from the network. Override a port with the
 # matching *_PORT variable in the shell or a root .env file.
@@ -19,13 +25,21 @@ services:
   db:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-app}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-app}
+      # The owner: it creates the database, owns the tables and runs migrations.
+      POSTGRES_USER: ${POSTGRES_USER:-keelson_owner}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-keelson_owner}
       POSTGRES_DB: ${POSTGRES_DB:-keelson_dev}
+      # The runtime role, created by the init script below with row privileges
+      # only. It must not own the tables and must not hold BYPASSRLS.
+      APP_DB_USER: ${APP_DB_USER:-keelson_app}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:-keelson_app}
     ports:
       - "127.0.0.1:${POSTGRES_PORT:-5433}:5432"
     volumes:
       - db_data:/var/lib/postgresql/data
+      # Runs once, on an empty data directory. An existing volume keeps the role
+      # it was created with — see README.md, "Roles and the local volume".
+      - ./docker/postgres/10-app-role.sh:/docker-entrypoint-initdb.d/10-app-role.sh:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
       interval: 5s

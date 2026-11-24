@@ -135,8 +135,13 @@ final class LoginTest extends WebTestCase
 
         $this->login($principal->getEmail(), 'Not-The-Password-6');
         self::assertResponseStatusCodeSame(429);
+        // The body code is AuthThrottleListener's: the firewall declares no
+        // `login_throttling` (tests/Unit/Config/SecurityThrottleConfigTest.php), so
+        // this 429 has exactly one possible author.
         self::assertSame('too_many_login_attempts', $this->payload()['error']['code']);
-        self::assertNotNull($this->client->getResponse()->headers->get('Retry-After'));
+        $retryAfter = $this->client->getResponse()->headers->get('Retry-After');
+        self::assertIsNumeric($retryAfter, 'Retry-After must be present on a 429.');
+        self::assertGreaterThan(0, (int) $retryAfter, 'Retry-After is a positive number of seconds.');
 
         // Even the right password is refused while the limit stands.
         $this->login($principal->getEmail(), self::PASSWORD);

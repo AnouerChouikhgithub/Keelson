@@ -29,6 +29,9 @@ export function AssistantPanel({ organizationId, onClose }: { organizationId: st
   // A double submit must not spend two requests; the ref is checked before React
   // has had a chance to re-render the disabled button.
   const inFlight = useRef(false)
+  // Focus goes back here when a request settles. Disabling the field the user was
+  // typing in hands focus to `<body>`, and the next Tab would leave the dialog.
+  const composer = useRef<HTMLTextAreaElement>(null)
 
   async function ask(text: string) {
     const trimmed = text.trim()
@@ -47,6 +50,12 @@ export function AssistantPanel({ organizationId, onClose }: { organizationId: st
     } finally {
       inFlight.current = false
       setPending(false)
+      // The answer replaced the pending state; if focus fell out of the dialog
+      // while the request ran (a disabled control drops it), put it back inside.
+      const active = document.activeElement
+      if (null === active || !active.closest('[role="dialog"]')) {
+        composer.current?.focus()
+      }
     }
   }
 
@@ -113,7 +122,11 @@ export function AssistantPanel({ organizationId, onClose }: { organizationId: st
             rows={3}
             maxLength={2000}
             placeholder={m.ai.assistant.placeholder}
-            disabled={pending}
+            // Read-only rather than disabled: a disabled field cannot hold focus,
+            // so entering a question with the keyboard would drop it to <body>
+            // the moment the request starts.
+            readOnly={pending}
+            ref={composer}
             onChange={(event) => setQuestion(event.target.value)}
           />
           <button

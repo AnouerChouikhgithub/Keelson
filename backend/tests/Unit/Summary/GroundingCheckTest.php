@@ -116,6 +116,114 @@ final class GroundingCheckTest extends TestCase
         self::assertTrue($this->check->verify('Nothing has changed this week.', $this->facts()));
     }
 
+    // --- Spelled-out numbers (F-04) -----------------------------------------
+
+    public function testAcceptsASpelledOutNumberThatIsAFact(): void
+    {
+        self::assertTrue($this->check->verify('Twelve customers are registered.', $this->facts()));
+        // Composed English: one hundred is 100, twelve thousand is 12 000.
+        self::assertTrue($this->check->verify('One hundred invoices.', $this->facts(numbers: ['invoiceCount' => 100])));
+        self::assertTrue($this->check->verify('Twelve thousand invoices.', $this->facts(numbers: ['invoiceCount' => 12000])));
+    }
+
+    public function testRejectsASpelledOutNumberThatContradictsTheFacts(): void
+    {
+        // The facts say three overdue invoices, not five.
+        self::assertFalse($this->check->verify('Five invoices are overdue.', $this->facts()));
+        self::assertFalse($this->check->verify('Ninety invoices are overdue.', $this->facts()));
+    }
+
+    public function testWordsAndDigitsInOneAnswerAreEachChecked(): void
+    {
+        self::assertTrue($this->check->verify(
+            '12 customers, three overdue invoices and 1,240.000 TND outstanding.',
+            $this->facts(),
+        ));
+        // The digit is a fact and the word is not: one bad claim fails the answer.
+        self::assertFalse($this->check->verify(
+            '12 customers and five overdue invoices.',
+            $this->facts(),
+        ));
+    }
+
+    public function testANumberWordInsideAnotherWordIsNotAClaim(): void
+    {
+        // "one" inside "someone", "an" inside "plan", "ten" inside "listen".
+        self::assertTrue($this->check->verify('Someone will plan the work and listen.', $this->facts()));
+    }
+
+    // --- French -------------------------------------------------------------
+
+    public function testReadsFrenchNumberWords(): void
+    {
+        $facts = $this->facts(locale: 'fr');
+
+        self::assertTrue($this->check->verify('Douze clients et trois factures en retard.', $facts));
+        self::assertFalse($this->check->verify('Cinq factures sont en retard.', $facts));
+        // quatre-vingt-dix is 90, soixante-dix is 70, vingt et un is 21.
+        self::assertTrue($this->check->verify('Quatre-vingt-dix factures.', $this->facts(locale: 'fr', numbers: ['invoiceCount' => 90])));
+        self::assertFalse($this->check->verify('Quatre-vingt-onze factures.', $this->facts(locale: 'fr', numbers: ['invoiceCount' => 90])));
+        self::assertTrue($this->check->verify('Vingt et un clients.', $this->facts(locale: 'fr', numbers: ['customerCount' => 21])));
+        self::assertTrue($this->check->verify('Deux cents factures.', $this->facts(locale: 'fr', numbers: ['invoiceCount' => 200])));
+    }
+
+    public function testTheFrenchArticleIsNotAClaim(): void
+    {
+        // "un client" means "a customer"; it is not the figure 1.
+        self::assertTrue($this->check->verify('Un client a payé.', $this->facts(locale: 'fr')));
+    }
+
+    // --- Arabic -------------------------------------------------------------
+
+    public function testReadsArabicNumberWordsWithDiacriticsAndTatweel(): void
+    {
+        $facts = $this->facts(locale: 'ar');
+
+        // "twelve customers and three overdue invoices"
+        self::assertTrue($this->check->verify('هناك اثنا عشر عميلًا وثلاث فواتير متأخرة.', $facts));
+        self::assertFalse($this->check->verify('خمس فواتير متأخرة.', $facts));
+        // Diacritics and tatweel are folded before the word is read.
+        self::assertTrue($this->check->verify('ثَلَاثُ فواتير متأخرة.', $facts));
+        self::assertTrue($this->check->verify('ثـــلاث فواتير متأخرة.', $facts));
+        // خمسة وعشرون is 25.
+        self::assertTrue($this->check->verify(
+            'خمسة وعشرون عميلًا.',
+            $this->facts(locale: 'ar', numbers: ['customerCount' => 25]),
+        ));
+        self::assertFalse($this->check->verify(
+            'خمسة وعشرون عميلًا.',
+            $this->facts(locale: 'ar', numbers: ['customerCount' => 24]),
+        ));
+    }
+
+    // --- Vague quantities ----------------------------------------------------
+
+    public function testRejectsVagueQuantitiesInEveryLanguage(): void
+    {
+        self::assertFalse($this->check->verify('Almost half of the balance is overdue.', $this->facts()));
+        self::assertFalse($this->check->verify('Most invoices are paid.', $this->facts()));
+        self::assertFalse($this->check->verify('Nearly all customers are late.', $this->facts()));
+        self::assertFalse($this->check->verify(
+            'Environ la moitié du solde est en retard.',
+            $this->facts(locale: 'fr'),
+        ));
+        self::assertFalse($this->check->verify(
+            'La plupart des factures sont payées.',
+            $this->facts(locale: 'fr'),
+        ));
+        self::assertFalse($this->check->verify('نصف الرصيد متأخر.', $this->facts(locale: 'ar')));
+        self::assertFalse($this->check->verify('معظم الفواتير مدفوعة.', $this->facts(locale: 'ar')));
+    }
+
+    public function testAVagueWordInsideACustomerNameIsNotAClaim(): void
+    {
+        // The name is quoted data, not a quantity claim about the workspace.
+        self::assertTrue($this->check->verify(
+            'Half Price Ltd still owes 1,240.000 TND.',
+            $this->facts(customerNames: ['Half Price Ltd']),
+        ));
+    }
+
     /**
      * @param array<string, int>    $numbers
      * @param array<string, string> $dates

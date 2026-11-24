@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Command;
 
+use App\Audit\InvoiceAuditAction;
 use App\DataFixtures\FixtureTargetGuard;
 use App\Tenancy\TenantContext;
 use Doctrine\DBAL\Connection;
@@ -261,7 +262,7 @@ final class BulkFixturesCommand extends Command
                     $organizationId,
                     $invoiceId,
                     $customer['id'],
-                    'invoice.created',
+                    InvoiceAuditAction::INVOICE_CREATED,
                     $creator,
                     '{}',
                     $issuedAt->format('Y-m-d H:i:sP'),

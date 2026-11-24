@@ -28,13 +28,14 @@ security:
                 password_path: password
                 success_handler: App\Security\JsonLoginSuccessHandler
                 failure_handler: App\Security\JsonLoginFailureHandler
-            # Five attempts per address per minute. The framework's throttle is
-            # declared for completeness, but its listener is not invoked in this
-            # setup, so App\EventListener\AuthThrottleListener enforces the same
-            # policy in front of the firewall (config/packages/rate_limiter.yaml).
-            login_throttling:
-                max_attempts: 5
-                interval: '1 minute'
+            # No `login_throttling` here on purpose. App\EventListener\AuthThrottleListener
+            # answers the sixth attempt with 429 + Retry-After *before* the password is
+            # checked, using the three buckets in config/packages/rate_limiter.yaml, and
+            # it also covers resend-verification. Declaring the framework's own throttle
+            # as well would be a second, invisible policy: it counts a different key, it
+            # cannot refuse before the hash comparison, and its 429 is a plain login
+            # failure rather than this API's error body.
+            # tests/Unit/Config/SecurityThrottleConfigTest.php keeps this absent.
 
     access_control:
         # Sign-in, registration and the token flows are reachable without a

@@ -139,6 +139,66 @@ final class SummaryEvalTest extends KernelTestCase
         }
     }
 
+    /**
+     * A whole-second `created_at` can tie, and the newest-invoice order must survive it.
+     *
+     * `invoices.created_at` is `timestamp(0)`, so two invoices written in the same second
+     * share an instant; ordering on that column alone would leave their order to the
+     * planner. `InvoiceRepository::findRecentForOrganization` breaks the tie on the primary
+     * key, which makes the order total. This pins that secondary key: three invoices on one
+     * instant must come back greatest-id first, and the same way on every read.
+     */
+    public function testRecentCustomerOrderBreaksTimestampTiesOnThePrimaryKey(): void
+    {
+        $instant = new \DateTimeImmutable('+1 hour');
+        $ids = [];
+        $index = 0;
+        foreach (['Tie Alpha', 'Tie Beta', 'Tie Gamma'] as $name) {
+            $customer = new Customer(
+                $this->organization,
+                $name,
+                strtolower(str_replace(' ', '.', $name)).'@example.test',
+                null,
+                null,
+                $instant,
+            );
+            $this->entityManager->persist($customer);
+            $this->entityManager->flush();
+
+            $invoice = new Invoice(
+                $this->organization,
+                $customer,
+                'TIE-'.++$index,
+                $this->principal->getId(),
+                $instant,
+                $instant,
+                [['description' => 'Work', 'quantity' => '1.000', 'unitPrice' => '1.000', 'lineTotal' => '1.000']],
+                null,
+                null,
+                '1.000',
+                '0.000',
+                '1.000',
+                $instant,
+            );
+            $this->entityManager->persist($invoice);
+            $this->entityManager->flush();
+            $ids[$name] = $invoice->getId();
+        }
+
+        // PostgreSQL compares uuids bytewise, which their canonical lowercase text form
+        // preserves, so a plain string sort here is the same order as `id DESC`.
+        $expected = array_keys($ids);
+        usort($expected, static fn (string $left, string $right): int => strcmp($ids[$right], $ids[$left]));
+
+        $facts = $this->facts('activity');
+        self::assertSame($expected, array_slice($facts->customerNames, 0, 3));
+        self::assertSame(
+            $facts->customerNames,
+            $this->facts('activity')->customerNames,
+            'The newest-invoice order must not change between reads.',
+        );
+    }
+
     private function facts(string $kind): WorkspaceFacts
     {
         $summaryKind = SummaryKind::from($kind);
@@ -203,10 +263,15 @@ final class SummaryEvalTest extends KernelTestCase
         $this->entityManager->flush();
 
         $index = 0;
+        // One clock for the whole corpus. `created_at` is a whole-second column, so
+        // asking for "now" once per invoice let two consecutive invoices share an
+        // instant whenever the loop crossed a second boundary; the newest-invoice
+        // order then fell through to the uuid tiebreak, which differs on every run.
+        $clock = new \DateTimeImmutable();
         foreach ($corpus['invoices'] as $definition) {
             ++$index;
             $total = (string) $definition['total'];
-            $createdAt = (new \DateTimeImmutable())->modify(sprintf('-%d seconds', $index));
+            $createdAt = $clock->modify(sprintf('-%d seconds', $index));
             $invoice = new Invoice(
                 $this->organization,
                 $customers[$definition['customer']],

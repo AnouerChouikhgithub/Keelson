@@ -123,5 +123,20 @@ export const invoices = {
     emptyHint: 'Invoice and customer changes appear here.',
     loadFailed: 'The audit log could not be loaded.',
     filterLabel: 'Filter by invoice',
+    /**
+     * One label per action the API can record. The list is closed in
+     * `backend/src/Audit/InvoiceAuditAction.php`, and `audit-labels.test.ts`
+     * reads that file and fails when a label is missing here, in fr or in ar.
+     */
+    actions: {
+      'customer.created': 'Customer created',
+      'customer.updated': 'Customer updated',
+      'customer.deleted': 'Customer deleted',
+      'invoice.created': 'Invoice created',
+      'invoice.updated': 'Invoice updated',
+      'invoice.deleted': 'Invoice deleted',
+      'invoice.sent': 'Invoice sent',
+      'invoice.paid': 'Invoice paid',
+    } as Record<string, string>,
   },
 }

@@ -89,6 +89,23 @@ final class SyntheticFixtureLoaderTest extends KernelTestCase
         self::assertSame(4, $unread);
     }
 
+    public function testTheAiOptInRowIsSeededSwitchedOff(): void
+    {
+        $first = $this->loader->load();
+        self::assertSame(1, $first['created']['ai_settings']);
+
+        // Row-level security covers this table, so the loader had to write inside
+        // the tenant context; reading it back proves the row landed on the right
+        // organization and is the "not opted in" state the hint is built for.
+        $row = $this->entityManager->getConnection()->fetchAssociative(
+            "SELECT s.enabled, s.monthly_token_budget FROM organization_ai_settings s
+             JOIN organizations o ON o.id = s.organization_id WHERE o.subdomain = 'fixture-northwind'"
+        );
+        self::assertIsArray($row, 'The fixtures must seed one AI opt-in row.');
+        self::assertFalse((bool) $row['enabled']);
+        self::assertSame(0, (int) $row['monthly_token_budget']);
+    }
+
     public function testSeedingIsIdempotentAndKeepsRoleAndTenantInvariants(): void
     {
         $first = $this->loader->load();

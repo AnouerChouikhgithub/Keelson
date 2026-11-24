@@ -41,12 +41,23 @@ Useful to know before reporting — these are deliberate:
 - Reset and verification tokens are single-use, stored hashed, and expire.
 - Secrets are never logged; the structured logger redacts known keys, and
   `app:config:check` reports configuration problems without printing values.
+- Secrets live in the ignored `backend/.env.local` (or the deployment's secret
+  store); tracked `.env` files carry empty placeholders. Diagnostic commands are not
+  all redacted — `debug:dotenv` prints environment values, so never run it in CI, a
+  shared terminal or a pasted log. `bin/secret-scan.sh` (a CI step) fails on a tracked
+  file that carries a value; the rotation checklist for the one credential that reached
+  history is `docs/runbooks/secret-rotation.md`.
 
 ## Known limitations that are not vulnerabilities
 
 These are documented gaps, not bugs to report:
 
-- no row-level security in the database (application-layer tenancy only),
+- row-level security covers the tenant tables — `customers`, `invoices`,
+  `invitations`, `notifications`, `organization_ai_settings` and `ai_requests` —
+  and the session's organization is set per transaction; the **identity** tables
+  (`principals`, `memberships`, sessions) are still scoped in the application. A
+  missing policy therefore fails open on those tables and the repository layer is
+  the only guard there,
 - no multi-factor authentication,
 - no email-change flow,
 - no CSP nonce; `style-src 'unsafe-inline'` is required by inline style attributes.

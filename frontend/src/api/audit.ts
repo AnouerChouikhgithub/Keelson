@@ -25,13 +25,26 @@ export async function listAuditEvents(
   return payload.items.flatMap((item): AuditEvent[] => {
     if (typeof item !== 'object' || item === null) return []
     const record = item as Record<string, unknown>
-    const { id, invoiceId: invoice, customerId, action, actorPrincipalId, metadata, createdAt } = record
+    const {
+      id,
+      invoiceId: invoice,
+      customerId,
+      invoiceNumber,
+      customerName,
+      action,
+      actorPrincipalId,
+      metadata,
+      createdAt,
+    } = record
     if (typeof id !== 'string' || id === '') return []
     if (typeof action !== 'string' || typeof createdAt !== 'string') return []
     return [{
       id,
       invoiceId: typeof invoice === 'string' ? invoice : null,
       customerId: typeof customerId === 'string' ? customerId : null,
+      // Readable references, resolved by the server in two queries per page.
+      invoiceNumber: typeof invoiceNumber === 'string' ? invoiceNumber : null,
+      customerName: typeof customerName === 'string' ? customerName : null,
       action,
       actorPrincipalId: typeof actorPrincipalId === 'string' ? actorPrincipalId : null,
       metadata: typeof metadata === 'object' && metadata !== null ? metadata as Record<string, unknown> : null,

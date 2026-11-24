@@ -11,12 +11,16 @@ audit trail and — the demo product on top — invoicing. Version 1.0.0.
   verification, password reset, membership-based authorization voters, organization
   administration (create/rename/soft-delete, members, invitations), dashboard
   aggregates, notifications with read state, profile/password, and a tenant-scoped
-  customer/invoice/audit HTTP API with `q` search and cursor pagination. 43 HTTP
-  routes: `/api/auth/{register,login,verify-email,logout,forgot-password,reset-password,accept-invitation}`,
-  `/healthz`, `/readyz`, `/api/session`, `/api/invitations/{token}`, `/api/me`,
-  `/api/me/password`, `/api/me/organizations`, `/api/notifications…` and
-  `/api/organizations/…` (settings, members, invitations, dashboard, customers,
-  invoices, audit events).
+  customer/invoice/audit HTTP API with `q` search and cursor pagination, and AI
+  assistance (status, guide, workspace summary) behind `AI_ENABLED`. The router is
+  the list of routes — `php bin/console debug:router --env=test` — so no count is
+  quoted here; the groups are
+  `/api/auth/{register,login,verify-email,resend-verification,logout,forgot-password,reset-password,accept-invitation}`,
+  `/healthz`, `/readyz`, `/api/session`, `/api/invitations/{token}`,
+  `/api/organizations/availability/subdomain`, `/api/me`, `/api/me/password`,
+  `/api/me/organizations`, `/api/notifications…`, `/api/ai/…` and
+  `/api/organizations/…` (settings, AI settings, members, invitations, dashboard,
+  customers, invoices, audit events).
 - `frontend/` — React 19 + Vite 8 + TypeScript SPA on the router, every screen on
   real API data (`src/api/`, one module per resource). English, French and Arabic
   (RTL), light/dark/system themes from `src/theme/tokens.css`.

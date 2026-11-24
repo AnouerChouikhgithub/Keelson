@@ -1,7 +1,7 @@
 import { useCallback } from 'react'
 import { Link, useNavigate } from 'react-router'
-import { listInvoices } from '../api/invoices'
-import type { Invoice, InvoiceStatus } from '../api/types'
+import { readDashboard } from '../api/dashboard'
+import type { InvoiceStatus } from '../api/types'
 import { useApiResource } from '../api/useApiResource'
 import { presentError } from '../api/presentError'
 import { DataTable } from '../components/DataTable'
@@ -15,6 +15,7 @@ import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useI18n } from '../i18n/I18nContext'
 import { initialsOf } from '../utils/initials'
 import { useWorkspace } from '../app/WorkspaceContext'
+import { AiOptInHint } from '../features/ai/AiOptInHint'
 import { OnboardingChecklist } from '../features/ai/OnboardingChecklist'
 import { SummaryCard } from '../features/ai/SummaryCard'
 import { canUseAi, useAiStatus } from '../features/ai/useAiStatus'
@@ -22,51 +23,39 @@ import './Dashboard.css'
 
 type MonthBucket = { key: string; year: number; month: number; paid: number }
 
+/** Display order of the status panel; the counts themselves come from the server. */
 const STATUSES: InvoiceStatus[] = ['draft', 'sent', 'paid', 'overdue']
 
-function monthsBack(count: number): { key: string; year: number; month: number }[] {
-  const today = new Date()
-  return Array.from({ length: count }, (_, index) => {
-    const date = new Date(today.getFullYear(), today.getMonth() - (count - 1 - index), 1)
-    return {
-      key: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`,
-      year: date.getFullYear(),
-      month: date.getMonth(),
-    }
-  })
-}
+/** Millimes per currency unit — the invoice representation (three decimals). */
+const MILLIMES_PER_UNIT = 1000
 
-function amountOf(invoice: Invoice): number {
-  const value = Number(invoice.total)
-  return Number.isFinite(value) ? value : 0
-}
-
-function inMonth(invoice: Invoice, key: string): boolean {
-  return invoice.issueDate.slice(0, 7) === key
+/** Display only: the server has already summed these as integers. */
+function amount(millimes: number): number {
+  return millimes / MILLIMES_PER_UNIT
 }
 
 /**
- * Every figure on this screen is derived from the invoice rows the API
- * returned — nothing is seeded, sampled or estimated. The chart is an SVG for
- * sighted users plus the same numbers in a visually hidden table.
+ * Every figure on this screen comes from `GET …/dashboard`, where PostgreSQL
+ * computes it across the whole tenant. Nothing is summed here: the invoice list
+ * is paginated, so aggregating a page of it would silently ignore everything
+ * past the last row on it. The chart is an SVG for sighted users plus the same
+ * numbers in a visually hidden table.
  */
 export default function Dashboard() {
   const { m, currency, number, date, month } = useI18n()
   const { membership } = useWorkspace()
   const navigate = useNavigate()
   const load = useCallback(
-    (signal: AbortSignal) => listInvoices(membership.id, { limit: 100, signal }),
+    (signal: AbortSignal) => readDashboard(membership.id, signal),
     [membership.id],
   )
-  const invoices = useApiResource(`invoices:${membership.id}:all`, load)
-  const today = new Date()
-  const thisMonthKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`
+  const dashboard = useApiResource(`dashboard:${membership.id}`, load)
   useDocumentTitle(m.page.dashboard)
   // One status read for both cards; it renders nothing when AI is off or the
   // call fails, which is what the brief asks for.
   const aiStatus = useAiStatus(membership.id)
 
-  if (invoices.state.status === 'loading') {
+  if (dashboard.state.status === 'loading') {
     return (
       <div className="dashboard">
         <Skeleton variant="text" count={2} label={m.common.loading} />
@@ -76,44 +65,29 @@ export default function Dashboard() {
     )
   }
 
-  if (invoices.state.status === 'error') {
+  if (dashboard.state.status === 'error') {
     return (
       <ErrorState
         title={m.dashboard.loadFailed}
-        message={presentError(m, invoices.state.error)}
+        message={presentError(m, dashboard.state.error)}
         retryLabel={m.common.retry}
-        onRetry={invoices.reload}
+        onRetry={dashboard.reload}
       />
     )
   }
 
-  const rows = invoices.state.data.items
-  const thisMonth = rows.filter((invoice) => inMonth(invoice, thisMonthKey))
-  const paidThisMonth = thisMonth.filter((invoice) => invoice.status === 'paid')
-  const revenue = paidThisMonth.reduce((sum, invoice) => sum + amountOf(invoice), 0)
-  const outstanding = rows
-    .filter((invoice) => invoice.status === 'sent' || invoice.status === 'overdue')
-    .reduce((sum, invoice) => sum + amountOf(invoice), 0)
-  const overdue = rows
-    .filter((invoice) => invoice.status === 'overdue')
-    .reduce((sum, invoice) => sum + amountOf(invoice), 0)
-  const paidRate = thisMonth.length === 0 ? 0 : paidThisMonth.length / thisMonth.length
-
-  const buckets: MonthBucket[] = monthsBack(12).map((month) => ({
-    ...month,
-    paid: rows
-      .filter((invoice) => invoice.status === 'paid' && inMonth(invoice, month.key))
-      .reduce((sum, invoice) => sum + amountOf(invoice), 0),
+  const data = dashboard.state.data
+  const buckets: MonthBucket[] = data.revenueByMonth.map((entry) => ({
+    key: entry.month,
+    year: Number(entry.month.slice(0, 4)),
+    month: Number(entry.month.slice(5, 7)) - 1,
+    paid: amount(entry.paidMillimes),
   }))
+  const chartTotalMillimes = data.revenueByMonth.reduce((sum, entry) => sum + entry.paidMillimes, 0)
   const chartMax = Math.max(...buckets.map((bucket) => bucket.paid), 1)
-  const chartTotal = buckets.reduce((sum, bucket) => sum + bucket.paid, 0)
-  const recent = [...rows]
-    .sort((left, right) => right.issueDate.localeCompare(left.issueDate) || right.number.localeCompare(left.number))
-    .slice(0, 5)
-  const statusCounts = STATUSES.map((status) => ({
-    status,
-    count: rows.filter((invoice) => invoice.status === status).length,
-  }))
+  const recent = data.recentInvoices
+  const openCount = data.statusCounts.sent + data.statusCounts.overdue
+  const thisMonthKey = buckets.length === 0 ? '' : buckets[buckets.length - 1].key
 
   return (
     <div className="dashboard">
@@ -128,32 +102,36 @@ export default function Dashboard() {
         </Link>
       </section>
 
-      {canUseAi(aiStatus) && (
+      {canUseAi(aiStatus) ? (
         <div className="dashboard-ai">
           <OnboardingChecklist organizationId={membership.id} />
           <SummaryCard organizationId={membership.id} kind="overview" />
         </div>
+      ) : (
+        // Nothing to show, but an Owner may not know the feature exists: one
+        // line, only for the roles that can act on it.
+        <AiOptInHint organizationId={membership.id} role={membership.role} />
       )}
 
       <section className="metrics-grid" aria-label={m.dashboard.overviewAria}>
         <article className="metric-card">
           <p className="metric-label">{m.dashboard.metrics.revenue}</p>
-          <p className="metric-value">{currency(revenue)}</p>
-          <p className="metric-caption">{m.dashboard.changeInvoices(paidThisMonth.length)}</p>
+          <p className="metric-value">{currency(amount(data.paidThisMonthMillimes))}</p>
+          <p className="metric-caption">{m.dashboard.changeInvoices(data.paidThisMonthCount)}</p>
         </article>
         <article className="metric-card">
           <p className="metric-label">{m.dashboard.metrics.outstanding}</p>
-          <p className="metric-value">{currency(outstanding)}</p>
-          <p className="metric-caption">{m.dashboard.statusCount(rows.filter((row) => row.status === 'sent' || row.status === 'overdue').length)}</p>
+          <p className="metric-value">{currency(amount(data.outstandingMillimes))}</p>
+          <p className="metric-caption">{m.dashboard.statusCount(openCount)}</p>
         </article>
         <article className="metric-card">
           <p className="metric-label">{m.dashboard.metrics.overdue}</p>
-          <p className="metric-value">{currency(overdue)}</p>
-          <p className="metric-caption">{m.dashboard.statusCount(rows.filter((row) => row.status === 'overdue').length)}</p>
+          <p className="metric-value">{currency(amount(data.overdueMillimes))}</p>
+          <p className="metric-caption">{m.dashboard.statusCount(data.overdueCount)}</p>
         </article>
         <article className="metric-card">
           <p className="metric-label">{m.dashboard.metrics.paidRate}</p>
-          <p className="metric-value">{number(paidRate * 100, 0)}%</p>
+          <p className="metric-value">{number(data.paidRateThisMonthPercent, 0)}%</p>
           <p className="metric-caption">{m.dashboard.paidRateHint}</p>
         </article>
       </section>
@@ -167,11 +145,11 @@ export default function Dashboard() {
             </div>
             <div className="chart-total">
               <span>{m.dashboard.revenueTotal}</span>
-              <strong>{currency(chartTotal)}</strong>
+              <strong>{currency(amount(chartTotalMillimes))}</strong>
             </div>
           </div>
 
-          {chartTotal === 0 ? (
+          {chartTotalMillimes === 0 ? (
             <EmptyState icon="trend" title={m.dashboard.chartEmpty} />
           ) : (
             <figure className="revenue-chart">
@@ -182,7 +160,7 @@ export default function Dashboard() {
                 preserveAspectRatio="none"
               >
                 <title id="revenue-svg-title">{m.dashboard.revenueTitle}</title>
-                <desc id="revenue-chart-desc">{m.dashboard.revenueAria(currency(chartTotal))}</desc>
+                <desc id="revenue-chart-desc">{m.dashboard.revenueAria(currency(amount(chartTotalMillimes)))}</desc>
                 {[0.25, 0.5, 0.75, 1].map((line) => (
                   <line
                     key={line}
@@ -246,10 +224,10 @@ export default function Dashboard() {
             </div>
           </div>
           <ul className="status-list">
-            {statusCounts.map((entry) => (
-              <li key={entry.status}>
-                <StatusBadge status={entry.status} />
-                <strong>{number(entry.count, 0)}</strong>
+            {STATUSES.map((status) => (
+              <li key={status}>
+                <StatusBadge status={status} />
+                <strong>{number(data.statusCounts[status], 0)}</strong>
               </li>
             ))}
           </ul>
@@ -300,7 +278,7 @@ export default function Dashboard() {
                     <PersonCell initials={initialsOf(invoice.customer.name)} name={invoice.customer.name} />
                   </td>
                   <td>{date(invoice.issueDate)}</td>
-                  <td className="cell-amount">{currency(amountOf(invoice))}</td>
+                  <td className="cell-amount">{currency(Number(invoice.total))}</td>
                   <td><StatusBadge status={invoice.status} /></td>
                 </tr>
               ))}

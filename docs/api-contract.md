@@ -294,6 +294,36 @@ Only a foreign-key violation maps to `409`; other database errors propagate as `
 | DELETE | `/api/organizations/{organizationId}/invoices/{invoiceId}` | DELETE_DRAFT | `204` |
 | GET | `/api/organizations/{organizationId}/invoice-audit-events` | READ | `200` |
 
+### Audit event representation
+
+```json
+{
+  "items": [
+    {
+      "id": "…",
+      "invoiceId": "…",
+      "customerId": "…",
+      "invoiceNumber": "2026-000042",
+      "customerName": "Atlas Harbour Supplies",
+      "action": "invoice.sent",
+      "actorPrincipalId": "…",
+      "metadata": {},
+      "createdAt": "2026-11-20T09:00:00+00:00"
+    }
+  ],
+  "nextCursor": null
+}
+```
+
+- `action` is one of a **closed set** defined once in
+  `backend/src/Audit/InvoiceAuditAction.php`: `customer.created|updated|deleted` and
+  `invoice.created|updated|deleted|sent|paid`. The SPA localizes it and keeps the code
+  as a secondary line.
+- `invoiceNumber` and `customerName` are resolved by the server **for the page** (two
+  queries, never one per row) so the screen can show a number and a name. They are
+  `null` when the referenced row is gone: a deleted invoice keeps its event and only
+  its id remains.
+
 ### Invoice representation
 
 ```json
@@ -521,6 +551,9 @@ Any active member. `200`:
   "overdueMillimes": 312000,
   "overdueCount": 3,
   "paidThisMonthMillimes": 0,
+  "paidThisMonthCount": 0,
+  "issuedThisMonthCount": 14,
+  "paidRateThisMonthPercent": 57,
   "customerCount": 12,
   "statusCounts": { "draft": 2, "sent": 5, "overdue": 3, "paid": 8 },
   "revenueByMonth": [{ "month": "2025-12", "paidMillimes": 0 }, "… 12 entries, oldest first …"],
@@ -528,11 +561,22 @@ Any active member. `200`:
 }
 ```
 
+This is the only source of dashboard figures and the SPA aggregates nothing itself: an invoice list is
+paginated, so a headline computed from one page would silently ignore the rest of the workspace.
+
 Money is integer millimes. `overdue` is derived from the due date exactly like the invoice read
-path, so the dashboard and the list agree. The aggregates are four SQL statements (one filtered scan
-for the counts and sums, one monthly grouping, one customer count, one ordered query for the recent
-invoices): `DashboardApiTest::testTheDashboardCostsTheSameForManyInvoicesAsForFew` asserts the query
-count is unchanged between a tenant with 3 invoices and one with 33.
+path, so the dashboard and the list agree. `paidThisMonthMillimes` and `paidThisMonthCount` use the
+**payment** date (`paid_at`), while `issuedThisMonthCount` and `paidRateThisMonthPercent` use the
+**issue** date (`issue_date`), matching the "of invoices issued this month" caption; the rate is a
+ratio of two counts the database made, rounded to whole percent. `revenueByMonth` groups paid revenue
+by the month of payment, oldest first.
+
+The aggregates are four SQL statements (one filtered scan for the counts, sums and the paid rate, one
+monthly grouping, one customer count, one ordered query for the recent invoices):
+`DashboardApiTest::testTheDashboardCostsTheSameForManyInvoicesAsForFew` asserts the query count is
+unchanged between a tenant with 3 invoices and one with 33, and
+`DashboardApiTest::testEveryFigureOfA250InvoiceCorpusOver14Months` pins every figure against a corpus
+larger than any page.
 
 ### Notifications
 

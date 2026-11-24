@@ -115,18 +115,20 @@
 .preview-totals dd { margin: 0; font-variant-numeric: tabular-nums; }
 .preview-grand { padding-block-start: var(--space-1); border-block-start: 1px solid var(--color-border); font-weight: var(--weight-bold); }
 
-/* --- Print: the invoice only --- */
+/* --- Print: the invoice only ---
+   The palette comes from the print tokens in theme/tokens.css, because print is a
+   fixed white page whatever theme the viewer picked. */
 @media print {
   :root {
-    --color-background: #FFFFFF;
-    --color-surface: #FFFFFF;
-    --color-text: #000000;
-    --color-text-secondary: #333333;
-    --color-text-muted: #555555;
-    --color-border: #CCCCCC;
+    --color-background: var(--print-background);
+    --color-surface: var(--print-surface);
+    --color-text: var(--print-text);
+    --color-text-secondary: var(--print-text-secondary);
+    --color-text-muted: var(--print-text-muted);
+    --color-border: var(--print-border);
   }
 
-  body { background: #FFFFFF; }
+  body { background: var(--print-background); }
   .sidebar, .topbar, .toast-region, .skip-link, .no-print, .sidebar-scrim { display: none !important; }
   .app-shell, .main-column { display: block; width: 100%; margin: 0; }
   .main-content { padding: 0; max-width: none; }

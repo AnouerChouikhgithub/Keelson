@@ -1,4 +1,4 @@
-/** Dashboard figures are derived from the invoice rows the API returns. */
+/** Dashboard figures are computed by the server across the whole workspace. */
 export const dashboard = {
   eyebrow: 'OVERVIEW',
   greetingNamed: (name: string) => `Good morning, ${name}`,
@@ -14,7 +14,7 @@ export const dashboard = {
   paidRateHint: 'of invoices issued this month',
   changeInvoices: (count: number) => (count === 1 ? '1 invoice' : `${count} invoices`),
   revenueTitle: 'Revenue, last 12 months',
-  revenueSubtitle: 'Paid invoices grouped by issue month',
+  revenueSubtitle: 'Paid invoices grouped by month of payment',
   revenueTotal: 'Total paid',
   revenueAria: (total: string) => `Bar chart of paid revenue for the last 12 months, ${total} in total`,
   chartCaption: 'Paid revenue by month for the last 12 months',
@@ -22,7 +22,7 @@ export const dashboard = {
   chartRevenue: 'Paid revenue',
   chartEmpty: 'No paid invoices in the last 12 months.',
   statusTitle: 'Invoices by status',
-  statusSubtitle: 'Every invoice loaded for this workspace',
+  statusSubtitle: 'Every invoice in this workspace',
   statusCount: (count: number) => (count === 1 ? '1 invoice' : `${count} invoices`),
   recentTitle: 'Recent invoices',
   recentSubtitle: 'The five most recent invoices',
@@ -39,5 +39,5 @@ export const dashboard = {
   emptyTitle: 'No invoices yet',
   emptyBody: 'Create your first invoice to see revenue here.',
   loadFailed: 'The dashboard could not be loaded.',
-  footer: 'Computed from the invoices the API returned. No figure is estimated or mocked.',
+  footer: 'Computed by the server across every invoice in this workspace. No figure is estimated or mocked.',
 }

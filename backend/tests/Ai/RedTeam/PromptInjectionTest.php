@@ -172,6 +172,40 @@ final class PromptInjectionTest extends TestCase
         self::assertTrue((new GroundingCheck())->verify('You have 3 invoices and 9 customers.', $facts));
     }
 
+    /** F-04: a number in words is a claim too, and is proved or refused the same way. */
+    public function testASpelledOutNumberIsProvedOrRefusedLikeADigit(): void
+    {
+        $facts = $this->facts(['Acme Holdings']);
+
+        self::assertTrue((new GroundingCheck())->verify('You have three invoices and nine customers.', $facts));
+        // The facts say three invoices; "five" is an invented figure in prose.
+        self::assertFalse((new GroundingCheck())->verify('You have five invoices.', $facts));
+    }
+
+    /** F-04: a vague quantity cannot be proved, so the answer is refused outright. */
+    public function testAVagueQuantityIsRefusedAndReplacedByTheTemplate(): void
+    {
+        $facts = $this->facts(['Acme Holdings']);
+
+        self::assertFalse((new GroundingCheck())->verify('Almost all of the invoices are paid.', $facts));
+        self::assertFalse((new GroundingCheck())->verify('Most of the balance is overdue.', $facts));
+        self::assertStringNotContainsString('almost', mb_strtolower((new SummaryFallback())->text($facts)));
+    }
+
+    /** The summary prompt tells the model the format the check can actually prove. */
+    public function testTheSummarySystemPromptDemandsDigitsAndForbidsVagueQuantities(): void
+    {
+        $prompts = new SummaryPromptFactory($this->builder);
+
+        foreach (['en', 'fr', 'ar'] as $locale) {
+            $system = mb_strtolower($prompts->system($locale));
+            self::assertTrue(
+                str_contains($system, 'digits') || str_contains($system, 'chiffres') || str_contains($system, 'بالأرقام'),
+                sprintf('The %s system prompt must demand digits.', $locale),
+            );
+        }
+    }
+
     private function article(): GuideArticle
     {
         return new GuideArticle('invoice-lifecycle', 'Invoices', [], 'Send sets the status to sent.');

@@ -178,8 +178,10 @@ audits still run when the PHP one fails.
 - A "signed-in devices" screen or "sign out everywhere" button.
 - Content-Security-Policy nonces for the SPA (inline `style` attributes require
   `style-src 'unsafe-inline'`; there is no third-party script).
-- Secret rotation tooling; `APP_SECRET` rotation signs every session out, which is
-  documented but manual.
+- Secret rotation tooling. Rotation is a manual checklist
+  (`docs/runbooks/secret-rotation.md`); `bin/secret-scan.sh` is the automated half — it
+  fails when a tracked file carries a credential. Rotating `APP_SECRET` does not end
+  existing sessions (measured there); `DELETE FROM sessions` does.
 
 ## How this was verified
 

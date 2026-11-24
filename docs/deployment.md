@@ -43,7 +43,7 @@ known one.
 | --- | --- | --- |
 | `APP_ENV` | `prod` | anything else turns on debug behaviour |
 | `APP_DEBUG` | `0` | must be `0` in production; the validator refuses otherwise |
-| `APP_SECRET` | 32+ random bytes | per environment, never reused; rotating it signs everyone out |
+| `APP_SECRET` | 32+ random bytes | per environment, never reused; rotation is required after any exposure and does **not** by itself end sessions — see `docs/runbooks/secret-rotation.md` |
 | `DATABASE_URL` | `postgresql://keelson_app:***@db:5432/keelson?serverVersion=16&charset=utf8` | the **runtime** role |
 | `DEFAULT_URI` | `https://app.example.com` | absolute links from CLI commands |
 | `FRONTEND_URL` | `https://app.example.com` | links in verification/reset mail; must be `https://` in production |
@@ -91,6 +91,59 @@ One migration creates the `pg_trgm` extension, so the owner role needs the right
 `CREATE EXTENSION` (the bootstrap superuser in the official image has it). If your
 provider forbids that, enable `pg_trgm` out of band and mark the migration as
 migrated after checking it ran the indexes.
+
+### Least-privilege migration role
+
+`keelson_owner` needs **ownership, not `SUPERUSER`**. Every statement the migrations
+run is owner-scoped: create and alter tables, indexes, sequences and the append-only
+trigger; `ENABLE`/`FORCE ROW LEVEL SECURITY` and `CREATE POLICY`; and
+`CREATE EXTENSION pg_trgm`, which is a *trusted* extension since PostgreSQL 13, so a
+role with `CREATE` on the database may install it. A superuser would additionally
+bypass row-level security, which is the opposite of what this schema wants.
+
+```sql
+-- as the bootstrap superuser, on a fresh cluster
+CREATE ROLE keelson_owner LOGIN PASSWORD '…'
+    NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+CREATE DATABASE keelson OWNER keelson_owner;
+-- before the first migration: tables created later by the owner are granted to the API role
+ALTER DEFAULT PRIVILEGES FOR ROLE keelson_owner IN SCHEMA public
+    GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO keelson_app;
+ALTER DEFAULT PRIVILEGES FOR ROLE keelson_owner IN SCHEMA public
+    GRANT USAGE, SELECT ON SEQUENCES TO keelson_app;
+```
+
+Verified on a disposable PostgreSQL 16 database with a role holding exactly those
+attributes: 13/13 migrations from an empty database, `doctrine:migrations:status` at
+the latest version with `New 0`, the mapping valid, `pg_trgm` installed and owned by
+the migration role, all six tenant tables with `rowsecurity` and `forcerowsecurity`
+on and one policy each, `migrate prev` and a full `migrate 0` completing, a re-migration
+restoring the 14 tables and 6 policies, and `GET /readyz` returning
+`200 {"rowLevelSecurity":"ok"}` for the API role. The same role was refused DDL, and
+an API-role write outside its tenant context was refused by the policy.
+
+If a managed provider reserves `CREATE EXTENSION` for an administrator, install
+`pg_trgm` once out of band; the migration's `CREATE EXTENSION IF NOT EXISTS` then
+makes no change and the owner stays non-superuser.
+
+`FORCE ROW LEVEL SECURITY` binds the table owner too, so a **data** migration run by
+this role reads and writes no tenant rows unless it sets `app.organization_id` for
+each tenant it touches. The current migrations only update `principals`, which is not
+one of the six tenant tables, so no context is needed today; a future backfill of
+`customers`, `invoices`, `invitations`, `notifications`, `ai_requests` or
+`organization_ai_settings` must set the setting inside the migration instead of
+expecting owner access.
+
+### Local development uses the same split
+
+`docker compose up -d` from the repository root runs the same init script, so a
+development stack serves as `keelson_app` and `/readyz` answers
+`rowLevelSecurity: ok` there too. `docker-compose.yml` defaults the two roles to
+`keelson_owner`/`keelson_app`, `backend/.env.example` puts the API on the
+least-privilege role, and `backend/bin/dev-reset.sh` connects as the owner for
+create/drop/migrate/seed. The init script only runs on an empty volume: an existing
+`keelson_db_data` volume predates the split and has to be recreated once (the root
+README says how, and that it destroys the local rows).
 
 ## 4. Serve
 
@@ -145,12 +198,17 @@ password appears in the process list or in the output.
 ```sh
 # Nightly backup, keeping 14 days (KEELSON_BACKUP_KEEP_DAYS overrides).
 # Local PostgreSQL client:
-PGHOST=127.0.0.1 PGPORT=5433 PGUSER=app PGPASSWORD=*** PGDATABASE=keelson \
+PGHOST=127.0.0.1 PGPORT=5433 PGUSER=keelson_owner PGPASSWORD=*** PGDATABASE=keelson \
   bash backend/bin/db-backup.sh /var/backups/keelson
 
 # Or, against the Compose database, using the container's own client tools:
-KEELSON_PG_CONTAINER=keelson-db-1 PGUSER=app PGPASSWORD=*** PGDATABASE=keelson \
+KEELSON_PG_CONTAINER=keelson-db-1 PGUSER=keelson_owner PGPASSWORD=*** PGDATABASE=keelson \
   bash backend/bin/db-backup.sh /var/backups/keelson
+
+A dump cannot be taken as the API role: `pg_dump` turns row security off and
+PostgreSQL refuses when the role may not bypass a policy, so the dump fails rather
+than silently omitting every tenant row. Use a role that may read the whole database
+(the owner in this stack, a `BYPASSRLS` role in a managed one).
 ```
 
 The script writes `keelson-<UTC timestamp>.dump` in custom format
@@ -194,8 +252,10 @@ exercised here.
 2. **Schema changed too**: restore the dump taken before the deploy into a fresh
    database and point the previous image at it. Migrations in this repository are
    forward-only; a `down()` that drops data is not a rollback plan.
-3. Keep `APP_SECRET` stable across a rollback: changing it invalidates every
-   session and every CSRF token in flight.
+3. `APP_SECRET` does not have to stay stable across a rollback: sessions and CSRF
+   tokens live in the `sessions` table and survive a rotation (measured in
+   `docs/runbooks/secret-rotation.md`). Rotate it when it may have leaked, not as a
+   rollback step.
 
 ## 7. Scheduled work
 

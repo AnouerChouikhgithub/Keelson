@@ -1,5 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+// The card deep-links from the dashboard hint, so it reads `useLocation`.
+import { MemoryRouter } from 'react-router'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { installFetch, requests } from '../../test/fetchMock'
 import AssistantLauncher from './AssistantLauncher'
@@ -26,9 +28,9 @@ describe('AiSettingsSection', () => {
     const fetchMock = installFetch(routes())
     const user = userEvent.setup()
     render(
-      <AiProviders>
+      <MemoryRouter><AiProviders>
         <AiSettingsSection organizationId="org-settings-owner" role="Owner" />
-      </AiProviders>,
+      </AiProviders></MemoryRouter>,
     )
 
     expect(await screen.findByRole('heading', { name: 'AI assistance' })).toBeVisible()
@@ -53,9 +55,9 @@ describe('AiSettingsSection', () => {
     const fetchMock = installFetch(routes())
     const user = userEvent.setup()
     render(
-      <AiProviders>
+      <MemoryRouter><AiProviders>
         <AiSettingsSection organizationId="org-settings-invalid" role="Admin" />
-      </AiProviders>,
+      </AiProviders></MemoryRouter>,
     )
 
     const budget = await screen.findByLabelText('Monthly token budget')
@@ -70,9 +72,9 @@ describe('AiSettingsSection', () => {
   it('renders nothing for a member', () => {
     installFetch(routes())
     render(
-      <AiProviders>
+      <MemoryRouter><AiProviders>
         <AiSettingsSection organizationId="org-settings-member" role="Member" />
-      </AiProviders>,
+      </AiProviders></MemoryRouter>,
     )
 
     expect(screen.queryByRole('heading', { name: 'AI assistance' })).toBeNull()
@@ -101,10 +103,10 @@ describe('AiSettingsSection', () => {
     ])
     const user = userEvent.setup()
     render(
-      <AiProviders>
+      <MemoryRouter><AiProviders>
         <AssistantLauncher organizationId="org-settings-activation" />
         <AiSettingsSection organizationId="org-settings-activation" role="Owner" />
-      </AiProviders>,
+      </AiProviders></MemoryRouter>,
     )
 
     await screen.findByRole('heading', { name: 'AI assistance' })
@@ -123,9 +125,9 @@ describe('AiSettingsSection', () => {
   it('renders nothing when the status call fails', async () => {
     const fetchMock = installFetch([{ path: '/api/ai/status', method: 'GET', status: 503, json: {} }])
     render(
-      <AiProviders>
+      <MemoryRouter><AiProviders>
         <AiSettingsSection organizationId="org-settings-failed" role="Owner" />
-      </AiProviders>,
+      </AiProviders></MemoryRouter>,
     )
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalled())

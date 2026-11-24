@@ -1,0 +1,11 @@
+# Shell scripts are executed by `sh`, `bash` and container entrypoints on Linux.
+# A Windows checkout with `core.autocrlf=true` would otherwise rewrite the shebang
+# to `#!/bin/sh\r`, and the container refuses to run it:
+#   /bin/sh^M: bad interpreter: No such file or directory
+# That is what made docker/postgres/10-app-role.sh fail to create the application
+# role on a Windows development machine.
+*.sh text eol=lf
+
+# Docker files and the SQL we hand to psql run on Linux too.
+Dockerfile text eol=lf
+docker/** text eol=lf

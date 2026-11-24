@@ -14,6 +14,11 @@ export const ai = {
     sources: 'Sources',
     empty: 'Posez une question sur les factures, les clients ou le fonctionnement d’un écran.',
   },
+  /** L’unique indication visible tant que l’espace n’a pas activé l’IA. */
+  optIn: {
+    available: 'L’assistance par IA est disponible pour cet espace.',
+    action: 'Activez-la dans les réglages',
+  },
   errors: {
     aiDisabled: 'L’IA est désactivée pour cet espace. Un propriétaire ou un administrateur peut l’activer dans les réglages.',
     aiBudgetExceeded: 'Cet espace a épuisé son budget d’IA pour ce mois.',

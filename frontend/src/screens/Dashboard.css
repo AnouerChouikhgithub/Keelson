@@ -92,3 +92,15 @@
   .revenue-chart svg { height: 150px; }
   .chart-axis span:nth-child(even) { visibility: hidden; }
 }
+
+/*
+ * A phone-width two-column grid leaves about 130px inside a card, which is less
+ * than a three-decimal amount plus its currency code needs (TND 9,999,999.999
+ * measures ~152px at 21px). One column gives the figure its own line and the type
+ * step drops once more, so the digits and the currency stay whole instead of
+ * ending in an ellipsis.
+ */
+@media (max-width: 480px) {
+  .metrics-grid { grid-template-columns: 1fr; }
+  .metric-value { font-size: 20px; }
+}

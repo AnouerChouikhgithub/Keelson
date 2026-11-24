@@ -104,15 +104,16 @@ and pnpm 12.14.
 # 1. PostgreSQL 16 (127.0.0.1:5433) and Mailpit (UI http://localhost:8026)
 docker compose up -d
 
-# 2. Backend: dependencies, local configuration, schema, server on :8000
+# 2. Backend: dependencies and local configuration
 cd backend && composer install && cp .env.example .env.local   # set APP_SECRET
-php bin/console doctrine:migrations:migrate && php -S 127.0.0.1:8000 -t public public/index.php
 
-# 3. Frontend: dependencies and Vite on :5173
+# 3. Schema and synthetic demo data, as the owner role (the API serves as
+#    `keelson_app`; see "Roles and the local volume" below)
+bash bin/dev-reset.sh
+php -S 127.0.0.1:8000 -t public public/index.php
+
+# 4. Frontend: dependencies and Vite on :5173
 cd ../frontend && pnpm install --frozen-lockfile && pnpm start
-
-# 4. (optional) synthetic demo accounts and data
-bash ../backend/bin/dev-reset.sh
 
 # 5. Browser suite, once: install Chromium
 pnpm --dir ../e2e exec playwright install chromium
@@ -121,6 +122,44 @@ pnpm --dir ../e2e exec playwright install chromium
 Open <http://localhost:5173>: a signed-out visitor lands on `/sign-in`, and
 "Create an account" registers the address with its first organization. The
 confirmation mail appears in Mailpit at <http://localhost:8026>.
+
+## Roles and the local volume
+
+`docker compose up -d` creates **two roles**, as production does, through
+`docker/postgres/10-app-role.sh`:
+
+| Role | Used by | Rights |
+| --- | --- | --- |
+| `keelson_owner` | migrations, fixtures, `bin/dev-reset.sh` | owns the schema |
+| `keelson_app` | the API, through `DATABASE_URL` | rows only: no DDL, does not own a table |
+
+A single superuser for both roles would make the local stack lie: PostgreSQL skips
+row-level security for a superuser or a table owner, so `/readyz` answers `503` with
+`rowLevelSecurity: bypass` and every tenant policy is inert. Serving as
+`keelson_app` is what makes the development stack exercise the same forced policies
+production does.
+
+`bin/dev-reset.sh` connects as the owner (override `OWNER_DATABASE_URL` when your
+credentials differ, for example after changing `POSTGRES_PORT`), then re-applies the
+role's grants — dropping a database discards its per-database grants.
+
+**A volume created before this split needs to be recreated once.** The init script
+runs only on an empty data directory, so an old `keelson` volume still has `app` as
+a superuser and no `keelson_app` role; the API then fails with
+`role "keelson_app" does not exist`. This **deletes every row in your local
+development database**:
+
+```sh
+pg_dump ... > backup.sql        # first, if the data matters
+cd backend && php bin/console app:db:target   # confirms what you are about to lose
+docker compose down             # keeps the volume
+docker volume rm keelson_db_data
+docker compose up -d db
+bash bin/dev-reset.sh           # create, migrate and seed as keelson_owner
+```
+
+The production stack never needs this: `docker-compose.prod.yml` has had the same
+split from the start, and its database is created once.
 
 ## Demo accounts
 
@@ -164,7 +203,7 @@ Backend (read from the process environment, then `backend/.env`, then
 | `APP_DEBUG` | prod: `0` | Debug toolbar and verbose errors; must be `0` in production |
 | `APP_SECRET` | yes | Signs CSRF tokens and the session; a long random value per environment |
 | `APP_SHARE_DIR` | no | Shared writable directory (`var/share` by default) |
-| `DATABASE_URL` | yes | `postgresql://user:pass@host:5432/db?serverVersion=16&charset=utf8` |
+| `DATABASE_URL` | yes | `postgresql://user:pass@host:5432/db?serverVersion=16&charset=utf8`; locally the least-privilege `keelson_app` role (migrations run as `keelson_owner`) |
 | `DEFAULT_URI` | yes | Absolute URL for CLI-generated links and absolute redirects |
 | `FRONTEND_URL` | yes | Origin of the SPA; verification, reset and invitation links point here (must be `https://` in production) |
 | `MAILER_DSN` | yes | SMTP endpoint; `smtp://127.0.0.1:1026` with Mailpit locally, never `null://` in production |

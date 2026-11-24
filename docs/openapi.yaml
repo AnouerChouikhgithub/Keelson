@@ -2205,14 +2205,31 @@ components:
           description: Non-negative decimal, at most 3 places.
     AuditEvent:
       type: object
-      required: [id, action, actorPrincipalId, createdAt]
+      required: [id, action, actorPrincipalId, createdAt, invoiceId, customerId, invoiceNumber, customerName, metadata]
+      description: |
+        One recorded change. `invoiceNumber` and `customerName` are resolved by the
+        server for the page it returns, in two queries rather than one per row, so a
+        reader sees a number and a name instead of a UUID. They are null when the
+        referenced row no longer exists — a deleted invoice keeps its event.
       properties:
         id:
           type: string
           format: uuid
         action:
           type: string
-          description: Stable snake_case action name, for example `invoice.sent`.
+          description: Stable action name from a closed set, for example `invoice.sent`; the SPA localizes it.
+        invoiceId:
+          type: [string, 'null']
+          format: uuid
+        customerId:
+          type: [string, 'null']
+          format: uuid
+        invoiceNumber:
+          type: [string, 'null']
+          description: The invoice's number, or null when it has been deleted.
+        customerName:
+          type: [string, 'null']
+          description: The customer's current display name, or null when it has been deleted.
         actorPrincipalId:
           type: string
           format: uuid
@@ -2230,6 +2247,9 @@ components:
         - overdueMillimes
         - overdueCount
         - paidThisMonthMillimes
+        - paidThisMonthCount
+        - issuedThisMonthCount
+        - paidRateThisMonthPercent
         - customerCount
         - statusCounts
         - revenueByMonth
@@ -2243,6 +2263,20 @@ components:
           type: integer
         paidThisMonthMillimes:
           type: integer
+          description: Money collected this month, by payment date.
+        paidThisMonthCount:
+          type: integer
+          description: Invoices paid this month, by payment date.
+        issuedThisMonthCount:
+          type: integer
+          description: Invoices whose issue date falls in the current month.
+        paidRateThisMonthPercent:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: |
+            Whole percent of this month's issued invoices that are paid. Computed by the database
+            from two counts; the client never divides rows.
         customerCount:
           type: integer
         statusCounts:
@@ -2259,7 +2293,7 @@ components:
               type: integer
         revenueByMonth:
           type: array
-          description: Twelve entries, oldest first.
+          description: Twelve entries, oldest first, grouped by month of payment.
           items:
             type: object
             required: [month, paidMillimes]

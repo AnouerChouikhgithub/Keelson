@@ -109,6 +109,11 @@ final class DashboardApiTest extends WebTestCase
         self::assertSame(30000, $payload['overdueMillimes']);
         self::assertSame(1, $payload['overdueCount']);
         self::assertSame(40000, $payload['paidThisMonthMillimes']);
+        // One of the two paid invoices was collected this month, the other two months ago.
+        self::assertSame(1, $payload['paidThisMonthCount']);
+        // All five were issued today, so two of this month's five are paid.
+        self::assertSame(5, $payload['issuedThisMonthCount']);
+        self::assertSame(40, $payload['paidRateThisMonthPercent']);
         self::assertSame(1, $payload['customerCount']);
         self::assertSame(['draft' => 1, 'sent' => 1, 'overdue' => 1, 'paid' => 2], $payload['statusCounts']);
         self::assertCount(12, $payload['revenueByMonth']);
@@ -170,6 +175,137 @@ final class DashboardApiTest extends WebTestCase
 
         // Same query count at 5x the rows: no per-row query.
         self::assertSame($small, $large, sprintf('dashboard used %d queries for 3 invoices and %d for 33', $small, $large));
+    }
+
+    /**
+     * 250 invoices over 14 months: every figure must equal the direct computation.
+     *
+     * The audit found the SPA summing the first 100 invoices of a list, so anything
+     * past number 101 was invisible to the dashboard. This test builds a corpus
+     * large enough to prove the server aggregate is the authority: expectations are
+     * accumulated while the invoices are built, using the same predicates the SQL
+     * uses (`overdue` is a due date in the past, not a stored flag), and every
+     * returned figure is compared to them. Two of the months fall outside the
+     * twelve-month revenue window on purpose.
+     */
+    public function testEveryFigureOfA250InvoiceCorpusOver14Months(): void
+    {
+        $today = new \DateTimeImmutable('today');
+        $monthStart = $today->modify('first day of this month')->setTime(0, 0);
+        $thisMonth = $monthStart->format('Y-m');
+        $revenueStart = $monthStart->modify('-11 months');
+
+        $organization = $this->entityManager->find(Organization::class, $this->organization->getId());
+        $customer = $this->entityManager->find(Customer::class, $this->customer->getId());
+        self::assertInstanceOf(Organization::class, $organization);
+        self::assertInstanceOf(Customer::class, $customer);
+
+        $statusCounts = ['draft' => 0, 'sent' => 0, 'overdue' => 0, 'paid' => 0];
+        $outstanding = 0;
+        $overdue = 0;
+        $paidThisMonth = 0;
+        $paidThisMonthCount = 0;
+        $issuedThisMonth = 0;
+        $paidOfIssuedThisMonth = 0;
+        /** @var array<string, int> $revenueByMonth */
+        $revenueByMonth = [];
+        for ($offset = 0; $offset < 12; ++$offset) {
+            $revenueByMonth[$revenueStart->modify(sprintf('+%d months', $offset))->format('Y-m')] = 0;
+        }
+
+        for ($index = 0; $index < 250; ++$index) {
+            $issueDate = $monthStart->modify(sprintf('-%d months', $index % 14))->modify(sprintf('+%d days', $index % 20));
+            if ($issueDate > $today) {
+                // Nothing is issued in the future; clamping keeps the corpus realistic
+                // without making the expectations depend on the day the suite runs.
+                $issueDate = $today;
+            }
+            $dueDate = $issueDate->modify('+14 days');
+            $millimes = 1000 + $index * 37;
+            $total = sprintf('%d.%03d', intdiv($millimes, 1000), $millimes % 1000);
+            $kind = $index % 4; // draft, sent, sent, paid
+            $isPaid = 3 === $kind;
+
+            $invoice = new Invoice(
+                $organization,
+                $customer,
+                sprintf('D250-%03d', $index),
+                $this->principals['Owner']->getId(),
+                $issueDate,
+                $dueDate,
+                [['description' => 'Work', 'quantity' => '1.000', 'unitPrice' => $total, 'lineTotal' => $total]],
+                null,
+                null,
+                $total,
+                '0.000',
+                $total,
+                $issueDate,
+            );
+            $this->entityManager->persist($invoice);
+
+            if (0 === $kind) {
+                ++$statusCounts['draft'];
+            } else {
+                $invoice->send($issueDate);
+                if ($isPaid) {
+                    $invoice->markPaid($issueDate);
+                    ++$statusCounts['paid'];
+                    if (isset($revenueByMonth[$issueDate->format('Y-m')])) {
+                        $revenueByMonth[$issueDate->format('Y-m')] += $millimes;
+                    }
+                    // `paid_at` is the issue date here, so "this month" is an issue-month test.
+                    if ($thisMonth === $issueDate->format('Y-m')) {
+                        $paidThisMonth += $millimes;
+                        ++$paidThisMonthCount;
+                        ++$paidOfIssuedThisMonth;
+                    }
+                } elseif ($dueDate < $today) {
+                    ++$statusCounts['overdue'];
+                    $overdue += $millimes;
+                } else {
+                    ++$statusCounts['sent'];
+                    $outstanding += $millimes;
+                }
+            }
+
+            if ($thisMonth === $issueDate->format('Y-m')) {
+                ++$issuedThisMonth;
+            }
+        }
+        $this->entityManager->flush();
+
+        $this->client->loginUser($this->principals['Owner']);
+        $this->client->request('GET', $this->path());
+        self::assertResponseIsSuccessful();
+        $payload = $this->payload();
+
+        self::assertSame($outstanding + $overdue, $payload['outstandingMillimes']);
+        self::assertSame($overdue, $payload['overdueMillimes']);
+        self::assertSame($statusCounts['overdue'], $payload['overdueCount']);
+        self::assertSame($statusCounts, $payload['statusCounts']);
+        self::assertSame($paidThisMonth, $payload['paidThisMonthMillimes']);
+        self::assertSame($paidThisMonthCount, $payload['paidThisMonthCount']);
+        self::assertSame($issuedThisMonth, $payload['issuedThisMonthCount']);
+        self::assertSame(
+            0 === $issuedThisMonth ? 0 : (int) round($paidOfIssuedThisMonth * 100 / $issuedThisMonth),
+            $payload['paidRateThisMonthPercent'],
+        );
+        self::assertSame(1, $payload['customerCount']);
+        self::assertSame($revenueByMonth, array_column($payload['revenueByMonth'], 'paidMillimes', 'month'));
+        self::assertCount(5, $payload['recentInvoices']);
+
+        // A foreign tenant's owner must not read this dashboard: 404, never 403.
+        $foreignOrganization = new Organization('Dash Foreign '.$this->suffix, 'dash-foreign-'.$this->suffix);
+        $foreignOwner = new Principal('dash-foreign-'.$this->suffix.'@example.test', 'Foreign Owner');
+        $this->principals['ForeignOwner'] = $foreignOwner;
+        $this->entityManager->persist($foreignOrganization);
+        $this->entityManager->persist($foreignOwner);
+        $this->entityManager->persist(new Membership($foreignOrganization, $foreignOwner, 'Owner'));
+        $this->entityManager->flush();
+
+        $this->client->loginUser($foreignOwner);
+        $this->client->request('GET', $this->path());
+        self::assertResponseStatusCodeSame(404);
     }
 
     private function invoice(string $number, string $total, \DateTimeImmutable $issueDate, \DateTimeImmutable $dueDate, bool $send = false, ?\DateTimeImmutable $paidAt = null): Invoice

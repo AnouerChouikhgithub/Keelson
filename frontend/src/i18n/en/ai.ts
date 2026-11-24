@@ -14,6 +14,11 @@ export const ai = {
     sources: 'Sources',
     empty: 'Ask about invoices, customers or how a screen works.',
   },
+  /** The one hint an Owner or Admin sees while the workspace has not opted in. */
+  optIn: {
+    available: 'AI assistance is available for this workspace.',
+    action: 'Turn it on in Settings',
+  },
   errors: {
     aiDisabled: 'AI is turned off for this workspace. An owner or admin can enable it in settings.',
     aiBudgetExceeded: 'This workspace has used its AI budget for this month.',
