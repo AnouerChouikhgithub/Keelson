@@ -10,6 +10,7 @@
     "lint": "eslint .",
     "test": "vitest run",
     "check:bundle": "node scripts/check-bundle-size.mjs",
+    "check:colors": "node scripts/no-raw-colors.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

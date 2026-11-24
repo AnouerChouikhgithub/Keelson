@@ -84,6 +84,10 @@ jobs:
         run: pnpm run build
       - name: Bundle budget
         run: pnpm run check:bundle
+      # Colour values belong in src/theme/tokens.css; a component that hard-codes
+      # one cannot follow data-theme.
+      - name: No raw colours outside the theme
+        run: pnpm run check:colors
 
   backend:
     name: Backend (static analysis, style, tests, coverage gate)

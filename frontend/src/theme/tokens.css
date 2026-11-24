@@ -33,6 +33,10 @@
   --color-success-soft: #DCFCE7;
   --color-warning-soft: #FEF3C7;
   --color-danger-soft: #FEE2E2;
+  /* Text on a strong danger fill (a danger button). Light uses white on the
+     dark red; dark uses near-black on the light red, because white on #FCA5A5
+     is unreadable. */
+  --color-danger-contrast: #FFFFFF;
   --color-info-soft: #DBEAFE;
 
   --color-chart-grid: #E2E8F0;
@@ -70,6 +74,7 @@
   --color-success-soft: #143522;
   --color-warning-soft: #3B2D11;
   --color-danger-soft: #3B2025;
+  --color-danger-contrast: #2A0A0A;
   --color-info-soft: #172B42;
 
   --color-chart-grid: #263041;
@@ -144,4 +149,24 @@
   --radius-control: var(--radius-md);
   --radius-sheet: var(--radius-xl);
   --transition-ui: var(--duration-fast) var(--ease-out);
+}
+
+/*
+ * Print tokens.
+ *
+ * Print is a fixed medium, so it is the one place that does not follow the
+ * theme: paper is white whatever the viewer chose, ink is black, and a dark-mode
+ * invoice printed as a black page would be unusable. `@media print` in
+ * `screens/invoices.css` maps these onto the normal `--color-*` properties, so
+ * every component keeps reading the theme names and only the palette changes.
+ * scripts/no-raw-colors.mjs scans the rest of src/ and refuses a colour value
+ * anywhere else.
+ */
+:root {
+  --print-background: #FFFFFF;
+  --print-surface: #FFFFFF;
+  --print-text: #000000;
+  --print-text-secondary: #333333;
+  --print-text-muted: #555555;
+  --print-border: #CCCCCC;
 }

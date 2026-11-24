@@ -41,11 +41,10 @@
 .button-ghost:hover:not(:disabled) { color: var(--color-text); background: var(--color-background); }
 
 .button-danger {
-  color: var(--color-primary-contrast);
+  color: var(--color-danger-contrast);
   background: var(--color-danger);
   border-color: var(--color-danger);
 }
-[data-theme='dark'] .button-danger { color: #2A0A0A; }
 .button-danger:hover:not(:disabled) { filter: brightness(0.94); }
 
 /* Text link that looks like a button but stays a link for navigation. */
