@@ -208,9 +208,10 @@ All of them are JSON under `/api/auth` and none of them needs a session.
   whether or not the address exists, and no mail is sent for an existing registration.
 - Five failed attempts per address per minute are refused with `429` and
   `Retry-After` before the password is even checked
-  (`App\EventListener\LoginThrottleListener`, `config/packages/rate_limiter.yaml`).
-  The firewall's own `login_throttling` is declared too, but its listener is not
-  invoked in this setup, so the explicit guard is what enforces the policy.
+  (`App\EventListener\AuthThrottleListener`, `config/packages/rate_limiter.yaml`).
+  It is the only throttle: the firewall declares no `login_throttling`, because a
+  second policy counting a different key would be invisible and would answer after
+  the password check instead of before it.
 - Emails are plain text built in `App\Service\MailFactory` (no Twig):
   `FRONTEND_URL/verify-email?token=…` and `FRONTEND_URL/reset-password?token=…`.
   Tokens and passwords are never logged.

@@ -33,10 +33,10 @@ use Symfony\Component\RateLimiter\RateLimiterFactory;
  * endpoint must not lock a user out of the account they are trying to confirm,
  * and vice versa.
  *
- * The framework's own `login_throttling` is declared in security.yaml as well,
- * but its listener never runs in this setup (verified over real HTTP: no counter
- * is ever written), so the policy is enforced here, before the password is
- * checked at all.
+ * This is the only sign-in throttle: the firewall declares no
+ * `login_throttling`, and `tests/Unit/Config/SecurityThrottleConfigTest.php`
+ * keeps it that way. The policy is enforced here, before the password is checked
+ * at all, so a refused attempt costs no hash comparison.
  */
 final class AuthAttemptLimiter
 {
