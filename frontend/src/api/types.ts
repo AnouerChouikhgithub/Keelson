@@ -72,6 +72,32 @@ export type Invoice = {
   paidAt: string | null
 }
 
+/**
+ * `GET /api/organizations/{id}/dashboard`.
+ *
+ * Money is integer millimes and every figure (including the paid rate) is
+ * computed by the server across the whole tenant, so nothing here is derived
+ * from a page of rows.
+ */
+export type DashboardMonthlyRevenue = { month: string; paidMillimes: number }
+
+export type Dashboard = {
+  outstandingMillimes: number
+  overdueMillimes: number
+  overdueCount: number
+  paidThisMonthMillimes: number
+  paidThisMonthCount: number
+  issuedThisMonthCount: number
+  /** Whole percent: paid invoices issued this month / invoices issued this month. */
+  paidRateThisMonthPercent: number
+  customerCount: number
+  statusCounts: Record<InvoiceStatus, number>
+  /** Twelve entries, oldest first; `month` is `YYYY-MM`. */
+  revenueByMonth: DashboardMonthlyRevenue[]
+  /** The five newest invoices, the invoice shape above. */
+  recentInvoices: Invoice[]
+}
+
 /** What `POST`/`PATCH /invoices` accepts. Amounts are decimal strings. */
 export type InvoiceDraftInput = {
   customerId: string

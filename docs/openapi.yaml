@@ -2230,6 +2230,9 @@ components:
         - overdueMillimes
         - overdueCount
         - paidThisMonthMillimes
+        - paidThisMonthCount
+        - issuedThisMonthCount
+        - paidRateThisMonthPercent
         - customerCount
         - statusCounts
         - revenueByMonth
@@ -2243,6 +2246,20 @@ components:
           type: integer
         paidThisMonthMillimes:
           type: integer
+          description: Money collected this month, by payment date.
+        paidThisMonthCount:
+          type: integer
+          description: Invoices paid this month, by payment date.
+        issuedThisMonthCount:
+          type: integer
+          description: Invoices whose issue date falls in the current month.
+        paidRateThisMonthPercent:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: |
+            Whole percent of this month's issued invoices that are paid. Computed by the database
+            from two counts; the client never divides rows.
         customerCount:
           type: integer
         statusCounts:
@@ -2259,7 +2276,7 @@ components:
               type: integer
         revenueByMonth:
           type: array
-          description: Twelve entries, oldest first.
+          description: Twelve entries, oldest first, grouped by month of payment.
           items:
             type: object
             required: [month, paidMillimes]
