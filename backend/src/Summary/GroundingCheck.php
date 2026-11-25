@@ -167,6 +167,7 @@ final class GroundingCheck
     /** Percent wording that turns a number before it into a percentage claim. */
     private const PERCENT_WORD_PATTERN = '/^\s*(?:%|٪|percent|per cent|pour cent|pourcent|بالمئه|في المئه|بالمائة)/iu';
 
+    /** @api The boolean predicate the eval and red-team suites assert; the service uses rejectionReason() for the code. */
     public function verify(string $text, WorkspaceFacts $facts): bool
     {
         return null === $this->rejectionReason($text, $facts);

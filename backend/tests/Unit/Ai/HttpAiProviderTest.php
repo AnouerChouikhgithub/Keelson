@@ -146,7 +146,7 @@ final class HttpAiProviderTest extends TestCase
         $transport = $this->transport([new AiHttpResponse(200, $this->bodyOf([
             'choices' => [[
                 'finish_reason' => 'stop',
-                'message' => ['content' => "<think>the total is 99</think>As of today, 3 invoices are overdue."],
+                'message' => ['content' => '<think>the total is 99</think>As of today, 3 invoices are overdue.'],
             ]],
         ]))]);
 

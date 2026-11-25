@@ -53,7 +53,7 @@ test('enables AI, asks the assistant and generates a summary', async ({ page }) 
     'This deployment has AI turned off (AI_ENABLED=false), so /api/ai/status reports no AI and the settings section is hidden.',
   )
 
-  await expect(page.getByText(/sent to the workspace’s AI provider/)).toBeVisible()
+  await expect(page.getByText(/sends only your question/)).toBeVisible()
   await page.getByLabel('Enable AI for this workspace').check()
   await page.getByLabel('Monthly token budget').fill('50000')
   await page.getByRole('button', { name: 'Save AI settings' }).click()

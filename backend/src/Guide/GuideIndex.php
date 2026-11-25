@@ -43,9 +43,6 @@ final class GuideIndex
      * is specific: present in the article title, or rare enough in the corpus
      * ({@see self::SINGLE_TERM_IDF}). Everything else still needs two.
      */
-    public const MINIMUM_MATCHED_TERMS = 2;
-
-
     private const K1 = 1.2;
     private const B = 0.75;
     private const MAXIMUM_TERM_LENGTH = 40;
