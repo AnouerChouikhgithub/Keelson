@@ -2,6 +2,7 @@
 id: notifications-and-audit
 title: Notifications et journal d'audit
 roles: []
+keywords: ["notification","boîte de réception","non lu","marquer lu","audit","journal d'audit","historique","activité"]
 ---
 
 Les notifications sont personnelles, pas organisationnelles : votre boîte reçoit les événements de toutes les organisations dont vous êtes membre, et vous seul pouvez les lire ou les marquer. Les quatre types sont `invoice_paid` (quelqu'un d'autre a enregistré le paiement), `invoice_overdue`, `member_joined` et `invitation_accepted`.

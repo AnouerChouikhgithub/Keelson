@@ -2,6 +2,7 @@
 id: team-and-roles
 title: Équipe et rôles
 roles: []
+keywords: ["inviter","invitation","collègue","membre","équipe","ajouter membre","inviter quelqu'un","rôles","permissions","propriétaire","administrateur","lecteur","viewer","lecture seule","quitter l'organisation","rétrograder","admin","member","owner","retrograder","retrograde","dernier owner"]
 ---
 
 Il existe quatre rôles, et chaque requête revérifie l'appartenance : un changement s'applique immédiatement.

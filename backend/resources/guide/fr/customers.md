@@ -2,6 +2,7 @@
 id: customers
 title: Clients
 roles: []
+keywords: ["client","créer client","ajouter client","modifier client","supprimer client","rechercher client","contact","adresse de facturation","parametre q","recherche"]
 ---
 
 Un client appartient à une seule organisation et n'est accessible que par elle : l'identifiant d'un client d'une autre organisation répond « introuvable ».

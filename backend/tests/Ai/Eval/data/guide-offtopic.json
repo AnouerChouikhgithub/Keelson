@@ -1,5 +1,5 @@
 {
-  "description": "Ten out-of-corpus questions per language. Each must be answered with the fixed not-covered message, with no provider call and no ledger row.",
+  "description": "Sixteen out-of-corpus questions per language. Each must be answered with the fixed not-covered message, with no provider call and no ledger row.",
   "questions": [
     {"id": "o-en-01", "locale": "en", "question": "What is the capital of France?"},
     {"id": "o-en-02", "locale": "en", "question": "What is the weather in Paris tomorrow?"},
@@ -30,6 +30,24 @@
     {"id": "o-ar-07", "locale": "ar", "question": "اشرح قائمة الفهم في بايثون."},
     {"id": "o-ar-08", "locale": "ar", "question": "ترجم صباح الخير إلى اليابانية."},
     {"id": "o-ar-09", "locale": "ar", "question": "ما سعر سهم آبل اليوم؟"},
-    {"id": "o-ar-10", "locale": "ar", "question": "ما معنى الحياة؟"}
+    {"id": "o-ar-10", "locale": "ar", "question": "ما معنى الحياة؟"},
+    {"id": "o-en-11", "locale": "en", "question": "Write me an email to my customer about the overdue invoice."},
+    {"id": "o-en-12", "locale": "en", "question": "How do I connect Stripe to take payments?"},
+    {"id": "o-en-13", "locale": "en", "question": "How do I export my invoices to Excel?"},
+    {"id": "o-en-14", "locale": "en", "question": "How do I change my email address?"},
+    {"id": "o-en-15", "locale": "en", "question": "Book me a flight to Tunis."},
+    {"id": "o-en-16", "locale": "en", "question": "What is the best CRM for a small business?"},
+    {"id": "o-fr-11", "locale": "fr", "question": "Écris-moi un e-mail à mon client au sujet de la facture en retard."},
+    {"id": "o-fr-12", "locale": "fr", "question": "Comment connecter Stripe pour encaisser les paiements ?"},
+    {"id": "o-fr-13", "locale": "fr", "question": "Comment exporter mes factures vers Excel ?"},
+    {"id": "o-fr-14", "locale": "fr", "question": "Comment changer mon adresse e-mail ?"},
+    {"id": "o-fr-15", "locale": "fr", "question": "Réserve-moi un vol pour Tunis."},
+    {"id": "o-fr-16", "locale": "fr", "question": "Quel est le meilleur CRM pour une petite entreprise ?"},
+    {"id": "o-ar-11", "locale": "ar", "question": "اكتب لي بريدًا إلكترونيًا إلى عميلي حول الفاتورة المتأخرة."},
+    {"id": "o-ar-12", "locale": "ar", "question": "كيف أربط Stripe لاستلام المدفوعات؟"},
+    {"id": "o-ar-13", "locale": "ar", "question": "كيف أصدّر فواتيري إلى Excel؟"},
+    {"id": "o-ar-14", "locale": "ar", "question": "كيف أغيّر بريدي الإلكتروني؟"},
+    {"id": "o-ar-15", "locale": "ar", "question": "احجز لي رحلة إلى تونس."},
+    {"id": "o-ar-16", "locale": "ar", "question": "ما أفضل نظام CRM لشركة صغيرة؟"}
   ]
 }

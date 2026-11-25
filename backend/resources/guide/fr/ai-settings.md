@@ -2,6 +2,7 @@
 id: ai-settings
 title: Paramètres IA
 roles: [Owner, Admin]
+keywords: ["paramètres ia","activer ia","budget","limites","limite de requêtes","ia désactivée","opt in","registre","prompt","reponse","stocke","journal"]
 ---
 
 L'IA est désactivée tant qu'un Owner ou un Admin ne l'active pas pour l'organisation. Ouvrez les paramètres, section IA : l'interrupteur et le budget mensuel en jetons (0 à 100 000 000) sont tous deux obligatoires. Tout autre rôle, Member compris, reçoit « introuvable » sur ces paramètres.

@@ -2,6 +2,7 @@
 id: ai-settings
 title: AI settings
 roles: [Owner, Admin]
+keywords: ["ai settings","enable ai","turn on ai","token budget","rate limit","ai disabled","opt in","ledger","prompt","answer","prompts","answers","log"]
 ---
 
 AI is off until an Owner or Admin turns it on for the organization. Open settings and choose the AI section: the switch and the monthly token budget (0 to 100,000,000 tokens) are both required. Any other role, including Member, receives not found on these settings.

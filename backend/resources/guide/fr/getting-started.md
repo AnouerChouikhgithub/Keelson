@@ -2,6 +2,7 @@
 id: getting-started
 title: Premiers pas
 roles: []
+keywords: ["inscription","s'inscrire","créer un compte","mot de passe","vérifier email","vérifier e-mail","lien de vérification","confirmer email","connexion","tableau de bord"]
 ---
 
 Créez un compte avec une adresse e-mail, un nom affiché, le nom d'une organisation et un mot de passe de 10 à 72 caractères. Un lien de vérification est envoyé par e-mail et reste valable 24 heures ; tant que l'adresse n'est pas confirmée, la connexion est refusée avec `email_not_verified`.

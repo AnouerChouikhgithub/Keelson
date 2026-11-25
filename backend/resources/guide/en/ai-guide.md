@@ -2,6 +2,7 @@
 id: ai-guide
 title: The product assistant
 roles: []
+keywords: ["assistant","product guide","ask a question","sources","documentation","help assistant"]
 ---
 
 The assistant answers questions about how Keelson works. It reads two things: the product documentation and your role in the organization. It never reads your workspace, so it cannot see or repeat a customer, an invoice, a member or an audit row, and it will not pretend otherwise.

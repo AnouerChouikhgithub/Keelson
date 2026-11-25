@@ -24,7 +24,10 @@ use PHPUnit\Framework\Attributes\Group;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 
 /**
- * The retrieval evaluation: 40 documented questions per language, plus 10 off-topic ones.
+ * The retrieval evaluation: 52 documented questions per language, plus 16 off-topic ones.
+ * The 15 verbatim A1 questions from the live QA report, the exact "Can I invite someone?"
+ * wording and the natural paraphrases are in that set: they are the recall floor this
+ * change is measured against.
  *
  * The measurement is deliberately about **retrieval**, not the model's prose: an answer
  * is only as good as the articles it was built from, the expected article id is a fact
