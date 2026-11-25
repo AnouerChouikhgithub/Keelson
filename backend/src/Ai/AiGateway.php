@@ -51,6 +51,7 @@ final class AiGateway
         private readonly TransactionBoundary $transactions,
         private readonly OutputSanitizer $sanitizer,
         private readonly TenantContext $tenants,
+        private readonly AiFailureRecorder $failureRecorder,
         #[Autowire(service: 'limiter.ai_principal')]
         private readonly RateLimiterFactoryInterface $principalLimiter,
         #[Autowire(service: 'limiter.ai_organization')]
@@ -156,22 +157,14 @@ final class AiGateway
         string $reason,
     ): void {
         $latencyMs = (int) round((microtime(true) - $started) * 1000);
-        $this->inTenant($organizationId, function () use ($organizationId, $period, $estimate, $request, $latencyMs, $reason): void {
-            $this->settings->releaseBudget($organizationId, $period, $estimate);
-            $this->entityManager->persist(new AiRequestRecord(
-                $organizationId,
-                $request->principalId,
-                $request->feature,
-                AiRequestRecord::STATUS_FAILED,
-                null,
-                0,
-                0,
-                0,
-                $latencyMs,
-                substr($reason, 0, 64),
-            ));
-            $this->entityManager->flush();
-        });
+        $this->inTenant(
+            $organizationId,
+            fn () => $this->settings->releaseBudget($organizationId, $period, $estimate),
+        );
+
+        // Not through the request's EntityManager: an exception escaping the controller
+        // rolls that transaction back and would erase the evidence (see the recorder).
+        $this->failureRecorder->record($organizationId, $request->principalId, $request->feature, $latencyMs, $reason);
     }
 
     /** The reservation must cover the prompt and the answer the caller asked for. */

@@ -130,6 +130,11 @@ as such.
   itself is logged as `AI summary rejected by grounding` with the organization, locale,
   role and a reason code (`vague_quantity`, `ungrounded_number`,
   `ungrounded_number_word`, `unreadable_number`) — never the text or the offending token.
+- A failed row is written on its **own short transaction**, not the request's: an error
+  escaping the controller rolls the request back, and a row written there disappeared
+  with it. Every provider failure therefore leaves exactly one failed row, whichever
+  path it took; the budget reservation stays in the request transaction and is released
+  by that rollback (or by the summary's own failure path, which catches the error).
 
 ### `app:ai:usage`
 
