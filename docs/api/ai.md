@@ -38,7 +38,7 @@ Every failure uses the shared envelope:
 | `ai_disabled` | `403` | The global switch is off, or this organization has not enabled AI. Nothing was sent to a provider. |
 | `ai_budget_exceeded` | `402` | The reservation for this request would take the organization past its monthly token budget. Nothing was sent to a provider. |
 | `ai_rate_limited` | `429` | The principal or organization rate limit was hit. Carries `Retry-After`. |
-| `ai_unavailable` | `503` | The provider timed out, returned a server error twice, or answered with a body this API could not parse. `AiGateway` records a failed ledger row. |
+| `ai_unavailable` | `503` | The provider timed out, returned a server error twice, answered a body this API could not parse, or returned no usable text (see the ledger's `error_code`). `AiGateway` records exactly one failed ledger row. |
 | `validation_failed` | `422` | The body or settings are invalid. Same envelope, with `fields`. |
 | `not_found` | `404` | Unknown tenant, or the caller has no active membership. |
 | `not_implemented` | `501` | A routed stub: the contract exists, the generator does not. |

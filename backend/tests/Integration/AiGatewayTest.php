@@ -163,7 +163,7 @@ final class AiGatewayTest extends KernelTestCase
     public static function providerFailures(): iterable
     {
         yield 'timeout' => [FakeAiProvider::FAILURE_TIMEOUT, 'timeout'];
-        yield 'malformed' => [FakeAiProvider::FAILURE_MALFORMED, 'malformed_response'];
+        yield 'malformed' => [FakeAiProvider::FAILURE_MALFORMED, 'malformed_body'];
         yield 'server error' => [FakeAiProvider::FAILURE_SERVER_ERROR, 'server_error'];
     }
 

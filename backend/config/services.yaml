@@ -126,6 +126,8 @@ services:
             $apiKey: '%env(default:app.ai.empty:AI_API_KEY)%'
             $model: '%env(default:app.ai.empty:AI_MODEL)%'
             $baseUrl: '%env(default:app.ai.empty:AI_BASE_URL)%'
+            # Optional; sent only when set, because some compatible endpoints reject it.
+            $reasoningEffort: '%env(default:app.ai.empty:AI_REASONING_EFFORT)%'
 
     # Synthetic dev/test fixtures. The target guard reads the effective DBAL
     # connection parameters (including Doctrine's test dbname suffix), so only

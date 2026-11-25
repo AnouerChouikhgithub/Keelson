@@ -110,9 +110,11 @@ final class AiGateway
 
         $text = $this->sanitizer->sanitize($response->text);
         if ('' === $text) {
-            // A provider that answered nothing usable must not look like success.
-            $this->fail($organizationId, $period, $estimate, $request, $started, AiUnavailableException::REASON_MALFORMED);
-            throw AiUnavailableException::create(AiUnavailableException::REASON_MALFORMED);
+            // A provider that answered nothing usable must not look like success. The
+            // code says the answer was empty after sanitising, which is distinct from a
+            // truncated generation and from a body the parser could not read.
+            $this->fail($organizationId, $period, $estimate, $request, $started, AiUnavailableException::REASON_EMPTY_AFTER_SANITIZE);
+            throw AiUnavailableException::create(AiUnavailableException::REASON_EMPTY_AFTER_SANITIZE);
         }
 
         $latencyMs = (int) round((microtime(true) - $started) * 1000);

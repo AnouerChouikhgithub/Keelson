@@ -51,7 +51,7 @@ final class FakeAiProvider implements AiProvider
             throw AiUnavailableException::create(AiUnavailableException::REASON_TIMEOUT);
         }
         if (self::FAILURE_MALFORMED === $this->failure) {
-            throw AiUnavailableException::create(AiUnavailableException::REASON_MALFORMED);
+            throw AiUnavailableException::create(AiUnavailableException::REASON_MALFORMED_BODY);
         }
         if (self::FAILURE_SERVER_ERROR === $this->failure) {
             throw AiUnavailableException::create(AiUnavailableException::REASON_SERVER_ERROR);

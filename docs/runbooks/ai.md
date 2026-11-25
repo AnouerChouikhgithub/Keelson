@@ -95,7 +95,9 @@ ledger's `error_code`:
 | `timeout` | The provider did not answer in time | Check the provider's status page; this is usually theirs |
 | `transport` | Connection/TLS failure, **or any 4xx from the provider** (bad credential, rejected payload, the provider's own 429) | Check `AI_BASE_URL`, then the key (§8); if traffic is being throttled upstream, slow down or raise the provider tier |
 | `server_error` | Two attempts failed with a 5xx | Provider incident |
-| `malformed_response` | The body could not be parsed, or the answer sanitized to nothing | Provider/model change, or a safety filter returning empty |
+| `malformed_body` | The body was not the expected JSON, had no choices/message, or `content` was neither text nor a list of text parts | Provider/model change or a proxy altering the body; compare with the provider's documented response |
+| `truncated` | `finish_reason=length` with no visible text | The output budget was consumed before any answer, usually by a reasoning model. Raise the feature's `max_tokens` or set `AI_REASONING_EFFORT=low`; repeating the same call unchanged will fail the same way |
+| `empty_after_sanitize` | The provider answered, but sanitising left no usable text (for example only markup or only a ` thinking` block) | A safety filter or a model that only emits reasoning; inspect the provider's own console, not the ledger (it stores no text) |
 | `unexpected_provider_error` | Anything else that escaped the provider | Read the log line; treat as a bug |
 
 ```bash
