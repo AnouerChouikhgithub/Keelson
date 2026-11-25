@@ -82,13 +82,13 @@ final class GroundingCheck
             'about a third', 'about half', 'the vast majority', 'a handful', 'dozens of',
         ],
         'fr' => [
-            'moitié', 'moitie', 'majorité', 'majorite', 'presque', 'la plupart',
+            'moitié', 'moitie', 'majorité', 'majorite', 'presque', 'environ', 'la plupart',
             'plusieurs', 'quelques', 'quasiment', 'approximativement', 'un tiers',
             'deux tiers', 'trois quarts', 'un quart', 'une poignée', 'des dizaines de',
         ],
         'ar' => [
             'نصف', 'معظم', 'اغلب', 'تقريبا', 'ثلث', 'ثلثان', 'ربع', 'الغالبيه',
-            'غالبيه', 'اكثر', 'بعض', 'قليل',
+            'غالبيه', 'اكثر', 'بعض', 'قليل', 'حوالي', 'نحو',
         ],
     ];
 
@@ -169,34 +169,60 @@ final class GroundingCheck
 
     public function verify(string $text, WorkspaceFacts $facts): bool
     {
+        return null === $this->rejectionReason($text, $facts);
+    }
+
+    /**
+     * Why the text was rejected, as a metadata-only code for the log: never the
+     * rejected text, and never the token, because both may contain tenant content.
+     */
+    public function rejectionReason(string $text, WorkspaceFacts $facts): ?string
+    {
         $scan = $this->scanText($text, $facts);
 
         if ($this->hasVagueQuantity($scan, $facts->locale)) {
-            return false;
+            return 'vague_quantity';
         }
 
         [$values, $percentages] = $this->candidates($facts);
+        // A model may copy the millimes fact in its raw unit. "11956600 millimes" names the
+        // same money as 11956.600 TND; the unit word is required, so a mis-scaled
+        // "11956600 TND" is still rejected.
+        $values = [...$values, ...$this->millimeAmounts($scan, $facts->locale)];
 
         if (preg_match_all(self::NUMBER_PATTERN, $scan, $matches) > 0) {
             foreach ($matches[0] as $token) {
                 $number = $this->parse((string) $token, $facts->locale);
                 if (null === $number) {
-                    return false;
+                    return 'unreadable_number';
                 }
-                if (!$this->matches($number['value'], $number['decimals'], $number['percent'] ? $percentages : $values)) {
-                    return false;
+                $pool = $number['percent'] ? $percentages : $values;
+                if ($this->matches($number['value'], $number['decimals'], $pool)) {
+                    continue;
                 }
+                // French writes the decimal comma, but a model copying an English-style
+                // `11956.600` is still naming the fact 11956.6. The thousands reading was
+                // tried first and did not match, so accepting the decimal reading here does
+                // not let an invented figure through — it has to equal a fact either way.
+                if ('fr' === $facts->locale
+                    && !$number['percent']
+                    && 1 === preg_match('/^\d+\.\d{3}$/', (string) $token)
+                    && $this->matches((float) $token, 3, $values)) {
+                    continue;
+                }
+
+                return 'ungrounded_number';
             }
         }
 
         foreach ($this->spelledNumbers($scan, $facts->locale) as $claim) {
             $pool = $claim['percent'] ? $percentages : $values;
             if (!$this->matches((float) $claim['value'], 0, $pool)) {
-                return false;
+                return 'ungrounded_number_word';
             }
         }
 
-        return true;
+        return null;
     }
 
     /**
@@ -219,9 +245,65 @@ final class GroundingCheck
             }
         }
 
+        $scan = $this->withoutDates($scan);
+
         $scan = preg_replace(self::IDENTIFIER_PATTERN, ' ', $scan) ?? $scan;
 
         return strtr($scan, self::DIGITS);
+    }
+
+    /**
+     * Amounts written with the explicit millime unit, returned in their raw unit.
+     *
+     * A separate pass keeps unit and number together, so only a number the text itself
+     * labels as millimes is compared against a raw fact; the same digits labelled TND
+     * stay a mis-scaled amount and are rejected.
+     *
+     * @return list<float>
+     */
+    private function millimeAmounts(string $scan, string $locale): array
+    {
+        if (0 === preg_match_all('~(?<![\p{L}\p{N}])(\d+(?:[.,]\d+)*)\s*(?:millimes?|ملليم|مليم)~iu', $scan, $matches)) {
+            return [];
+        }
+
+        $amounts = [];
+        foreach ($matches[1] as $raw) {
+            $number = $this->parse((string) $raw, $locale);
+            if (null !== $number) {
+                $amounts[] = $number['value'];
+            }
+        }
+
+        return $amounts;
+    }
+
+    /**
+     * Removes a date written in any of the product's languages, not only the exact ISO
+     * string the facts carry. Live French answered "25 novembre 2026" and live Arabic
+     * "2026‑11‑25" with a non-breaking hyphen; both left the year `2026` to be read as
+     * an invented number and rejected an otherwise correct summary.
+     */
+    private function withoutDates(string $scan): string
+    {
+        $scan = str_replace(["\u{2010}", "\u{2011}", "\u{2012}", "\u{2013}", "\u{2014}", "\u{2212}"], '-', $scan);
+
+        // ISO dates in either order, including a date with a sparse day or month.
+        $scan = (string) preg_replace('~\b(?:\d{4}-\d{1,2}-\d{1,2}|\d{1,2}-\d{1,2}-\d{4})\b~u', ' ', $scan);
+
+        $months = [
+            'january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december',
+            'janvier', 'fevrier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'aout', 'août', 'septembre', 'octobre', 'novembre', 'decembre', 'décembre',
+            'يناير', 'فبراير', 'مارس', 'أبريل', 'ابريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'اغسطس', 'سبتمبر', 'أكتوبر', 'اكتوبر', 'نوفمبر', 'ديسمبر',
+        ];
+        $alternation = implode('|', array_map(static fn (string $month): string => preg_quote($month, '~'), $months));
+
+        // "25 novembre 2026", "November 25, 2026", "25 نوفمبر 2026".
+        return (string) preg_replace(
+            '~(?<![\p{L}])(?:\d{1,2}\s+(?:'.$alternation.')\s+\d{4}|(?:'.$alternation.')\s+\d{1,2},?\s+\d{4})(?![\p{L}])~iu',
+            ' ',
+            $scan,
+        );
     }
 
     /** A vague quantity word cannot be proved at all, so its presence ends the check. */

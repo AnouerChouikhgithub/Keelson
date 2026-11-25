@@ -23,6 +23,7 @@ use App\Summary\SummaryService;
 use App\Summary\WorkspaceFactsBuilder;
 use App\Tests\Support\ScriptedSummaryTextGenerator;
 use Doctrine\ORM\EntityManagerInterface;
+use Psr\Log\NullLogger;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\Cache\Adapter\ArrayAdapter;
 
@@ -102,6 +103,7 @@ final class SummaryServiceTest extends KernelTestCase
             $this->flags,
             $settings,
             new ArrayAdapter(),
+            new NullLogger(),
         );
     }
 
