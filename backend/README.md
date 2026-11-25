@@ -26,6 +26,15 @@ secrets or reuse production or customer credentials. The tracked `backend/.env`
 deliberately leaves `APP_SECRET` empty: any value committed to a public repository
 is public, so supply a random one in `.env.local`.
 
+**Symfony loads four env files in order:** `.env`, `.env.local`, `.env.<APP_ENV>.local`
+then `.env.<APP_ENV>`. The last one wins, so a leftover `.env.dev.local` overrides
+`DATABASE_URL` from `.env.local` for every `dev` command (and `.env.test.local` does
+the same for tests, which is why `bin/test-db.sh` refuses to start while it exists).
+Before a migration, a fixture load or a test run, check the effective target with
+`php bin/console app:config:check`: it prints the host and database the connection
+will actually use and names the winning file order. `app:db:target` does the same
+without requiring a complete configuration.
+
 `ext-sodium` (declared by the locked `lcobucci/jwt`) is enabled on this host
 through a machine-local CLI ini outside the repository, so a fresh machine must
 enable it before `composer install`. `--ignore-platform-req=ext-sodium` hides the
