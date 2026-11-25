@@ -150,6 +150,37 @@ final class GuideEvalTest extends KernelTestCase
         $this->assertExpectedArticle('ar', $article, $question);
     }
 
+    /** @return iterable<string, array{string, string, string}> */
+    public static function a1Questions(): iterable
+    {
+        foreach (EvalCorpus::LOCALES as $locale) {
+            foreach (EvalCorpus::guide($locale) as $case) {
+                if (preg_match('/-4[1-5]$/', $case['id'])) {
+                    yield $locale.' '.$case['id'] => [$locale, $case['article'], $case['question']];
+                }
+            }
+        }
+    }
+
+    /**
+     * The 15 A1 questions from the live run, with the phrases that were invented for them.
+     * "Contactez le support" names a channel that does not exist, and "customer's ID"
+     * describes a field the UI does not ask for. A source citation does not excuse either.
+     */
+    #[DataProvider('a1Questions')]
+    public function testAnA1AnswerNeverAddsAnUnsupportedChannelOrIdentifier(string $locale, string $article, string $question): void
+    {
+        $answer = $this->ask($locale, $question);
+
+        self::assertSame($article, $answer['sources'][0]['id'] ?? null, 'The expected article must rank first.');
+        self::assertDoesNotMatchRegularExpression(
+            '/contact(?:ez)? (?:le )?support|support team|support@|customer.s id|identifiant du client|num[eé]ro de t[eé]l[eé]phone|اتصل بالدعم|الدعم الفني|معرف العميل|رقم الهاتف/iu',
+            $answer['answer'],
+        );
+        self::assertStringNotContainsString('<', $answer['answer']);
+        self::assertStringNotContainsString('http', $answer['answer']);
+    }
+
     /** The not-covered message is part of the API, so it is asserted exactly, per locale. */
     public function testOffTopicQuestionsAreAnsweredLocallyInEveryLanguage(): void
     {
