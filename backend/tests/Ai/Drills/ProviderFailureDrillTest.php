@@ -97,8 +97,8 @@ final class ProviderFailureDrillTest extends KernelTestCase
     {
         yield 'timeout' => [FakeAiProvider::FAILURE_TIMEOUT, 'timeout'];
         yield 'server error' => [FakeAiProvider::FAILURE_SERVER_ERROR, 'server_error'];
-        yield 'malformed json' => [FakeAiProvider::FAILURE_MALFORMED, 'malformed_response'];
-        yield 'empty answer' => [FakeAiProvider::FAILURE_EMPTY, 'malformed_response'];
+        yield 'malformed json' => [FakeAiProvider::FAILURE_MALFORMED, 'malformed_body'];
+        yield 'empty answer' => [FakeAiProvider::FAILURE_EMPTY, 'empty_after_sanitize'];
     }
 
     #[DataProvider('providerFailures')]
@@ -229,7 +229,7 @@ final class ProviderFailureDrillTest extends KernelTestCase
             $this->httpProvider($transport)->complete($this->request());
             self::fail('A body that does not parse must not become an answer.');
         } catch (AiUnavailableException $exception) {
-            self::assertSame(AiUnavailableException::REASON_MALFORMED, $exception->getReason());
+            self::assertSame(AiUnavailableException::REASON_MALFORMED_BODY, $exception->getReason());
         }
     }
 

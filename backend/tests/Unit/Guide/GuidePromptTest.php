@@ -30,6 +30,15 @@ final class GuidePromptTest extends TestCase
         self::assertStringNotContainsString('Draft invoices can be deleted.', $prompt['system']);
     }
 
+    public function testTheSystemPromptForbidsInventingSupportAndInterfaceDetails(): void
+    {
+        $system = $this->prompt()->build('How do I send an invoice?', 'Member', 'en', $this->articles())['system'];
+
+        self::assertStringContainsString('Never tell the reader to contact support', $system);
+        self::assertStringContainsString('there is no support channel', strtolower($system));
+        self::assertStringContainsString('menu, button or feature that is not named in the articles', $system);
+    }
+
     public function testTheSystemPromptIsIdenticalWhateverTheCallerAsks(): void
     {
         $owner = $this->prompt()->build('How do I enable AI?', 'Owner', 'fr', $this->articles());

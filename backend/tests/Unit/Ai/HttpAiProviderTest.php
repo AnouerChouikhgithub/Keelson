@@ -72,7 +72,7 @@ final class HttpAiProviderTest extends TestCase
             $this->provider($transport)->complete($this->request());
             self::fail('A body without a message must not become an answer.');
         } catch (AiUnavailableException $exception) {
-            self::assertSame(AiUnavailableException::REASON_MALFORMED, $exception->getReason());
+            self::assertSame(AiUnavailableException::REASON_MALFORMED_BODY, $exception->getReason());
         }
     }
 
@@ -103,6 +103,153 @@ final class HttpAiProviderTest extends TestCase
         } catch (AiUnavailableException $exception) {
             self::assertSame(AiUnavailableException::REASON_NOT_CONFIGURED, $exception->getReason());
         }
+    }
+
+    /**
+     * Live providers do not always return content as one string. Every shape captured
+     * from the real run gets a regression test here, so a parser change cannot quietly
+     * reintroduce the fallback every summary hit.
+     */
+    public function testContentAsTextPartsIsJoined(): void
+    {
+        $transport = $this->transport([new AiHttpResponse(200, $this->bodyOf([
+            'choices' => [[
+                'finish_reason' => 'stop',
+                'message' => ['content' => [
+                    ['type' => 'text', 'text' => 'Two invoices are '],
+                    ['type' => 'text', 'text' => 'overdue.'],
+                ]],
+            ]],
+        ]))]);
+
+        self::assertSame('Two invoices are overdue.', $this->provider($transport)->complete($this->request())->text);
+    }
+
+    public function testReasoningFieldsAreIgnored(): void
+    {
+        $transport = $this->transport([new AiHttpResponse(200, $this->bodyOf([
+            'choices' => [[
+                'finish_reason' => 'stop',
+                'message' => [
+                    'content' => 'No invoice is overdue.',
+                    'reasoning' => 'The user has three invoices; I should not mention the number 3...',
+                    'reasoning_content' => 'more hidden deliberation',
+                ],
+            ]],
+        ]))]);
+
+        self::assertSame('No invoice is overdue.', $this->provider($transport)->complete($this->request())->text);
+    }
+
+    public function testClosedThinkBlocksAreStrippedBeforeTheAnswer(): void
+    {
+        $transport = $this->transport([new AiHttpResponse(200, $this->bodyOf([
+            'choices' => [[
+                'finish_reason' => 'stop',
+                'message' => ['content' => '<think>the total is 99</think>As of today, 3 invoices are overdue.'],
+            ]],
+        ]))]);
+
+        self::assertSame('As of today, 3 invoices are overdue.', $this->provider($transport)->complete($this->request())->text);
+    }
+
+    public function testAnUnclosedThinkBlockIsRemovedToTheEnd(): void
+    {
+        $transport = $this->transport([new AiHttpResponse(200, $this->bodyOf([
+            'choices' => [[
+                'finish_reason' => 'stop',
+                'message' => ['content' => "An answer.\n<think>unfinished deliberation"],
+            ]],
+        ]))]);
+
+        self::assertSame('An answer.', trim($this->provider($transport)->complete($this->request())->text));
+    }
+
+    public function testEmptyContentAtTheTokenLimitIsTruncated(): void
+    {
+        $transport = $this->transport([new AiHttpResponse(200, $this->bodyOf([
+            'choices' => [[
+                'finish_reason' => 'length',
+                'message' => ['content' => '', 'reasoning' => str_repeat('thinking ', 40)],
+            ]],
+            'usage' => ['prompt_tokens' => 402, 'completion_tokens' => 320],
+        ]))]);
+
+        try {
+            $this->provider($transport)->complete($this->request());
+            self::fail('An empty answer cut off at the limit must be a truncation.');
+        } catch (AiUnavailableException $exception) {
+            self::assertSame(AiUnavailableException::REASON_TRUNCATED, $exception->getReason());
+        }
+    }
+
+    public function testNullContentAtTheTokenLimitIsTruncated(): void
+    {
+        $transport = $this->transport([new AiHttpResponse(200, $this->bodyOf([
+            'choices' => [[
+                'finish_reason' => 'length',
+                'message' => ['content' => null, 'reasoning' => 'hidden'],
+            ]],
+        ]))]);
+
+        try {
+            $this->provider($transport)->complete($this->request());
+            self::fail('A null answer cut off at the limit must be a truncation.');
+        } catch (AiUnavailableException $exception) {
+            self::assertSame(AiUnavailableException::REASON_TRUNCATED, $exception->getReason());
+        }
+    }
+
+    public function testNullContentWithoutTruncationIsMalformed(): void
+    {
+        $transport = $this->transport([new AiHttpResponse(200, $this->bodyOf([
+            'choices' => [['finish_reason' => 'stop', 'message' => ['content' => null]]],
+        ]))]);
+
+        try {
+            $this->provider($transport)->complete($this->request());
+            self::fail('A null answer with no truncation is a broken body.');
+        } catch (AiUnavailableException $exception) {
+            self::assertSame(AiUnavailableException::REASON_MALFORMED_BODY, $exception->getReason());
+        }
+    }
+
+    public function testAnEmptyStringWithoutTruncationIsReturnedForTheGatewayToReject(): void
+    {
+        $transport = $this->transport([new AiHttpResponse(200, $this->bodyOf([
+            'choices' => [['finish_reason' => 'stop', 'message' => ['content' => '   ']]],
+        ]))]);
+
+        self::assertSame('   ', $this->provider($transport)->complete($this->request())->text);
+    }
+
+    public function testReasoningEffortIsSentOnlyWhenConfigured(): void
+    {
+        foreach (['' => false, 'low' => true] as $effort => $expected) {
+            $transport = new class implements AiHttpTransport {
+                /** @var list<string> */
+                public array $bodies = [];
+
+                public function post(string $url, array $headers, string $body, int $connectTimeoutMs, int $totalTimeoutMs): AiHttpResponse
+                {
+                    $this->bodies[] = $body;
+
+                    return new AiHttpResponse(200, '{"choices":[{"message":{"content":"ok"}}]}');
+                }
+            };
+
+            $provider = new HttpAiProvider($transport, 'test-key', 'test-model', 'https://api.example.test/v1', $effort);
+            $provider->complete($this->request());
+
+            $payload = json_decode($transport->bodies[0], true, 64, \JSON_THROW_ON_ERROR);
+            self::assertSame($expected, array_key_exists('reasoning_effort', $payload));
+        }
+    }
+
+    /** @param array<string, mixed> $body */
+    private function bodyOf(array $body): string
+    {
+        return json_encode(['model' => 'test-model', 'usage' => ['prompt_tokens' => 1, 'completion_tokens' => 1]] + $body, \JSON_THROW_ON_ERROR);
     }
 
     /** @param list<AiHttpResponse> $responses */

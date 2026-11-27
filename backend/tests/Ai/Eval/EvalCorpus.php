@@ -21,10 +21,10 @@ final class EvalCorpus
     /** Locales the guide and the summaries are written in. */
     public const LOCALES = ['en', 'fr', 'ar'];
 
-    /** The eval is 40 covered questions per language plus 10 off-topic ones. */
-    public const QUESTIONS_PER_LOCALE = 40;
+    /** The eval is 52 covered questions per language plus 16 off-topic ones. */
+    public const QUESTIONS_PER_LOCALE = 52;
 
-    public const OFF_TOPIC_PER_LOCALE = 10;
+    public const OFF_TOPIC_PER_LOCALE = 16;
 
     /**
      * The covered questions for one locale, in file order.

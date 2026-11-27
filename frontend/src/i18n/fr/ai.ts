@@ -3,7 +3,7 @@ export const ai = {
   assistant: {
     open: 'Demander à Keelson',
     title: 'Assistant Keelson',
-    intro: 'Les réponses s’appuient sur les données de cet espace et sur le guide du produit.',
+    intro: 'Les réponses proviennent du guide du produit Keelson et de votre rôle. L’assistant ne lit jamais les données de cet espace.',
     close: 'Fermer l’assistant',
     questionLabel: 'Votre question',
     placeholder: 'Comment marquer une facture comme payée ?',
@@ -97,7 +97,7 @@ export const ai = {
     budget: 'Budget mensuel de jetons',
     budgetHint: 'Un nombre entier de 0 à 100 000 000. Un budget de 0 bloque tous les appels.',
     consent:
-      'Le texte que vous envoyez est transmis au fournisseur d’IA de l’espace pour produire une réponse. Keelson conserve le résultat et le nombre de jetons, jamais la question ni la réponse. Une réponse d’IA peut être erronée : vérifiez les montants dans les factures avant d’agir.',
+      'L’assistant n’envoie que votre question, les articles du guide retrouvés et votre rôle. Une synthèse de l’espace envoie les chiffres et les dates qu’elle affiche — nombres de clients et de factures, montants en attente et en retard, échéances — ainsi que jusqu’à cinq noms d’affichage de clients. Elle n’envoie jamais de lignes de facture, de coordonnées, d’identité de membre ni de ligne d’audit. Keelson conserve le résultat et le nombre de jetons, jamais la question ni la réponse. Une réponse d’IA peut être erronée : vérifiez les montants dans les factures avant d’agir.',
     save: 'Enregistrer les réglages d’IA',
     saving: 'Enregistrement…',
     saved: 'Réglages d’IA enregistrés.',

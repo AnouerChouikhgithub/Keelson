@@ -17,6 +17,8 @@ use App\Ai\Exception\AiUnavailableException;
 final class FakeAiProvider implements AiProvider
 {
     public const FAILURE_NONE = 'none';
+    public const FAILURE_NOT_CONFIGURED = 'not_configured';
+    public const FAILURE_TRANSPORT = 'transport';
     public const FAILURE_TIMEOUT = 'timeout';
     public const FAILURE_MALFORMED = 'malformed';
     public const FAILURE_SERVER_ERROR = 'server_error';
@@ -37,6 +39,8 @@ final class FakeAiProvider implements AiProvider
 
     private const FAILURES = [
         self::FAILURE_NONE,
+        self::FAILURE_NOT_CONFIGURED,
+        self::FAILURE_TRANSPORT,
         self::FAILURE_TIMEOUT,
         self::FAILURE_MALFORMED,
         self::FAILURE_SERVER_ERROR,
@@ -50,8 +54,14 @@ final class FakeAiProvider implements AiProvider
         if (self::FAILURE_TIMEOUT === $this->failure) {
             throw AiUnavailableException::create(AiUnavailableException::REASON_TIMEOUT);
         }
+        if (self::FAILURE_NOT_CONFIGURED === $this->failure) {
+            throw AiUnavailableException::create(AiUnavailableException::REASON_NOT_CONFIGURED);
+        }
+        if (self::FAILURE_TRANSPORT === $this->failure) {
+            throw AiUnavailableException::create(AiUnavailableException::REASON_TRANSPORT);
+        }
         if (self::FAILURE_MALFORMED === $this->failure) {
-            throw AiUnavailableException::create(AiUnavailableException::REASON_MALFORMED);
+            throw AiUnavailableException::create(AiUnavailableException::REASON_MALFORMED_BODY);
         }
         if (self::FAILURE_SERVER_ERROR === $this->failure) {
             throw AiUnavailableException::create(AiUnavailableException::REASON_SERVER_ERROR);

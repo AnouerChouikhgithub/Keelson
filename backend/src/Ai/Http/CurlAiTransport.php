@@ -42,7 +42,9 @@ final class CurlAiTransport implements AiHttpTransport
 
         $response = curl_exec($handle);
         if (false === $response) {
-            throw AiUnavailableException::create();
+            // A timeout is worth its own ledger code: it says the provider may be slow
+            // rather than unreachable, and the two have different responses.
+            throw AiUnavailableException::create(\CURLE_OPERATION_TIMEDOUT === curl_errno($handle) ? AiUnavailableException::REASON_TIMEOUT : AiUnavailableException::REASON_TRANSPORT);
         }
 
         $status = (int) curl_getinfo($handle, CURLINFO_RESPONSE_CODE);

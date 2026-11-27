@@ -34,7 +34,7 @@ describe('AiSettingsSection', () => {
     )
 
     expect(await screen.findByRole('heading', { name: 'AI assistance' })).toBeVisible()
-    expect(screen.getByText(/sent to the workspace’s AI provider/)).toBeVisible()
+    expect(screen.getByText(/sends only your question/)).toBeVisible()
     expect(screen.getByText('50,000 tokens left this month')).toBeVisible()
     expect(screen.getByLabelText('Monthly token budget')).toHaveValue(50000)
 

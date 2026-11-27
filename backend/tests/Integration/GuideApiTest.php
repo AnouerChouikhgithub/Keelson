@@ -217,6 +217,50 @@ final class GuideApiTest extends WebTestCase
         self::assertNotSame('', (string) $this->client->getResponse()->headers->get('Retry-After'));
     }
 
+    /**
+     * The live run left no row for a guide 503: the exception escapes the controller, the
+     * request listener rolls the request transaction back, and the failed row written by
+     * the gateway went with it. Each provider failure must leave exactly one row and no
+     * reservation, whether or not the request commits.
+     *
+     * @return iterable<string, array{string, string}>
+     */
+    public static function providerFailures(): iterable
+    {
+        yield 'not configured' => [FakeAiProvider::FAILURE_NOT_CONFIGURED, 'not_configured'];
+        yield 'transport (bad key, wrong model, unreachable host)' => [FakeAiProvider::FAILURE_TRANSPORT, 'transport'];
+        yield 'timeout' => [FakeAiProvider::FAILURE_TIMEOUT, 'timeout'];
+        yield 'server error' => [FakeAiProvider::FAILURE_SERVER_ERROR, 'server_error'];
+        yield 'malformed body' => [FakeAiProvider::FAILURE_MALFORMED, 'malformed_body'];
+        yield 'empty answer' => [FakeAiProvider::FAILURE_EMPTY, 'empty_after_sanitize'];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('providerFailures')]
+    public function testAProviderFailureLeavesExactlyOneFailedRow(string $failure, string $reason): void
+    {
+        $this->fake->failWith($failure);
+        $this->client->loginUser($this->owner);
+
+        $this->ask(['question' => 'How do I send an invoice?']);
+        self::assertResponseStatusCodeSame(503);
+        self::assertSame('ai_unavailable', $this->payload()['error']['code']);
+
+        $rows = $this->entityManager->getConnection()->fetchAllAssociative(
+            'SELECT status, error_code, total_tokens FROM ai_requests WHERE organization_id = ?',
+            [$this->organization->getId()],
+        );
+        self::assertCount(1, $rows, 'A failed guide call must still be evidence.');
+        self::assertSame('failed', $rows[0]['status']);
+        self::assertSame($reason, $rows[0]['error_code']);
+        self::assertSame(0, (int) $rows[0]['total_tokens']);
+
+        $reserved = $this->entityManager->getConnection()->fetchOne(
+            'SELECT reserved_tokens FROM organization_ai_settings WHERE organization_id = ?',
+            [$this->organization->getId()],
+        );
+        self::assertSame(0, (int) $reserved, 'The rolled-back reservation must not linger.');
+    }
+
     public function testAForeignOrganizationIsNotFound(): void
     {
         $this->client->loginUser($this->owner);

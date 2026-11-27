@@ -2,6 +2,7 @@
 id: notifications-and-audit
 title: Notifications and the audit trail
 roles: []
+keywords: ["notification","inbox","unread","mark read","audit","audit trail","history","activity log"]
 ---
 
 Notifications are personal, not organizational: your inbox collects events from every organization you belong to, and only you can read or mark them. The four types are `invoice_paid` (someone else recorded the payment), `invoice_overdue`, `member_joined` and `invitation_accepted`.

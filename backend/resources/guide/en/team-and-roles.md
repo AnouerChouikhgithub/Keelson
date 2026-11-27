@@ -2,6 +2,7 @@
 id: team-and-roles
 title: Team and roles
 roles: []
+keywords: ["invite","invitation","teammate","team member","colleague","add member","invite someone","roles","permissions","owner","admin","member","viewer","read-only","leave organization","demote","invite a user","add a user","new user","last owner"]
 ---
 
 Four roles exist, and every request re-checks the membership, so a change applies immediately.

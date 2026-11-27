@@ -2,6 +2,7 @@
 id: ai-guide
 title: L'assistant produit
 roles: []
+keywords: ["assistant","guide","poser une question","sources","documentation","aide","langue","reponse","langue de la reponse"]
 ---
 
 L'assistant répond aux questions sur le fonctionnement de Keelson. Il lit deux choses : la documentation produit et votre rôle dans l'organisation. Il ne lit jamais votre espace de travail : il ne peut donc ni voir ni répéter un client, une facture, un membre ou une ligne d'audit, et il ne prétendra pas le contraire.

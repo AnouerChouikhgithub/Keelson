@@ -12,6 +12,7 @@ use App\Entity\OrganizationAiSettings;
 use App\Entity\Principal;
 use App\Repository\OrganizationAiSettingsRepository;
 use Psr\Cache\CacheItemPoolInterface;
+use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 
 /**
@@ -47,6 +48,7 @@ final class SummaryService
         private readonly OrganizationAiSettingsRepository $settings,
         #[Autowire(service: 'cache.ai_summary')]
         private readonly CacheItemPoolInterface $cache,
+        private readonly LoggerInterface $logger,
     ) {
     }
 
@@ -76,7 +78,17 @@ final class SummaryService
         }
 
         $text = trim($text);
-        if ('' === $text || !$this->grounding->verify($text, $facts)) {
+        $rejection = '' === $text ? 'empty_answer' : $this->grounding->rejectionReason($text, $facts);
+        if (null !== $rejection) {
+            // Metadata only: the reason code, the tenant, the locale and the role. The
+            // rejected text and the offending token are tenant content and never logged.
+            $this->logger->info('AI summary rejected by grounding', [
+                'organizationId' => $organizationId,
+                'locale' => $facts->locale,
+                'role' => $facts->role,
+                'reason' => $rejection,
+            ]);
+
             return $this->fallbackResponse($facts);
         }
 

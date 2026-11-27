@@ -1,6 +1,6 @@
 {
   "locale": "fr",
-  "description": "40 questions the bundled French documentation must answer, with the article each one has to retrieve first.",
+  "description": "52 questions the bundled French documentation must answer, with the article each one has to retrieve first.",
   "questions": [
     {"id": "g-fr-01", "article": "getting-started", "question": "Combien de caractères un mot de passe doit-il contenir à la création du compte ?"},
     {"id": "g-fr-02", "article": "getting-started", "question": "Combien de temps le lien de vérification reste-t-il valable ?"},
@@ -41,6 +41,18 @@
     {"id": "g-fr-37", "article": "ai-settings", "question": "Quelle est la plage du budget mensuel en jetons ?"},
     {"id": "g-fr-38", "article": "ai-settings", "question": "Quel événement de sécurité est enregistré quand l'IA est activée ?"},
     {"id": "g-fr-39", "article": "ai-settings", "question": "Quelles sont les limites de débit de l'IA par personne et par organisation ?"},
-    {"id": "g-fr-40", "article": "ai-settings", "question": "Le registre stocke-t-il les prompts et les réponses ?"}
+    {"id": "g-fr-40", "article": "ai-settings", "question": "Le registre stocke-t-il les prompts et les réponses ?"},
+    {"id": "g-fr-41", "article": "team-and-roles", "question": "Comment inviter un collègue ?"},
+    {"id": "g-fr-42", "article": "team-and-roles", "question": "Que peut faire un Viewer ?"},
+    {"id": "g-fr-43", "article": "invoice-lifecycle", "question": "Comment créer une facture ?"},
+    {"id": "g-fr-44", "article": "getting-started", "question": "Comment vérifier mon adresse e-mail ?"},
+    {"id": "g-fr-45", "article": "ai-settings", "question": "Quelles sont les limites de l'IA ?"},
+    {"id": "g-fr-46", "article": "team-and-roles", "question": "Puis-je inviter quelqu'un ?"},
+    {"id": "g-fr-47", "article": "team-and-roles", "question": "Je veux ajouter un nouveau collègue à mon équipe"},
+    {"id": "g-fr-48", "article": "team-and-roles", "question": "Un membre en lecture seule peut-il modifier quelque chose ?"},
+    {"id": "g-fr-49", "article": "invoice-lifecycle", "question": "Comment faire une facture ?"},
+    {"id": "g-fr-50", "article": "invoice-lifecycle", "question": "Quelle est la différence entre un brouillon et une facture envoyée ?"},
+    {"id": "g-fr-51", "article": "getting-started", "question": "Quelle longueur de mot de passe faut-il pour s'inscrire ?"},
+    {"id": "g-fr-52", "article": "notifications-and-audit", "question": "Où voir les notifications non lues ?"}
   ]
 }

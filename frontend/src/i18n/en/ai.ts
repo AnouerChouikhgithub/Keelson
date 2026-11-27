@@ -3,7 +3,7 @@ export const ai = {
   assistant: {
     open: 'Ask Keelson',
     title: 'Keelson assistant',
-    intro: 'Answers use this workspace’s data and Keelson’s product guide.',
+    intro: 'Answers come from Keelson’s product guide and your role. The assistant never reads this workspace’s data.',
     close: 'Close assistant',
     questionLabel: 'Your question',
     placeholder: 'How do I mark an invoice paid?',
@@ -97,7 +97,7 @@ export const ai = {
     budget: 'Monthly token budget',
     budgetHint: 'A whole number from 0 to 100,000,000. A budget of 0 blocks every call.',
     consent:
-      'The text you submit is sent to the workspace’s AI provider to generate a response. Keelson records the outcome and the token counts, not the prompt or the answer. AI output can be wrong: check figures against the invoice data before acting on them.',
+      'The assistant sends only your question, the product articles it retrieved and your role. A workspace summary sends the figures and dates it displays — customer and invoice counts, outstanding and overdue amounts, due dates — and up to five customer display names. It never sends invoice lines, contact details, member identities or audit rows. Keelson records the outcome and the token counts, not the prompt or the answer. AI output can be wrong: check figures against the invoice data before acting on them.',
     save: 'Save AI settings',
     saving: 'Saving…',
     saved: 'AI settings saved.',

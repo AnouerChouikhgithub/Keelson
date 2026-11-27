@@ -51,6 +51,7 @@ final class AiGateway
         private readonly TransactionBoundary $transactions,
         private readonly OutputSanitizer $sanitizer,
         private readonly TenantContext $tenants,
+        private readonly AiFailureRecorder $failureRecorder,
         #[Autowire(service: 'limiter.ai_principal')]
         private readonly RateLimiterFactoryInterface $principalLimiter,
         #[Autowire(service: 'limiter.ai_organization')]
@@ -110,9 +111,11 @@ final class AiGateway
 
         $text = $this->sanitizer->sanitize($response->text);
         if ('' === $text) {
-            // A provider that answered nothing usable must not look like success.
-            $this->fail($organizationId, $period, $estimate, $request, $started, AiUnavailableException::REASON_MALFORMED);
-            throw AiUnavailableException::create(AiUnavailableException::REASON_MALFORMED);
+            // A provider that answered nothing usable must not look like success. The
+            // code says the answer was empty after sanitising, which is distinct from a
+            // truncated generation and from a body the parser could not read.
+            $this->fail($organizationId, $period, $estimate, $request, $started, AiUnavailableException::REASON_EMPTY_AFTER_SANITIZE);
+            throw AiUnavailableException::create(AiUnavailableException::REASON_EMPTY_AFTER_SANITIZE);
         }
 
         $latencyMs = (int) round((microtime(true) - $started) * 1000);
@@ -154,22 +157,14 @@ final class AiGateway
         string $reason,
     ): void {
         $latencyMs = (int) round((microtime(true) - $started) * 1000);
-        $this->inTenant($organizationId, function () use ($organizationId, $period, $estimate, $request, $latencyMs, $reason): void {
-            $this->settings->releaseBudget($organizationId, $period, $estimate);
-            $this->entityManager->persist(new AiRequestRecord(
-                $organizationId,
-                $request->principalId,
-                $request->feature,
-                AiRequestRecord::STATUS_FAILED,
-                null,
-                0,
-                0,
-                0,
-                $latencyMs,
-                substr($reason, 0, 64),
-            ));
-            $this->entityManager->flush();
-        });
+        $this->inTenant(
+            $organizationId,
+            fn () => $this->settings->releaseBudget($organizationId, $period, $estimate),
+        );
+
+        // Not through the request's EntityManager: an exception escaping the controller
+        // rolls that transaction back and would erase the evidence (see the recorder).
+        $this->failureRecorder->record($organizationId, $request->principalId, $request->feature, $latencyMs, $reason);
     }
 
     /** The reservation must cover the prompt and the answer the caller asked for. */

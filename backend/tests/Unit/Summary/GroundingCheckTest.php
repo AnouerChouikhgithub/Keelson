@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Summary;
 
+use App\Ai\Safety\PromptBuilder;
 use App\Summary\GroundingCheck;
 use App\Summary\SummaryKind;
+use App\Summary\SummaryPromptFactory;
 use App\Summary\WorkspaceFacts;
 use PHPUnit\Framework\TestCase;
 
@@ -222,6 +224,87 @@ final class GroundingCheckTest extends TestCase
             'Half Price Ltd still owes 1,240.000 TND.',
             $this->facts(customerNames: ['Half Price Ltd']),
         ));
+    }
+
+    /**
+     * Live captures, fixture data only. Every one of these correct summaries was
+     * rejected before the fix: localized dates left `2026` to be read as a figure, and
+     * a raw-millimes restatement did not match the currency-unit fact.
+     */
+    public static function liveCaptures(): iterable
+    {
+        yield 'fr localized date' => ['fr', 'Au 25 novembre 2026, vous avez 7 clients et 18 factures. Deux d\'entre elles sont en brouillon, cinq ont été envoyées, trois sont en retard et huit ont été payées. Le total des montants en attente est de 11956600 millimes, dont 6922200 millimes en retard.'];
+        yield 'fr iso date with raw millimes' => ['fr', 'Au 2026-11-25, vous gérez 7 clients. Il y a 18 factures en tout, dont 2 sont en brouillon, 5 ont été envoyées, 3 sont en retard et 8 ont été payées. Les montants en attente sont de 11956600 millimes, dont 6922200 millimes sont en retard.'];
+        yield 'ar non-breaking-hyphen date' => ['ar', "في 2026\u{2011}11\u{2011}25، هناك 7 عملاء و18 فاتورة، من بينها 2 مسودة، 5 مرسلة، 3 متأخرة، 8 مدفوعة. إجمالي المستحقات 11956600 ملليم، مع متأخرات 6922200 ملليم. لا توجد دفعات هذا الشهر."];
+        yield 'ar currency units' => ['ar', 'اعتباراً من 2026-11-25 لديك 7 عملاء و18 فاتورة. يوجد 2 مسودة، 5 مرسلة، 3 متأخرة، و8 مدفوعة. الرصيد المتبقي هو 11956.600 TND، الرصيد المتأخر هو 6922.200 TND، والمدفوع هذا الشهر هو 0 TND.'];
+        yield 'ar localized date' => ['ar', 'التاريخ 25 نوفمبر 2026. يوجد 7 عملاء، 18 فاتورة، منها 2 مسودة، 5 مرسلة، 3 متأخرة، 8 مدفوعة. المبلغ المتبقي 11956600 ملليم، المتأخر 6922200 ملليم، والمدفوع هذا الشهر 0 ملليم.'];
+        yield 'fr dot decimal with a date' => ['fr', "Vous gérez un espace de travail en tant que propriétaire depuis le 2026\u{2011}11\u{2011}25. Il compte 7 clients et 18 factures, dont 2 sont en brouillon, 5 ont été envoyées, 3 sont en retard et 8 ont été payées. Le solde hors délai s'élève à 11956.600 TND, dont 6922.200 TND sont en retard."];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('liveCaptures')]
+    public function testALiveCaptureOfACorrectSummaryIsAccepted(string $locale, string $text): void
+    {
+        self::assertNull($this->check->rejectionReason($text, $this->capturedFacts($locale)));
+    }
+
+    public function testARawMillimesAmountWithoutTheMillimeWordIsStillRejected(): void
+    {
+        self::assertSame(
+            'ungrounded_number',
+            $this->check->rejectionReason('Le solde est de 11956600 TND.', $this->capturedFacts('fr')),
+        );
+    }
+
+    public function testAnInventedFigureInFrenchIsRejected(): void
+    {
+        self::assertSame(
+            'ungrounded_number',
+            $this->check->rejectionReason('Vous avez 42 clients et 11956.600 TND en attente.', $this->capturedFacts('fr')),
+        );
+    }
+
+    public function testAVagueQuantityInArabicIsRejected(): void
+    {
+        self::assertSame(
+            'vague_quantity',
+            $this->check->rejectionReason('لديك حوالي 7 عملاء.', $this->capturedFacts('ar')),
+        );
+    }
+
+    public function testACorrectDateInAnotherNotationDoesNotHideAnInventedFigure(): void
+    {
+        self::assertSame(
+            'ungrounded_number',
+            $this->check->rejectionReason('Le 25 novembre 2026, vous avez 77 clients.', $this->capturedFacts('fr')),
+        );
+    }
+
+    public function testTheFrenchPromptUsesTheFrenchDecimalComma(): void
+    {
+        $prompt = (new SummaryPromptFactory(new PromptBuilder()))->prompt($this->capturedFacts('fr'));
+
+        self::assertStringContainsString('number.outstanding: 11956,600', $prompt);
+        self::assertStringContainsString('number.overdue: 6922,200', $prompt);
+    }
+
+    private function capturedFacts(string $locale): WorkspaceFacts
+    {
+        return $this->facts(
+            locale: $locale,
+            numbers: [
+                'customerCount' => 7,
+                'invoiceCount' => 18,
+                'draftInvoiceCount' => 2,
+                'sentInvoiceCount' => 5,
+                'overdueInvoiceCount' => 3,
+                'paidInvoiceCount' => 8,
+                'outstandingMillimes' => 11956600,
+                'overdueMillimes' => 6922200,
+                'paidThisMonthMillimes' => 0,
+            ],
+            dates: ['asOf' => '2026-11-25'],
+            customerNames: ['Atlas Harbour Supplies (fixture)', 'Cedar and Pine Studio (fixture)'],
+        );
     }
 
     /**

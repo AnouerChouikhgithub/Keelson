@@ -2,6 +2,7 @@
 id: customers
 title: Customers
 roles: []
+keywords: ["customer","client","create customer","add customer","edit customer","delete customer","search customer","contact","billing address","parameter q"]
 ---
 
 A customer belongs to exactly one organization and is only reachable through it: a customer id from another organization answers as not found.

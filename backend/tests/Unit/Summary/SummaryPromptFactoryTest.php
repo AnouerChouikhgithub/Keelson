@@ -24,7 +24,8 @@ final class SummaryPromptFactoryTest extends TestCase
         self::assertSame(1, substr_count($prompt, PromptBuilder::OPEN_DELIMITER));
         self::assertSame(1, substr_count($prompt, PromptBuilder::CLOSE_DELIMITER));
         self::assertStringContainsString('number.customerCount: 12', $prompt);
-        self::assertStringContainsString('number.outstandingMillimes: 1240000', $prompt);
+        self::assertStringContainsString('number.outstanding: 1240.000', $prompt);
+        self::assertStringNotContainsString('outstandingMillimes', $prompt, 'Raw millimes must not reach the model.');
         self::assertStringContainsString('date.asOf: 2026-11-17', $prompt);
         self::assertStringContainsString('customer_1: Acme', $prompt);
         self::assertStringContainsString('currency: TND', $prompt);
@@ -61,7 +62,11 @@ final class SummaryPromptFactoryTest extends TestCase
         self::assertStringContainsString('français', $factory->system('fr'));
         self::assertStringContainsString('العربية', $factory->system('ar'));
         self::assertStringContainsString('English', $factory->system('de'), 'An unknown locale falls back to English.');
-        self::assertSame(320, $factory->maxTokens());
+        self::assertStringContainsString('devise', $factory->system('fr'), 'Amounts are already in the named currency.');
+        self::assertStringContainsString('بالعملة', $factory->system('ar'), 'Amounts are already in the named currency.');
+        // High enough for a reasoning model's hidden tokens plus the answer; see the
+        // constant's comment for the live evidence that 320 produced empty content.
+        self::assertSame(1200, $factory->maxTokens());
     }
 
     /**

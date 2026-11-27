@@ -112,6 +112,11 @@ cd backend && composer install && cp .env.example .env.local   # set APP_SECRET
 bash bin/dev-reset.sh
 php -S 127.0.0.1:8000 -t public public/index.php
 
+# 3b. Before migrations or fixtures, confirm the effective database. Symfony loads
+#     .env, .env.local, .env.dev.local and .env.dev; the last one wins, so a
+#     leftover .env.dev.local silently overrides DATABASE_URL.
+php bin/console app:config:check
+
 # 4. Frontend: dependencies and Vite on :5173
 cd ../frontend && pnpm install --frozen-lockfile && pnpm start
 
