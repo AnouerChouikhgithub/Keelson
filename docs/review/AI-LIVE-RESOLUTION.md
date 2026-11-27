@@ -146,9 +146,11 @@ Playwright failures:
   nothing. This is pre-existing and unrelated to the AI commits; it was reproduced twice.
   It was **not fixed** here because changing that policy is an architecture decision.
 
-Not committed: `docs/review/AI-LIVE-TEST.md` (contains fixture organization IDs and
-synthetic addresses, no key or personal data), `docs/runbooks/ai-key-rotation.md` and
-`docs/screenshots/` remain untracked. `backend/.env` has a pre-existing modified line.
+Committed alongside this report: `docs/review/AI-LIVE-TEST.md` (the live-run evidence;
+it contains fixture organization IDs and synthetic addresses, no key or personal data),
+the `docs/runbooks/ai-key-rotation.md` runbook and the captures under
+`docs/screenshots/`. `backend/.env` has a pre-existing modified line that is not part of
+the commit.
 
 ## Not tested
 
